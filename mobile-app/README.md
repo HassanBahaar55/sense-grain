@@ -2,9 +2,19 @@
 
 React Native application for field operations, device setup, grain readings, alerts, and mobile-first monitoring.
 
+## Commands
+
+```sh
+npm install
+npm --workspace mobile-app run start
+npm --workspace mobile-app run android
+```
+
 ## Structure
 
 ```text
+android/     Native Android project
+ios/         Native iOS project
 src/
   app/          App bootstrap
   assets/       Images, icons, and fonts
