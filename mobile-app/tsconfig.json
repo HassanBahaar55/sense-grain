@@ -1,0 +1,11 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@sense-grain/shared-design": ["../shared-design/src"]
+    }
+  },
+  "include": ["src", "index.js"]
+}

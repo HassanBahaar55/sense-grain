@@ -1,0 +1,14 @@
+{
+  "name": "@sense-grain/web-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sense Grain Next.js dashboard application.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+android/
+ios/
+.gradle/
+.bundle/
+vendor/bundle/
+*.keystore
+*.mobileprovision
+.env
+coverage/
+build/
+dist/

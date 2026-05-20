@@ -1,0 +1,28 @@
+name: Repository Structure Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  structure:
+    name: Verify required folders
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check repository structure
+        run: |
+          test -d mobile-app
+          test -d web-app
+          test -d firebase
+          test -d shared-design
+          test -d docs
+          test -f README.md
+          test -f .gitignore
+          test -f firebase/firebase.json
+          test -f firebase/firestore.rules
+          test -f firebase/storage.rules

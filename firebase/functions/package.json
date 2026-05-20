@@ -1,0 +1,15 @@
+{
+  "name": "@sense-grain/firebase-functions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sense Grain Firebase Cloud Functions.",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

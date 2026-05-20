@@ -1,0 +1,15 @@
+{
+  "name": "@sense-grain/mobile-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sense Grain React Native mobile application.",
+  "main": "index.js",
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  }
+}

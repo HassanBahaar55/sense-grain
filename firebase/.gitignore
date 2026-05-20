@@ -1,0 +1,9 @@
+.runtimeconfig.json
+.env
+.firebase/
+emulator-data/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+functions/lib/
+functions/node_modules/

@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "sense-grain-dev",
+    "staging": "sense-grain-staging",
+    "production": "sense-grain-production"
+  }
+}
