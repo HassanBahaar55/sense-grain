@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 
 function validateEmail(v: string) {
   if (!v.trim()) return 'Email is required';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) return 'Enter a valid email';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) return 'Enter a valid email address';
   return '';
 }
 function validatePassword(v: string) {
@@ -15,20 +15,17 @@ function validatePassword(v: string) {
   return '';
 }
 
-function BrandLogo() {
+function Logo() {
   return (
-    <div className="flex items-center gap-3 justify-center mb-8">
-      <div className="w-10 h-10 rounded-xl bg-[#1f5135] flex items-center justify-center shadow-lg shadow-green-900/40">
-        <svg className="w-6 h-6" viewBox="0 0 32 32" fill="none">
-          <path d="M16 26V18C13 18 10 15 10 11C13 11 16 14 16 18" fill="#4ade80" />
-          <path d="M16 24V16C19 16 22 13 22 9C19 9 16 12 16 16" fill="#86efac" />
-          <path d="M16 27V18" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" />
+    <div className="flex flex-col items-center mb-6">
+      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 flex items-center justify-center shadow-lg shadow-emerald-900/20 mb-3">
+        <svg className="w-7 h-7" viewBox="0 0 32 32" fill="none">
+          <path d="M16 26V18C13 18 10 15 10 11C13 11 16 14 16 18" fill="#a7f3d0" />
+          <path d="M16 24V16C19 16 22 13 22 9C19 9 16 12 16 16" fill="#d1fae5" />
+          <path d="M16 27V18" stroke="#a7f3d0" strokeWidth="2.5" strokeLinecap="round" />
         </svg>
       </div>
-      <div>
-        <p className="text-white text-[17px] font-bold tracking-tight leading-none">Sense Grain</p>
-        <p className="text-green-400/50 text-[9px] tracking-widest uppercase mt-0.5">Grain Intelligence Platform</p>
-      </div>
+      <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">Sense Grain</h2>
     </div>
   );
 }
@@ -53,27 +50,7 @@ function Spinner() {
   );
 }
 
-function GrainBg() {
-  return (
-    <div className="absolute bottom-0 left-0 right-0 pointer-events-none select-none" style={{ height: 'clamp(70px, 15vh, 130px)' }}>
-      <svg viewBox="0 0 800 220" className="w-full h-full" fill="none" preserveAspectRatio="xMidYMax meet">
-        <path d="M0 170 Q100 145 200 158 Q300 170 400 152 Q500 134 600 148 Q700 162 800 150 L800 220 L0 220 Z" fill="#1a3d20" opacity="0.5" />
-        <path d="M0 185 Q150 168 300 178 Q450 188 600 172 Q700 165 800 175 L800 220 L0 220 Z" fill="#1f5135" opacity="0.4" />
-        <rect x="100" y="80" width="55" height="120" rx="4" fill="#152b1a" />
-        <path d="M100 86 Q127 58 155 86" fill="#1a3820" />
-        <rect x="200" y="105" width="220" height="95" fill="#152b1a" />
-        <polygon points="170,105 310,50 420,105" fill="#102218" />
-        <rect x="290" y="148" width="60" height="52" rx="2" fill="#0d1c0f" />
-        <rect x="440" y="112" width="48" height="88" rx="4" fill="#152b1a" />
-        <path d="M440 118 Q464 94 488 118" fill="#1a3820" />
-        <rect x="40" y="162" width="6" height="30" fill="#0d1c0f" />
-        <ellipse cx="43" cy="155" rx="20" ry="25" fill="#163320" />
-      </svg>
-    </div>
-  );
-}
-
-function Field({
+function Input({
   label, type = 'text', placeholder, value, onChange, error, disabled, autoComplete, rightEl,
 }: {
   label: string; type?: string; placeholder: string; value: string;
@@ -82,7 +59,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-[12px] font-semibold text-gray-700 mb-1.5">{label}</label>
+      <label className="block text-[13px] font-semibold text-gray-800 mb-1.5">{label}</label>
       <div className="relative">
         <input
           type={type}
@@ -91,16 +68,15 @@ function Field({
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           autoComplete={autoComplete}
-          className={`w-full h-11 px-3.5 rounded-xl border text-[13px] text-gray-900 placeholder:text-gray-400 outline-none transition-all duration-150 disabled:opacity-50 bg-white ${
-            error ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-                  : 'border-gray-200 focus:border-[#1f5135] focus:ring-2 focus:ring-green-100'
+          className={`w-full h-11 px-3.5 rounded-xl border bg-white text-[14px] text-gray-900 placeholder:text-gray-400 outline-none transition-all duration-150 disabled:opacity-50 disabled:bg-gray-50 ${
+            error
+              ? 'border-red-300 focus:border-red-400 focus:ring-4 focus:ring-red-50'
+              : 'border-gray-200 hover:border-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50'
           } ${rightEl ? 'pr-11' : ''}`}
         />
-        {rightEl && (
-          <div className="absolute right-1 top-1/2 -translate-y-1/2">{rightEl}</div>
-        )}
+        {rightEl && <div className="absolute right-1 top-1/2 -translate-y-1/2">{rightEl}</div>}
       </div>
-      {error && <p className="mt-1 text-[11px] text-red-600 font-medium">{error}</p>}
+      {error && <p className="mt-1 text-[12px] text-red-600 font-medium">{error}</p>}
     </div>
   );
 }
@@ -112,6 +88,7 @@ function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) 
       onClick={onToggle}
       className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
       tabIndex={-1}
+      aria-label={show ? 'Hide password' : 'Show password'}
     >
       {show ? (
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -130,23 +107,21 @@ function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) 
 export default function SignupPage() {
   const router = useRouter();
 
-  const [name, setName]           = useState('');
-  const [email, setEmail]         = useState('');
-  const [password, setPassword]   = useState('');
-  const [confirm, setConfirm]     = useState('');
-  const [showPw, setShowPw]       = useState(false);
-  const [showCf, setShowCf]       = useState(false);
-  const [touched, setTouched]     = useState({ name: false, email: false, password: false, confirm: false });
+  const [name, setName]         = useState('');
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm]   = useState('');
+  const [showPw, setShowPw]     = useState(false);
+  const [touched, setTouched]   = useState({ name: false, email: false, password: false, confirm: false });
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [error, setError]         = useState('');
+  const [error, setError]       = useState('');
 
   const anyLoading = isLoading || isGoogleLoading;
-
-  const nameErr    = touched.name     && !name.trim()              ? 'Name is required'                        : '';
-  const emailErr   = touched.email    ? validateEmail(email)       : '';
-  const passErr    = touched.password ? validatePassword(password) : '';
-  const confirmErr = touched.confirm  && confirm !== password      ? 'Passwords do not match'                  : '';
+  const nameErr    = touched.name     && !name.trim()                ? 'Name is required'        : '';
+  const emailErr   = touched.email    ? validateEmail(email)         : '';
+  const passErr    = touched.password ? validatePassword(password)   : '';
+  const confirmErr = touched.confirm  && confirm !== password        ? 'Passwords do not match'  : '';
 
   const handleGoogle = useCallback(async () => {
     setError('');
@@ -160,12 +135,17 @@ export default function SignupPage() {
       router.push('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
+      console.error('[Google Sign-Up Error]', { code, err });
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         // dismissed
       } else if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized. Please use the main app URL.');
+        setError('This domain is not authorized in Firebase.');
       } else if (code === 'auth/popup-blocked') {
-        setError('Popup was blocked. Please allow popups for this site.');
+        setError('Popup blocked. Please allow popups and try again.');
+      } else if (code === 'auth/operation-not-allowed') {
+        setError('Google sign-in is not enabled in Firebase Console.');
+      } else if (code) {
+        setError(`Sign-up failed: ${code}`);
       } else {
         setError('Google sign-up failed. Please try again.');
       }
@@ -189,14 +169,17 @@ export default function SignupPage() {
       router.push('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
+      console.error('[Sign-Up Error]', { code, err });
       if (code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists. Try signing in instead.');
+        setError('An account with this email already exists. Try signing in.');
       } else if (code === 'auth/invalid-email') {
         setError('Invalid email address.');
       } else if (code === 'auth/weak-password') {
         setError('Password is too weak. Use at least 6 characters.');
+      } else if (code === 'auth/operation-not-allowed') {
+        setError('Email sign-up is not enabled in Firebase Console.');
       } else if (code === 'auth/network-request-failed') {
-        setError('Network error. Check your connection and try again.');
+        setError('Network error. Check your connection.');
       } else {
         setError('Account creation failed. Please try again.');
       }
@@ -206,115 +189,101 @@ export default function SignupPage() {
   }, [name, email, password, confirm, router]);
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-[#0b1d0e] relative">
+    <div className="w-full max-w-[420px]">
+      <Logo />
 
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[500px] rounded-full bg-green-800/10 blur-3xl" />
-      </div>
+      <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 p-7 sm:p-8">
 
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-6 min-h-0 overflow-y-auto">
-        <BrandLogo />
+        <div className="text-center mb-6">
+          <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Create your account</h1>
+          <p className="text-[13px] text-gray-500 mt-1">Get started with Sense Grain</p>
+        </div>
 
-        <div className="w-full max-w-[400px] bg-white rounded-2xl shadow-2xl shadow-black/50 ring-1 ring-white/10 p-7">
+        {error && (
+          <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-5">
+            <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
+            <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 text-lg leading-none -mt-1">&times;</button>
+          </div>
+        )}
 
-          <h1 className="text-[19px] font-bold text-gray-900 tracking-tight">Create account</h1>
-          <p className="text-[12px] text-gray-400 mt-0.5">Join Sense Grain to get started</p>
+        <button
+          type="button"
+          onClick={handleGoogle}
+          disabled={anyLoading}
+          className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-gray-200 bg-white text-[14px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
+          {isGoogleLoading ? 'Signing up…' : 'Continue with Google'}
+        </button>
 
-          {error && (
-            <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-xl bg-red-50 border border-red-200">
-              <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <p className="text-[12px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
-              <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
-            </div>
-          )}
+        <div className="relative my-5">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+          <div className="relative flex justify-center">
+            <span className="px-3 bg-white text-[11px] text-gray-400 font-medium uppercase tracking-wider">or</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} noValidate className="space-y-3.5">
+          <Input
+            label="Full name"
+            placeholder="Your full name"
+            value={name}
+            onChange={(v) => { setName(v); setError(''); }}
+            error={nameErr}
+            disabled={anyLoading}
+            autoComplete="name"
+          />
+          <Input
+            label="Email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(v) => { setEmail(v); setError(''); }}
+            error={emailErr}
+            disabled={anyLoading}
+            autoComplete="email"
+          />
+          <Input
+            label="Password"
+            type={showPw ? 'text' : 'password'}
+            placeholder="At least 6 characters"
+            value={password}
+            onChange={(v) => { setPassword(v); setError(''); }}
+            error={passErr}
+            disabled={anyLoading}
+            autoComplete="new-password"
+            rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw((v) => !v)} />}
+          />
+          <Input
+            label="Confirm password"
+            type={showPw ? 'text' : 'password'}
+            placeholder="Re-enter your password"
+            value={confirm}
+            onChange={(v) => { setConfirm(v); setError(''); }}
+            error={confirmErr}
+            disabled={anyLoading}
+            autoComplete="new-password"
+          />
 
           <button
-            type="button"
-            onClick={handleGoogle}
+            type="submit"
             disabled={anyLoading}
-            className="mt-5 w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border-2 border-gray-200 bg-white text-[13px] font-semibold text-gray-700 hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="w-full h-11 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/20 mt-1"
           >
-            {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
-            {isGoogleLoading ? 'Signing up…' : 'Continue with Google'}
+            {isLoading ? <><Spinner /> Creating…</> : 'Create account'}
           </button>
-
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
-            <div className="relative flex justify-center">
-              <span className="px-3 bg-white text-[10px] text-gray-400 font-semibold tracking-widest uppercase">or sign up with email</span>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} noValidate className="space-y-3.5">
-            <Field
-              label="Full Name"
-              placeholder="Your full name"
-              value={name}
-              onChange={(v) => { setName(v); setError(''); }}
-              error={nameErr}
-              disabled={anyLoading}
-              autoComplete="name"
-            />
-            <Field
-              label="Email Address"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(v) => { setEmail(v); setError(''); }}
-              error={emailErr}
-              disabled={anyLoading}
-              autoComplete="email"
-            />
-            <Field
-              label="Password"
-              type={showPw ? 'text' : 'password'}
-              placeholder="At least 6 characters"
-              value={password}
-              onChange={(v) => { setPassword(v); setError(''); }}
-              error={passErr}
-              disabled={anyLoading}
-              autoComplete="new-password"
-              rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw((v) => !v)} />}
-            />
-            <Field
-              label="Confirm Password"
-              type={showCf ? 'text' : 'password'}
-              placeholder="Re-enter your password"
-              value={confirm}
-              onChange={(v) => { setConfirm(v); setError(''); }}
-              error={confirmErr}
-              disabled={anyLoading}
-              autoComplete="new-password"
-              rightEl={<EyeToggle show={showCf} onToggle={() => setShowCf((v) => !v)} />}
-            />
-
-            <button
-              type="submit"
-              disabled={anyLoading}
-              className="w-full h-11 rounded-xl bg-[#1f5135] text-white text-[13px] font-semibold flex items-center justify-center gap-2 hover:bg-[#174028] active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-green-900/30"
-            >
-              {isLoading ? <><Spinner /> Creating account…</> : 'Create Account'}
-            </button>
-          </form>
-
-          <p className="mt-5 text-center text-[12px] text-gray-500">
-            Already have an account?{' '}
-            <Link href="/login" className="font-semibold text-[#1f5135] hover:text-[#174028] hover:underline underline-offset-2 transition-colors">
-              Sign in
-            </Link>
-          </p>
-        </div>
+        </form>
       </div>
 
-      <div className="relative z-10 flex-shrink-0" style={{ height: 'clamp(70px, 15vh, 130px)' }}>
-        <GrainBg />
-      </div>
-
-      <div className="relative z-10 flex-shrink-0 text-center pb-3">
-        <p className="text-[10px] text-white/20">© 2026 GrainGuard · All rights reserved</p>
-      </div>
+      <p className="mt-6 text-center text-[13px] text-gray-500">
+        Already have an account?{' '}
+        <Link href="/login" className="font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">
+          Sign in
+        </Link>
+      </p>
     </div>
   );
 }
