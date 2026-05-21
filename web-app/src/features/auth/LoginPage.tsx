@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
-// ─── Validation helpers (pure, outside component) ────────────────────────────
+// ─── Validation ───────────────────────────────────────────────────────────────
 
 function validateEmail(value: string): string {
   if (!value.trim()) return 'Email address is required';
@@ -21,7 +21,7 @@ function validatePassword(value: string): string {
   return '';
 }
 
-// ─── SVG icon primitives ─────────────────────────────────────────────────────
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 function PlantIcon({ className }: { className?: string }) {
   return (
@@ -40,15 +40,6 @@ function HeroPlantIcon({ size = 32 }: { size?: number }) {
       <path d="M16 26V18C13 18 10 15 10 11C13 11 16 14 16 18" fill="#22c55e" />
       <path d="M16 24V16C19 16 22 13 22 9C19 9 16 12 16 16" fill="#4ade80" />
       <path d="M16 27V18" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SunIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="5" />
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
     </svg>
   );
 }
@@ -117,22 +108,6 @@ function EyeOffIcon({ className }: { className?: string }) {
   );
 }
 
-function CloudIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-    </svg>
-  );
-}
-
-function ZapIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
-  );
-}
-
 function AlertCircleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -162,8 +137,6 @@ function GoogleIcon() {
     </svg>
   );
 }
-
-// ─── Grain storage facility silhouette ───────────────────────────────────────
 
 function GrainStorageSVG() {
   return (
@@ -198,407 +171,246 @@ function GrainStorageSVG() {
   );
 }
 
-// ─── Feature highlight item (left panel) ─────────────────────────────────────
-
-interface FeatureItemProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}
-
-function FeatureItem({ icon, title, description }: FeatureItemProps) {
+function FeatureItem({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
     <div className="flex items-start gap-4">
-      <div className="flex-shrink-0 w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
+      <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
         {icon}
       </div>
       <div>
-        <p className="font-semibold text-white text-[15px] leading-snug">{title}</p>
-        <p className="text-green-200/60 text-sm leading-relaxed mt-0.5">{description}</p>
+        <p className="font-semibold text-white text-[14px] leading-snug">{title}</p>
+        <p className="text-green-200/55 text-[13px] leading-relaxed mt-0.5">{description}</p>
       </div>
     </div>
   );
 }
 
-// ─── Footer trust badge ───────────────────────────────────────────────────────
-
-interface FooterBadgeProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}
-
-function FooterBadge({ icon, title, description }: FooterBadgeProps) {
+function FormErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex-shrink-0 w-10 h-10 rounded-full border border-gray-200 bg-gray-50 flex items-center justify-center text-gray-500">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="font-semibold text-gray-800 text-sm">{title}</p>
-        <p className="text-gray-500 text-xs leading-relaxed line-clamp-2">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Form-level error banner ──────────────────────────────────────────────────
-
-interface FormErrorBannerProps {
-  message: string;
-  onDismiss: () => void;
-}
-
-function FormErrorBanner({ message, onDismiss }: FormErrorBannerProps) {
-  return (
-    <div
-      role="alert"
-      className="animate-fade-slide-in flex items-start gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200"
-    >
+    <div role="alert" className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
       <AlertCircleIcon className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
       <p className="flex-1 text-sm font-medium text-red-700 leading-snug">{message}</p>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="text-red-400 hover:text-red-600 transition-colors duration-150 focus-visible:outline-none rounded"
-        aria-label="Dismiss error"
-      >
+      <button type="button" onClick={onDismiss} className="text-red-400 hover:text-red-600 transition-colors duration-150 focus-visible:outline-none rounded" aria-label="Dismiss error">
         <XIcon className="w-4 h-4" />
       </button>
     </div>
   );
 }
 
-// ─── Main page component ──────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function LoginPage() {
   const router = useRouter();
 
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]               = useState('');
+  const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-
-  // ── Touched state — show errors only after the user interacted with a field ─
-  const [touched, setTouched] = useState({ email: false, password: false });
-
-  // ── Loading & error states ───────────────────────────────────────────────────
+  const [rememberMe, setRememberMe]     = useState(true);
+  const [touched, setTouched]           = useState({ email: false, password: false });
   const [isSignInLoading, setIsSignInLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError]       = useState<string | null>(null);
 
-  const anyLoading = isSignInLoading || isGoogleLoading;
-
-  // ── Derived validation ──────────────────────────────────────────────────────
-  const emailError = touched.email ? validateEmail(email) : '';
+  const anyLoading   = isSignInLoading || isGoogleLoading;
+  const emailError   = touched.email    ? validateEmail(email)    : '';
   const passwordError = touched.password ? validatePassword(password) : '';
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
-  const handleSignIn = useCallback(
-    async (e: FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-
-      // Mark all fields as touched so errors show
-      setTouched({ email: true, password: true });
-      setFormError(null);
-
-      // Abort if client-side validation fails
-      if (validateEmail(email) || validatePassword(password)) return;
-
-      setIsSignInLoading(true);
-      // Mock auth delay — replace with Firebase signInWithEmailAndPassword()
-      await new Promise((r) => setTimeout(r, 1200));
-      setIsSignInLoading(false);
-
-      router.push('/dashboard');
-    },
-    [email, password],
-  );
+  const handleSignIn = useCallback(async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setTouched({ email: true, password: true });
+    setFormError(null);
+    if (validateEmail(email) || validatePassword(password)) return;
+    setIsSignInLoading(true);
+    await new Promise((r) => setTimeout(r, 1000));
+    setIsSignInLoading(false);
+    router.push('/dashboard');
+  }, [email, password, router]);
 
   const handleGoogleSignIn = useCallback(async () => {
     setFormError(null);
     setIsGoogleLoading(true);
-    // Mock delay — replace with Firebase signInWithPopup(googleProvider)
-    await new Promise((r) => setTimeout(r, 1200));
+    await new Promise((r) => setTimeout(r, 1000));
     setIsGoogleLoading(false);
-
     router.push('/dashboard');
-  }, []);
+  }, [router]);
 
-  const clearFormError = () => setFormError(null);
-
-  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-gray-50">
 
-      {/* ── Two-column main area ──────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col lg:flex-row">
+      {/* ── Left hero panel ── */}
+      <div className="relative hidden lg:flex lg:w-[42%] xl:w-[40%] flex-col overflow-hidden bg-[#0b1d0e]">
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0b1d0e] via-[#0e2412] to-[#091508]" />
+        <div className="absolute inset-0 bg-gradient-to-tr from-black/40 via-transparent to-green-950/20" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-green-800/10 blur-3xl pointer-events-none" />
 
-        {/* ═══ LEFT HERO PANEL ═══════════════════════════════════════════════ */}
-        <div className="relative hidden lg:flex lg:w-[42%] xl:w-[40%] flex-col overflow-hidden bg-[#0b1d0e]">
-          {/* Layered depth gradients */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0b1d0e] via-[#0e2412] to-[#091508]" />
-          <div className="absolute inset-0 bg-gradient-to-tr from-black/40 via-transparent to-green-950/20" />
-          {/* Radial glow */}
-          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-green-800/10 blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col h-full p-8 xl:p-10 2xl:p-12">
-
-            {/* Brand bar */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <HeroPlantIcon size={34} />
-                <span className="text-white font-bold text-[17px] tracking-tight">
-                  Sense Grain
-                </span>
-              </div>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-white/80 text-xs font-medium hover:bg-white/15 active:bg-white/20 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-              >
-                <SunIcon className="w-3.5 h-3.5" />
-                Light Mode
-              </button>
-            </div>
-
-            {/* Hero headline */}
-            <div className="mt-14 mb-10">
-              <h1 className="text-4xl xl:text-[42px] 2xl:text-5xl font-extrabold leading-[1.08] tracking-tight">
-                <span className="text-green-400">Smart</span>{' '}
-                <span className="text-white">Monitoring.</span>
-                <br />
-                <span className="text-white">Better Storage.</span>
-                <br />
-                <span className="text-white">Healthier Grain.</span>
-              </h1>
-              <p className="mt-5 text-green-100/55 text-[15px] leading-relaxed max-w-[300px]">
-                Real-time environmental monitoring and AI powered insights for
-                smarter grain storage management.
-              </p>
-            </div>
-
-            {/* Feature highlights */}
-            <div className="space-y-5 flex-1">
-              <FeatureItem
-                icon={<ThermometerIcon className="w-5 h-5 text-green-300" />}
-                title="Real-time Monitoring"
-                description="Track temperature, humidity, CO₂ and more in real-time."
-              />
-              <FeatureItem
-                icon={<BarChartIcon className="w-5 h-5 text-green-300" />}
-                title="Smart Analytics"
-                description="Get AI-powered insights and predictive analytics."
-              />
-              <FeatureItem
-                icon={<ShieldIcon className="w-5 h-5 text-green-300" />}
-                title="Secure & Reliable"
-                description="Enterprise grade security for your critical data."
-              />
-            </div>
-
-            {/* Grain facility illustration */}
-            <div className="mt-6 -mb-1 opacity-75">
-              <GrainStorageSVG />
-            </div>
-          </div>
-        </div>
-
-        {/* ═══ RIGHT LOGIN PANEL ══════════════════════════════════════════════ */}
-        <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12 sm:px-8 bg-gray-50">
-
-          {/* Mobile brand header */}
-          <div className="lg:hidden flex items-center gap-2.5 mb-7">
-            <HeroPlantIcon size={38} />
-            <span className="text-[#1f5135] font-bold text-xl tracking-tight">
-              Sense Grain
-            </span>
+        <div className="relative z-10 flex flex-col h-full p-8 xl:p-10">
+          {/* Brand */}
+          <div className="flex items-center gap-2.5">
+            <HeroPlantIcon size={34} />
+            <span className="text-white font-bold text-[17px] tracking-tight">Sense Grain</span>
           </div>
 
-          {/* ── Login card ─────────────────────────────────────────────────── */}
-          <div className="w-full max-w-[440px] bg-white rounded-2xl shadow-xl shadow-black/[0.06] ring-1 ring-black/[0.04] p-6 sm:p-9">
-
-            {/* Card header */}
-            <div className="text-center mb-6 sm:mb-7">
-              <div className="flex justify-center mb-4">
-                <div className="w-[60px] h-[60px] rounded-2xl bg-green-50 flex items-center justify-center ring-1 ring-green-100">
-                  <PlantIcon className="w-9 h-9" />
-                </div>
-              </div>
-              <h2 className="text-[22px] font-bold text-gray-900 tracking-tight">
-                Welcome Back
-              </h2>
-              <p className="mt-1.5 text-sm text-gray-500">
-                Sign in to your Sense Grain account
-              </p>
-            </div>
-
-            {/* ── Auth form ──────────────────────────────────────────────── */}
-            <form onSubmit={handleSignIn} className="space-y-4" noValidate>
-
-              {/* Form-level error banner */}
-              {formError && (
-                <FormErrorBanner message={formError} onDismiss={clearFormError} />
-              )}
-
-              <Input
-                label="Email Address"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (formError) clearFormError();
-                }}
-                onBlur={() => setTouched((t) => ({ ...t, email: true }))}
-                leftIcon={<EnvelopeIcon className="w-[18px] h-[18px]" />}
-                error={emailError}
-                required
-                autoComplete="email"
-                inputMode="email"
-                disabled={anyLoading}
-              />
-
-              <Input
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (formError) clearFormError();
-                }}
-                onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-                leftIcon={<LockIcon className="w-[18px] h-[18px]" />}
-                error={passwordError}
-                rightElement={
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="p-1.5 text-gray-400 hover:text-gray-700 active:text-gray-900 transition-colors duration-150 rounded-lg hover:bg-gray-100 active:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f5135]/40"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword
-                      ? <EyeOffIcon className="w-[18px] h-[18px]" />
-                      : <EyeIcon className="w-[18px] h-[18px]" />
-                    }
-                  </button>
-                }
-                required
-                autoComplete="current-password"
-                disabled={anyLoading}
-              />
-
-              {/* Remember me + Forgot password */}
-              <div className="flex items-center justify-between pt-0.5">
-                <label className="flex items-center gap-2 cursor-pointer select-none group">
-                  <div className="relative flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-4 h-4 border-2 border-gray-300 rounded transition-colors duration-200 flex items-center justify-center peer-checked:bg-[#1f5135] peer-checked:border-[#1f5135] peer-focus-visible:ring-2 peer-focus-visible:ring-[#1f5135]/40 peer-focus-visible:ring-offset-1">
-                      {rememberMe && (
-                        <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                          <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-sm text-gray-600 group-hover:text-gray-800 transition-colors duration-150">
-                    Remember me
-                  </span>
-                </label>
-
-                <Link
-                  href="/forgot-password"
-                  className="text-sm font-semibold text-[#1f5135] hover:text-[#174028] underline-offset-2 hover:underline transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f5135]/40 rounded"
-                >
-                  Forgot Password?
-                </Link>
-              </div>
-
-              {/* Sign In button */}
-              <div className="pt-1">
-                <Button
-                  type="submit"
-                  fullWidth
-                  size="lg"
-                  isLoading={isSignInLoading}
-                  disabled={anyLoading}
-                >
-                  {!isSignInLoading && <LockIcon className="w-[18px] h-[18px]" />}
-                  Sign In
-                </Button>
-              </div>
-            </form>
-
-            {/* OR divider */}
-            <div className="relative my-5">
-              <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                <div className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="px-4 bg-white text-xs text-gray-400 font-semibold tracking-widest uppercase">
-                  or
-                </span>
-              </div>
-            </div>
-
-            {/* Google button */}
-            <Button
-              type="button"
-              variant="outline"
-              fullWidth
-              size="lg"
-              onClick={handleGoogleSignIn}
-              isLoading={isGoogleLoading}
-              disabled={anyLoading}
-            >
-              {!isGoogleLoading && <GoogleIcon />}
-              Continue with Google
-            </Button>
-
-            {/* Sign up link */}
-            <p className="mt-6 text-center text-sm text-gray-500">
-              Don&apos;t have an account?{' '}
-              <Link
-                href="/signup"
-                className="font-semibold text-[#1f5135] hover:text-[#174028] underline-offset-2 hover:underline transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1f5135]/40 rounded"
-              >
-                Sign up
-              </Link>
+          {/* Headline */}
+          <div className="mt-14 mb-10">
+            <h1 className="text-4xl xl:text-[42px] font-extrabold leading-[1.08] tracking-tight">
+              <span className="text-green-400">Smart</span>{' '}
+              <span className="text-white">Monitoring.</span>
+              <br />
+              <span className="text-white">Better Storage.</span>
+              <br />
+              <span className="text-white">Healthier Grain.</span>
+            </h1>
+            <p className="mt-5 text-green-100/50 text-[14px] leading-relaxed max-w-[300px]">
+              Real-time environmental monitoring and AI-powered insights for smarter grain storage management.
             </p>
+          </div>
+
+          {/* Features */}
+          <div className="space-y-5 flex-1">
+            <FeatureItem
+              icon={<ThermometerIcon className="w-5 h-5 text-green-300" />}
+              title="Real-time Monitoring"
+              description="Track temperature, humidity, CO₂ and more in real-time."
+            />
+            <FeatureItem
+              icon={<BarChartIcon className="w-5 h-5 text-green-300" />}
+              title="Smart Analytics"
+              description="AI-powered insights and predictive analytics."
+            />
+            <FeatureItem
+              icon={<ShieldIcon className="w-5 h-5 text-green-300" />}
+              title="Secure & Reliable"
+              description="Enterprise-grade security for your critical data."
+            />
+          </div>
+
+          {/* Illustration */}
+          <div className="mt-6 -mb-1 opacity-70">
+            <GrainStorageSVG />
           </div>
         </div>
       </div>
 
-      {/* ── Footer trust bar ─────────────────────────────────────────────────── */}
-      <div className="bg-white border-t border-gray-100 py-5 px-4 sm:px-8">
-        <div className="max-w-5xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8">
-          <FooterBadge
-            icon={<ShieldIcon className="w-5 h-5" />}
-            title="Secure Login"
-            description="Your data is always protected with enterprise-grade security."
-          />
-          <FooterBadge
-            icon={<CloudIcon className="w-5 h-5" />}
-            title="Cloud Synced"
-            description="Access your data from anywhere in the world."
-          />
-          <FooterBadge
-            icon={<ZapIcon className="w-5 h-5" />}
-            title="Real-time Alerts"
-            description="Get instant notifications for critical conditions."
-          />
-          <FooterBadge
-            icon={<BarChartIcon className="w-5 h-5" />}
-            title="AI Powered"
-            description="Smart predictions and insights for better decisions."
-          />
+      {/* ── Right login panel ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10 sm:px-8 bg-gray-50">
+
+        {/* Mobile brand */}
+        <div className="lg:hidden flex items-center gap-2.5 mb-8">
+          <HeroPlantIcon size={38} />
+          <span className="text-[#1f5135] font-bold text-xl tracking-tight">Sense Grain</span>
         </div>
+
+        {/* Card */}
+        <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-xl shadow-black/[0.06] ring-1 ring-black/[0.04] p-6 sm:p-8">
+
+          {/* Header */}
+          <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center ring-1 ring-green-100">
+                <PlantIcon className="w-8 h-8" />
+              </div>
+            </div>
+            <h2 className="text-[20px] font-bold text-gray-900 tracking-tight">Welcome Back</h2>
+            <p className="mt-1 text-[13px] text-gray-500">Sign in to your Sense Grain account</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSignIn} className="space-y-4" noValidate>
+            {formError && <FormErrorBanner message={formError} onDismiss={() => setFormError(null)} />}
+
+            <Input
+              label="Email Address"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); if (formError) setFormError(null); }}
+              onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+              leftIcon={<EnvelopeIcon className="w-[18px] h-[18px]" />}
+              error={emailError}
+              required
+              autoComplete="email"
+              inputMode="email"
+              disabled={anyLoading}
+            />
+
+            <Input
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); if (formError) setFormError(null); }}
+              onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+              leftIcon={<LockIcon className="w-[18px] h-[18px]" />}
+              error={passwordError}
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="p-1.5 text-gray-400 hover:text-gray-700 transition-colors duration-150 rounded-lg hover:bg-gray-100 focus-visible:outline-none"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOffIcon className="w-[18px] h-[18px]" /> : <EyeIcon className="w-[18px] h-[18px]" />}
+                </button>
+              }
+              required
+              autoComplete="current-password"
+              disabled={anyLoading}
+            />
+
+            {/* Remember me + Forgot password */}
+            <div className="flex items-center justify-between pt-0.5">
+              <label className="flex items-center gap-2 cursor-pointer select-none group">
+                <div className="relative flex items-center">
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="sr-only peer" />
+                  <div className="w-4 h-4 border-2 border-gray-300 rounded transition-colors duration-200 flex items-center justify-center peer-checked:bg-[#1f5135] peer-checked:border-[#1f5135]">
+                    {rememberMe && (
+                      <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <span className="text-[13px] text-gray-600 group-hover:text-gray-800 transition-colors">Remember me</span>
+              </label>
+              <Link href="/forgot-password" className="text-[13px] font-semibold text-[#1f5135] hover:text-[#174028] hover:underline underline-offset-2 transition-all duration-150">
+                Forgot Password?
+              </Link>
+            </div>
+
+            <div className="pt-1">
+              <Button type="submit" fullWidth size="lg" isLoading={isSignInLoading} disabled={anyLoading}>
+                {!isSignInLoading && <LockIcon className="w-[18px] h-[18px]" />}
+                Sign In
+              </Button>
+            </div>
+          </form>
+
+          {/* Divider */}
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="px-4 bg-white text-[11px] text-gray-400 font-semibold tracking-widest uppercase">or</span>
+            </div>
+          </div>
+
+          {/* Google */}
+          <Button type="button" variant="outline" fullWidth size="lg" onClick={handleGoogleSignIn} isLoading={isGoogleLoading} disabled={anyLoading}>
+            {!isGoogleLoading && <GoogleIcon />}
+            Continue with Google
+          </Button>
+
+          {/* Admin contact note */}
+          <p className="mt-5 text-center text-[12px] text-gray-400 leading-relaxed">
+            Need access? Contact your system administrator.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <p className="mt-6 text-[11px] text-gray-400">
+          © 2026 GrainGuard. All rights reserved.
+        </p>
       </div>
     </div>
   );
