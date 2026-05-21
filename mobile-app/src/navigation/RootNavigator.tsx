@@ -1,106 +1,85 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {NavigationContainer} from '@react-navigation/native';
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import {Text} from 'react-native';
 
-import {mobileTheme} from '../theme/tokens';
+import {colors, fontSize} from '../theme/tokens';
+import DashboardScreen from '../screens/dashboard/DashboardScreen';
+import RealtimeMonitorScreen from '../screens/realtime-monitor/RealtimeMonitorScreen';
+import StorageUnitsScreen from '../screens/storage-units/StorageUnitsScreen';
+import AlertsScreen from '../screens/alerts/AlertsScreen';
+import AnalyticsScreen from '../screens/analytics/AnalyticsScreen';
+import PredictionsScreen from '../screens/predictions/PredictionsScreen';
+import ReportsScreen from '../screens/reports/ReportsScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
 
-const grainMetrics = [
-  {label: 'Moisture', value: '-- %', status: 'Waiting for sensor'},
-  {label: 'Temperature', value: '-- C', status: 'No reading yet'},
-  {label: 'Humidity', value: '-- %', status: 'Gateway offline'},
-];
+export type RootTabParamList = {
+  Dashboard: undefined;
+  Monitor: undefined;
+  Storage: undefined;
+  Alerts: undefined;
+  Analytics: undefined;
+  Predictions: undefined;
+  Reports: undefined;
+  Settings: undefined;
+};
+
+const Tab = createBottomTabNavigator<RootTabParamList>();
+
+const tabIcons: Record<string, string> = {
+  Dashboard: '⊞',
+  Monitor: '◉',
+  Storage: '▦',
+  Alerts: '⚠',
+  Analytics: '▲',
+  Predictions: '◈',
+  Reports: '☰',
+  Settings: '⚙',
+};
 
 export function RootNavigator() {
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>Field monitoring</Text>
-        <Text style={styles.title}>{mobileTheme.brandName}</Text>
-        <View style={styles.statusPill}>
-          <Text style={styles.statusLabel}>Current status</Text>
-          <Text style={styles.statusValue}>Offline</Text>
-        </View>
-      </View>
-
-      <View style={styles.grid}>
-        {grainMetrics.map(metric => (
-          <View key={metric.label} style={styles.card}>
-            <Text style={styles.cardLabel}>{metric.label}</Text>
-            <Text style={styles.cardValue}>{metric.value}</Text>
-            <Text style={styles.cardStatus}>{metric.status}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={({route}) => ({
+          tabBarIcon: ({focused}) => (
+            <Text style={{fontSize: 18, color: focused ? colors.primaryLight : colors.textMuted}}>
+              {tabIcons[route.name]}
+            </Text>
+          ),
+          tabBarActiveTintColor: colors.primaryLight,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarStyle: {
+            backgroundColor: colors.surface,
+            borderTopColor: colors.border,
+            height: 60,
+            paddingBottom: 8,
+          },
+          tabBarLabelStyle: {
+            fontSize: fontSize.xs,
+            fontWeight: '600',
+          },
+          headerStyle: {
+            backgroundColor: colors.surface,
+            borderBottomColor: colors.border,
+            borderBottomWidth: 1,
+          },
+          headerTitleStyle: {
+            color: colors.textPrimary,
+            fontSize: fontSize.lg,
+            fontWeight: '700',
+          },
+          headerTintColor: colors.primaryLight,
+        })}>
+        <Tab.Screen name="Dashboard" component={DashboardScreen} />
+        <Tab.Screen name="Monitor" component={RealtimeMonitorScreen} options={{title: 'Monitor'}} />
+        <Tab.Screen name="Storage" component={StorageUnitsScreen} options={{title: 'Storage'}} />
+        <Tab.Screen name="Alerts" component={AlertsScreen} />
+        <Tab.Screen name="Analytics" component={AnalyticsScreen} />
+        <Tab.Screen name="Predictions" component={PredictionsScreen} />
+        <Tab.Screen name="Reports" component={ReportsScreen} />
+        <Tab.Screen name="Settings" component={SettingsScreen} />
+      </Tab.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    padding: mobileTheme.spacing.lg,
-    gap: mobileTheme.spacing.lg,
-  },
-  header: {
-    gap: mobileTheme.spacing.sm,
-  },
-  eyebrow: {
-    color: mobileTheme.colors.accent,
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: mobileTheme.colors.text,
-    fontSize: 34,
-    fontWeight: '800',
-  },
-  statusPill: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: mobileTheme.colors.card,
-    borderColor: mobileTheme.colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: mobileTheme.spacing.sm,
-    marginTop: mobileTheme.spacing.xs,
-    paddingHorizontal: mobileTheme.spacing.md,
-    paddingVertical: mobileTheme.spacing.sm,
-  },
-  statusLabel: {
-    color: mobileTheme.colors.mutedText,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  statusValue: {
-    color: mobileTheme.colors.warning,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  grid: {
-    gap: mobileTheme.spacing.md,
-  },
-  card: {
-    backgroundColor: mobileTheme.colors.card,
-    borderColor: mobileTheme.colors.border,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: mobileTheme.spacing.md,
-  },
-  cardLabel: {
-    color: mobileTheme.colors.mutedText,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cardValue: {
-    color: mobileTheme.colors.text,
-    fontSize: 28,
-    fontWeight: '800',
-    marginTop: mobileTheme.spacing.xs,
-  },
-  cardStatus: {
-    color: mobileTheme.colors.warning,
-    fontSize: 14,
-    marginTop: mobileTheme.spacing.sm,
-  },
-});

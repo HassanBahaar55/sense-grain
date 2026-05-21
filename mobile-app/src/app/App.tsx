@@ -1,24 +1,15 @@
 import React from 'react';
-import {StatusBar, StyleSheet, View} from 'react-native';
+import {StatusBar} from 'react-native';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
 
 import {RootNavigator} from '../navigation/RootNavigator';
-import {mobileTheme} from '../theme/tokens';
+import {colors} from '../theme/tokens';
 
 export default function App() {
   return (
-    <View style={styles.safeArea}>
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor={mobileTheme.colors.background}
-      />
+    <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <RootNavigator />
-    </View>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: mobileTheme.colors.background,
-  },
-});
