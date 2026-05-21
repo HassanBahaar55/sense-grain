@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 function validateEmail(v: string) {
   if (!v.trim()) return 'Email is required';
@@ -106,6 +107,7 @@ function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) 
 
 export default function SignupPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   const [name, setName]         = useState('');
   const [email, setEmail]       = useState('');
@@ -117,52 +119,18 @@ export default function SignupPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError]       = useState('');
 
-  const anyLoading = isLoading || isGoogleLoading;
+  // If already authenticated, go to dashboard
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace('/dashboard');
+    }
+  }, [user, loading, router]);
+
+  const anyLoading = isLoading || isGoogleLoading || loading;
   const nameErr    = touched.name     && !name.trim()                ? 'Name is required'        : '';
   const emailErr   = touched.email    ? validateEmail(email)         : '';
   const passErr    = touched.password ? validatePassword(password)   : '';
   const confirmErr = touched.confirm  && confirm !== password        ? 'Passwords do not match'  : '';
-
-  // Handle Google redirect result on page load
-  useEffect(() => {
-    let cancelled = false;
-    const checkRedirect = async () => {
-      try {
-        const { getAuth, getRedirectResult } = await import('firebase/auth');
-        const app = (await import('@/config/firebase')).default;
-        const auth = getAuth(app);
-
-        if (auth.currentUser) {
-          router.push('/dashboard');
-          return;
-        }
-
-        setIsGoogleLoading(true);
-        const result = await getRedirectResult(auth);
-        if (cancelled) return;
-
-        if (result?.user) {
-          router.push('/dashboard');
-          return;
-        }
-      } catch (err: unknown) {
-        if (cancelled) return;
-        const code = (err as { code?: string }).code ?? '';
-        console.error('[Google Redirect Result Error]', { code, err });
-        if (code === 'auth/unauthorized-domain') {
-          setError('This domain is not authorized for Google sign-in. Please contact support.');
-        } else if (code === 'auth/operation-not-allowed') {
-          setError('Google sign-in is not enabled. Please contact support.');
-        } else if (code && code !== 'auth/null-user') {
-          setError(`Google sign-up failed: ${code}`);
-        }
-      } finally {
-        if (!cancelled) setIsGoogleLoading(false);
-      }
-    };
-    checkRedirect();
-    return () => { cancelled = true; };
-  }, [router]);
 
   const handleGoogle = useCallback(async () => {
     setError('');
@@ -173,14 +141,12 @@ export default function SignupPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithRedirect(getAuth(app), provider);
-      // Page redirects to Google — code below won't run
+      // onAuthStateChanged handles redirect on return
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Google Sign-Up Error]', { code, err });
       if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Google sign-in. Please contact support.');
-      } else if (code === 'auth/popup-blocked') {
-        setError('Popup blocked. Please allow popups and try again.');
+        setError('This domain is not authorized for Google sign-in.');
       } else if (code === 'auth/operation-not-allowed') {
         setError('Google sign-in is not enabled in Firebase Console.');
       } else if (code) {
@@ -202,9 +168,9 @@ export default function SignupPage() {
       const { getAuth, createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
       const app = (await import('@/config/firebase')).default;
       const auth = getAuth(app);
-      const { user } = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateProfile(user, { displayName: name.trim() });
-      router.push('/dashboard');
+      const { user: newUser } = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await updateProfile(newUser, { displayName: name.trim() });
+      // onAuthStateChanged will fire and useEffect above redirects to dashboard
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Sign-Up Error]', { code, err });
@@ -221,10 +187,17 @@ export default function SignupPage() {
       } else {
         setError('Account creation failed. Please try again.');
       }
-    } finally {
       setIsLoading(false);
     }
-  }, [name, email, password, confirm, router]);
+  }, [name, email, password, confirm]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center w-full">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-[420px]">
@@ -254,7 +227,7 @@ export default function SignupPage() {
           className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-gray-200 bg-white text-[14px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
-          {isGoogleLoading ? 'Signing up…' : 'Continue with Google'}
+          {isGoogleLoading ? 'Redirecting to Google…' : 'Continue with Google'}
         </button>
 
         <div className="relative my-5">

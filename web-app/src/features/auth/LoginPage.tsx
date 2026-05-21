@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 function validateEmail(v: string) {
   if (!v.trim()) return 'Email is required';
@@ -106,6 +107,7 @@ function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) 
 
 export function LoginPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
@@ -115,51 +117,16 @@ export function LoginPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError]         = useState('');
 
-  const anyLoading = isEmailLoading || isGoogleLoading;
+  // If already authenticated, go to dashboard immediately
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace('/dashboard');
+    }
+  }, [user, loading, router]);
+
+  const anyLoading = isEmailLoading || isGoogleLoading || loading;
   const emailErr   = touched.email    ? validateEmail(email)       : '';
   const passErr    = touched.password ? validatePassword(password) : '';
-
-  // Handle Google redirect result on page load
-  useEffect(() => {
-    let cancelled = false;
-    const checkRedirect = async () => {
-      try {
-        const { getAuth, getRedirectResult } = await import('firebase/auth');
-        const app = (await import('@/config/firebase')).default;
-        const auth = getAuth(app);
-
-        // If user is already signed in, go to dashboard
-        if (auth.currentUser) {
-          router.push('/dashboard');
-          return;
-        }
-
-        setIsGoogleLoading(true);
-        const result = await getRedirectResult(auth);
-        if (cancelled) return;
-
-        if (result?.user) {
-          router.push('/dashboard');
-          return;
-        }
-      } catch (err: unknown) {
-        if (cancelled) return;
-        const code = (err as { code?: string }).code ?? '';
-        console.error('[Google Redirect Result Error]', { code, err });
-        if (code === 'auth/unauthorized-domain') {
-          setError('This domain is not authorized for Google sign-in. Please contact support.');
-        } else if (code === 'auth/operation-not-allowed') {
-          setError('Google sign-in is not enabled. Please contact support.');
-        } else if (code && code !== 'auth/null-user') {
-          setError(`Google sign-in failed: ${code}`);
-        }
-      } finally {
-        if (!cancelled) setIsGoogleLoading(false);
-      }
-    };
-    checkRedirect();
-    return () => { cancelled = true; };
-  }, [router]);
 
   const handleGoogle = useCallback(async () => {
     setError('');
@@ -170,12 +137,12 @@ export function LoginPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithRedirect(getAuth(app), provider);
-      // Page redirects to Google — code below won't run
+      // Page navigates away — onAuthStateChanged will handle redirect on return
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Google Sign-In Error]', { code, err });
       if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Google sign-in. Please contact support.');
+        setError('This domain is not authorized for Google sign-in.');
       } else if (code === 'auth/operation-not-allowed') {
         setError('Google sign-in is not enabled in Firebase Console.');
       } else if (code === 'auth/network-request-failed') {
@@ -199,7 +166,7 @@ export function LoginPage() {
       const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
       const app = (await import('@/config/firebase')).default;
       await signInWithEmailAndPassword(getAuth(app), email.trim(), password);
-      router.push('/dashboard');
+      // onAuthStateChanged in AuthContext will pick up the new user → useEffect above redirects
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Email Sign-In Error]', { code, err });
@@ -217,7 +184,16 @@ export function LoginPage() {
     } finally {
       setIsEmailLoading(false);
     }
-  }, [email, password, router]);
+  }, [email, password]);
+
+  // Show nothing while checking auth state (avoids flash of login page for logged-in users)
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center w-full">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-[420px]">
@@ -247,7 +223,7 @@ export function LoginPage() {
           className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-gray-200 bg-white text-[14px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
-          {isGoogleLoading ? 'Signing in…' : 'Continue with Google'}
+          {isGoogleLoading ? 'Redirecting to Google…' : 'Continue with Google'}
         </button>
 
         <div className="relative my-5">
