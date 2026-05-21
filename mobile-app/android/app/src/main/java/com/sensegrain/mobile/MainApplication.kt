@@ -1,4 +1,4 @@
-package com.sensegrainmobile
+package com.sensegrain.mobile
 
 import android.app.Application
 import com.facebook.react.PackageList
