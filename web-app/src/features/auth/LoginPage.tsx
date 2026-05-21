@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, type FormEvent } from 'react';
+import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -119,26 +119,63 @@ export function LoginPage() {
   const emailErr   = touched.email    ? validateEmail(email)       : '';
   const passErr    = touched.password ? validatePassword(password) : '';
 
+  // Handle Google redirect result on page load
+  useEffect(() => {
+    let cancelled = false;
+    const checkRedirect = async () => {
+      try {
+        const { getAuth, getRedirectResult } = await import('firebase/auth');
+        const app = (await import('@/config/firebase')).default;
+        const auth = getAuth(app);
+
+        // If user is already signed in, go to dashboard
+        if (auth.currentUser) {
+          router.push('/dashboard');
+          return;
+        }
+
+        setIsGoogleLoading(true);
+        const result = await getRedirectResult(auth);
+        if (cancelled) return;
+
+        if (result?.user) {
+          router.push('/dashboard');
+          return;
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const code = (err as { code?: string }).code ?? '';
+        console.error('[Google Redirect Result Error]', { code, err });
+        if (code === 'auth/unauthorized-domain') {
+          setError('This domain is not authorized for Google sign-in. Please contact support.');
+        } else if (code === 'auth/operation-not-allowed') {
+          setError('Google sign-in is not enabled. Please contact support.');
+        } else if (code && code !== 'auth/null-user') {
+          setError(`Google sign-in failed: ${code}`);
+        }
+      } finally {
+        if (!cancelled) setIsGoogleLoading(false);
+      }
+    };
+    checkRedirect();
+    return () => { cancelled = true; };
+  }, [router]);
+
   const handleGoogle = useCallback(async () => {
     setError('');
     setIsGoogleLoading(true);
     try {
-      const { getAuth, signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const { getAuth, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
       const app = (await import('@/config/firebase')).default;
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(getAuth(app), provider);
-      router.push('/dashboard');
+      await signInWithRedirect(getAuth(app), provider);
+      // Page redirects to Google — code below won't run
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
-      const message = (err as { message?: string }).message ?? '';
-      console.error('[Google Sign-In Error]', { code, message, err });
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        // user dismissed
-      } else if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized in Firebase. Add it to authorized domains.');
-      } else if (code === 'auth/popup-blocked') {
-        setError('Popup blocked. Please allow popups and try again.');
+      console.error('[Google Sign-In Error]', { code, err });
+      if (code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for Google sign-in. Please contact support.');
       } else if (code === 'auth/operation-not-allowed') {
         setError('Google sign-in is not enabled in Firebase Console.');
       } else if (code === 'auth/network-request-failed') {
@@ -146,12 +183,11 @@ export function LoginPage() {
       } else if (code) {
         setError(`Sign-in failed: ${code}`);
       } else {
-        setError('Google sign-in failed. Please try again or use email below.');
+        setError('Google sign-in failed. Please try again.');
       }
-    } finally {
       setIsGoogleLoading(false);
     }
-  }, [router]);
+  }, []);
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
@@ -189,13 +225,11 @@ export function LoginPage() {
 
       <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 p-7 sm:p-8">
 
-        {/* Heading */}
         <div className="text-center mb-6">
           <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Welcome back</h1>
           <p className="text-[13px] text-gray-500 mt-1">Sign in to continue to your dashboard</p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-5">
             <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -206,7 +240,6 @@ export function LoginPage() {
           </div>
         )}
 
-        {/* Google */}
         <button
           type="button"
           onClick={handleGoogle}
@@ -217,7 +250,6 @@ export function LoginPage() {
           {isGoogleLoading ? 'Signing in…' : 'Continue with Google'}
         </button>
 
-        {/* Divider */}
         <div className="relative my-5">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
           <div className="relative flex justify-center">
@@ -225,7 +257,6 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <Input
             label="Email"

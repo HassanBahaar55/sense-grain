@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, type FormEvent } from 'react';
+import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -123,23 +123,62 @@ export default function SignupPage() {
   const passErr    = touched.password ? validatePassword(password)   : '';
   const confirmErr = touched.confirm  && confirm !== password        ? 'Passwords do not match'  : '';
 
+  // Handle Google redirect result on page load
+  useEffect(() => {
+    let cancelled = false;
+    const checkRedirect = async () => {
+      try {
+        const { getAuth, getRedirectResult } = await import('firebase/auth');
+        const app = (await import('@/config/firebase')).default;
+        const auth = getAuth(app);
+
+        if (auth.currentUser) {
+          router.push('/dashboard');
+          return;
+        }
+
+        setIsGoogleLoading(true);
+        const result = await getRedirectResult(auth);
+        if (cancelled) return;
+
+        if (result?.user) {
+          router.push('/dashboard');
+          return;
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const code = (err as { code?: string }).code ?? '';
+        console.error('[Google Redirect Result Error]', { code, err });
+        if (code === 'auth/unauthorized-domain') {
+          setError('This domain is not authorized for Google sign-in. Please contact support.');
+        } else if (code === 'auth/operation-not-allowed') {
+          setError('Google sign-in is not enabled. Please contact support.');
+        } else if (code && code !== 'auth/null-user') {
+          setError(`Google sign-up failed: ${code}`);
+        }
+      } finally {
+        if (!cancelled) setIsGoogleLoading(false);
+      }
+    };
+    checkRedirect();
+    return () => { cancelled = true; };
+  }, [router]);
+
   const handleGoogle = useCallback(async () => {
     setError('');
     setIsGoogleLoading(true);
     try {
-      const { getAuth, signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const { getAuth, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
       const app = (await import('@/config/firebase')).default;
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(getAuth(app), provider);
-      router.push('/dashboard');
+      await signInWithRedirect(getAuth(app), provider);
+      // Page redirects to Google — code below won't run
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Google Sign-Up Error]', { code, err });
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        // dismissed
-      } else if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized in Firebase.');
+      if (code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for Google sign-in. Please contact support.');
       } else if (code === 'auth/popup-blocked') {
         setError('Popup blocked. Please allow popups and try again.');
       } else if (code === 'auth/operation-not-allowed') {
@@ -149,10 +188,9 @@ export default function SignupPage() {
       } else {
         setError('Google sign-up failed. Please try again.');
       }
-    } finally {
       setIsGoogleLoading(false);
     }
-  }, [router]);
+  }, []);
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
