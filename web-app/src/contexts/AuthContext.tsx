@@ -18,9 +18,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let unsubscribe: (() => void) | undefined;
 
     const init = async () => {
-      const { getAuth, onAuthStateChanged } = await import('firebase/auth');
+      const { getAuth, onAuthStateChanged, getRedirectResult } = await import('firebase/auth');
       const app = (await import('@/config/firebase')).default;
-      unsubscribe = onAuthStateChanged(getAuth(app), (firebaseUser) => {
+      const auth = getAuth(app);
+
+      // Process any pending Google redirect first — this is required for signInWithRedirect to complete
+      try {
+        await getRedirectResult(auth);
+      } catch (err) {
+        console.error('[getRedirectResult error]', err);
+      }
+
+      // Now listen — fires immediately with current user (including the one just set by redirect)
+      unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
         setUser(firebaseUser);
         setLoading(false);
       });

@@ -69,7 +69,7 @@ function Input({
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           autoComplete={autoComplete}
-          className={`w-full h-11 px-3.5 rounded-xl border bg-white text-[14px] text-gray-900 placeholder:text-gray-400 outline-none transition-all duration-150 disabled:opacity-50 disabled:bg-gray-50 ${
+          className={`w-full h-10 px-3.5 rounded-xl border bg-white text-[13.5px] text-gray-900 placeholder:text-gray-400 outline-none transition-all duration-150 disabled:opacity-50 disabled:bg-gray-50 ${
             error
               ? 'border-red-300 focus:border-red-400 focus:ring-4 focus:ring-red-50'
               : 'border-gray-200 hover:border-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50'
@@ -201,21 +201,30 @@ export default function SignupPage() {
 
   return (
     <div className="w-full max-w-[420px]">
-      <Logo />
+      <div className="flex flex-col items-center mb-4">
+        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 flex items-center justify-center shadow-lg shadow-emerald-900/20 mb-2">
+          <svg className="w-6 h-6" viewBox="0 0 32 32" fill="none">
+            <path d="M16 26V18C13 18 10 15 10 11C13 11 16 14 16 18" fill="#a7f3d0" />
+            <path d="M16 24V16C19 16 22 13 22 9C19 9 16 12 16 16" fill="#d1fae5" />
+            <path d="M16 27V18" stroke="#a7f3d0" strokeWidth="2.5" strokeLinecap="round" />
+          </svg>
+        </div>
+        <span className="text-[14px] font-bold text-gray-900 tracking-tight">Sense Grain</span>
+      </div>
 
-      <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 p-7 sm:p-8">
+      <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 p-5">
 
-        <div className="text-center mb-6">
-          <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Create your account</h1>
-          <p className="text-[13px] text-gray-500 mt-1">Get started with Sense Grain</p>
+        <div className="text-center mb-4">
+          <h1 className="text-[20px] font-bold text-gray-900 tracking-tight">Create your account</h1>
+          <p className="text-[12px] text-gray-500 mt-0.5">Get started with Sense Grain</p>
         </div>
 
         {error && (
-          <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-5">
+          <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-200 mb-3">
             <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
+            <p className="text-[12px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
             <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 text-lg leading-none -mt-1">&times;</button>
           </div>
         )}
@@ -224,20 +233,20 @@ export default function SignupPage() {
           type="button"
           onClick={handleGoogle}
           disabled={anyLoading}
-          className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-gray-200 bg-white text-[14px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-gray-200 bg-white text-[13.5px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
           {isGoogleLoading ? 'Redirecting to Google…' : 'Continue with Google'}
         </button>
 
-        <div className="relative my-5">
+        <div className="relative my-3">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
           <div className="relative flex justify-center">
             <span className="px-3 bg-white text-[11px] text-gray-400 font-medium uppercase tracking-wider">or</span>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-3.5">
+        <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
           <Input
             label="Full name"
             placeholder="Your full name"
@@ -282,14 +291,14 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={anyLoading}
-            className="w-full h-11 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/20 mt-1"
+            className="w-full h-10 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13.5px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/20"
           >
             {isLoading ? <><Spinner /> Creating…</> : 'Create account'}
           </button>
         </form>
       </div>
 
-      <p className="mt-6 text-center text-[13px] text-gray-500">
+      <p className="mt-4 text-center text-[13px] text-gray-500">
         Already have an account?{' '}
         <Link href="/login" className="font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">
           Sign in
