@@ -54,6 +54,9 @@ mobile-app/*.mobileprovision
 web-app/.next/
 web-app/out/
 
+# Claude Code memory (local only)
+.claude/
+
 # OS and editor files
 .DS_Store
 Thumbs.db
