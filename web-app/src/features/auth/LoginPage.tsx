@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { getAuth, signInWithRedirect, signInWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
+import firebaseApp from '@/config/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 
 function validateEmail(v: string) {
@@ -107,51 +109,39 @@ function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) 
 
 export function LoginPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, redirectError } = useAuth();
 
-  const [email, setEmail]         = useState('');
-  const [password, setPassword]   = useState('');
-  const [showPw, setShowPw]       = useState(false);
-  const [touched, setTouched]     = useState({ email: false, password: false });
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw]     = useState(false);
+  const [touched, setTouched]   = useState({ email: false, password: false });
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [error, setError]         = useState('');
+  const [error, setError]       = useState('');
 
-  // If already authenticated, go to dashboard immediately
   useEffect(() => {
     if (!loading && user) {
       router.replace('/dashboard');
     }
   }, [user, loading, router]);
 
-  const anyLoading = isEmailLoading || isGoogleLoading || loading;
-  const emailErr   = touched.email    ? validateEmail(email)       : '';
-  const passErr    = touched.password ? validatePassword(password) : '';
+  const displayError = redirectError || error;
+  const anyLoading   = isEmailLoading || isGoogleLoading || loading;
+  const emailErr     = touched.email    ? validateEmail(email)       : '';
+  const passErr      = touched.password ? validatePassword(password) : '';
 
   const handleGoogle = useCallback(async () => {
     setError('');
     setIsGoogleLoading(true);
     try {
-      const { getAuth, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
-      const app = (await import('@/config/firebase')).default;
+      const auth     = getAuth(firebaseApp);
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithRedirect(getAuth(app), provider);
-      // Page navigates away — onAuthStateChanged will handle redirect on return
+      await signInWithRedirect(auth, provider);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Google Sign-In Error]', { code, err });
-      if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Google sign-in.');
-      } else if (code === 'auth/operation-not-allowed') {
-        setError('Google sign-in is not enabled in Firebase Console.');
-      } else if (code === 'auth/network-request-failed') {
-        setError('Network error. Check your connection.');
-      } else if (code) {
-        setError(`Sign-in failed: ${code}`);
-      } else {
-        setError('Google sign-in failed. Please try again.');
-      }
+      setError(code ? `Sign-in failed: ${code}` : 'Google sign-in failed. Please try again.');
       setIsGoogleLoading(false);
     }
   }, []);
@@ -163,10 +153,8 @@ export function LoginPage() {
     if (validateEmail(email) || validatePassword(password)) return;
     setIsEmailLoading(true);
     try {
-      const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
-      const app = (await import('@/config/firebase')).default;
-      await signInWithEmailAndPassword(getAuth(app), email.trim(), password);
-      // onAuthStateChanged in AuthContext will pick up the new user → useEffect above redirects
+      const auth = getAuth(firebaseApp);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Email Sign-In Error]', { code, err });
@@ -186,7 +174,6 @@ export function LoginPage() {
     }
   }, [email, password]);
 
-  // Show nothing while checking auth state (avoids flash of login page for logged-in users)
   if (loading) {
     return (
       <div className="flex items-center justify-center w-full">
@@ -206,12 +193,12 @@ export function LoginPage() {
           <p className="text-[13px] text-gray-500 mt-1">Sign in to continue to your dashboard</p>
         </div>
 
-        {error && (
+        {displayError && (
           <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-5">
             <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
+            <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{displayError}</p>
             <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 text-lg leading-none -mt-1">&times;</button>
           </div>
         )}
@@ -244,7 +231,6 @@ export function LoginPage() {
             disabled={anyLoading}
             autoComplete="email"
           />
-
           <Input
             label="Password"
             type={showPw ? 'text' : 'password'}
@@ -256,16 +242,11 @@ export function LoginPage() {
             autoComplete="current-password"
             rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw((v) => !v)} />}
           />
-
           <div className="flex justify-end -mt-1">
-            <Link
-              href="/forgot-password"
-              className="text-[12.5px] font-semibold text-emerald-700 hover:text-emerald-800 transition-colors"
-            >
+            <Link href="/forgot-password" className="text-[12.5px] font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">
               Forgot password?
             </Link>
           </div>
-
           <button
             type="submit"
             disabled={anyLoading}
