@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { getAuth, signInWithPopup, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider } from 'firebase/auth';
+import firebaseApp from '@/config/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 
 function validateEmail(v: string) {
@@ -14,21 +16,6 @@ function validatePassword(v: string) {
   if (!v) return 'Password is required';
   if (v.length < 6) return 'Must be at least 6 characters';
   return '';
-}
-
-function Logo() {
-  return (
-    <div className="flex flex-col items-center mb-6">
-      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 flex items-center justify-center shadow-lg shadow-emerald-900/20 mb-3">
-        <svg className="w-7 h-7" viewBox="0 0 32 32" fill="none">
-          <path d="M16 26V18C13 18 10 15 10 11C13 11 16 14 16 18" fill="#a7f3d0" />
-          <path d="M16 24V16C19 16 22 13 22 9C19 9 16 12 16 16" fill="#d1fae5" />
-          <path d="M16 27V18" stroke="#a7f3d0" strokeWidth="2.5" strokeLinecap="round" />
-        </svg>
-      </div>
-      <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">Sense Grain</h2>
-    </div>
-  );
 }
 
 function GoogleIcon() {
@@ -60,35 +47,26 @@ function Input({
 }) {
   return (
     <div>
-      <label className="block text-[13px] font-semibold text-gray-800 mb-1.5">{label}</label>
+      <label className="block text-[12px] font-semibold text-gray-800 mb-1">{label}</label>
       <div className="relative">
-        <input
-          type={type}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          autoComplete={autoComplete}
+        <input type={type} placeholder={placeholder} value={value}
+          onChange={(e) => onChange(e.target.value)} disabled={disabled} autoComplete={autoComplete}
           className={`w-full h-10 px-3.5 rounded-xl border bg-white text-[13.5px] text-gray-900 placeholder:text-gray-400 outline-none transition-all duration-150 disabled:opacity-50 disabled:bg-gray-50 ${
-            error
-              ? 'border-red-300 focus:border-red-400 focus:ring-4 focus:ring-red-50'
-              : 'border-gray-200 hover:border-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50'
+            error ? 'border-red-300 focus:border-red-400 focus:ring-4 focus:ring-red-50'
+                  : 'border-gray-200 hover:border-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-50'
           } ${rightEl ? 'pr-11' : ''}`}
         />
         {rightEl && <div className="absolute right-1 top-1/2 -translate-y-1/2">{rightEl}</div>}
       </div>
-      {error && <p className="mt-1 text-[12px] text-red-600 font-medium">{error}</p>}
+      {error && <p className="mt-0.5 text-[11px] text-red-600 font-medium">{error}</p>}
     </div>
   );
 }
 
 function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
+    <button type="button" onClick={onToggle} tabIndex={-1}
       className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-      tabIndex={-1}
       aria-label={show ? 'Hide password' : 'Show password'}
     >
       {show ? (
@@ -115,11 +93,10 @@ export default function SignupPage() {
   const [confirm, setConfirm]   = useState('');
   const [showPw, setShowPw]     = useState(false);
   const [touched, setTouched]   = useState({ name: false, email: false, password: false, confirm: false });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading]       = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError]       = useState('');
 
-  // If already authenticated, go to dashboard
   useEffect(() => {
     if (!loading && user) {
       router.replace('/dashboard');
@@ -127,33 +104,40 @@ export default function SignupPage() {
   }, [user, loading, router]);
 
   const anyLoading = isLoading || isGoogleLoading || loading;
-  const nameErr    = touched.name     && !name.trim()                ? 'Name is required'        : '';
-  const emailErr   = touched.email    ? validateEmail(email)         : '';
-  const passErr    = touched.password ? validatePassword(password)   : '';
-  const confirmErr = touched.confirm  && confirm !== password        ? 'Passwords do not match'  : '';
+  const nameErr    = touched.name     && !name.trim()         ? 'Name is required'       : '';
+  const emailErr   = touched.email    ? validateEmail(email)  : '';
+  const passErr    = touched.password ? validatePassword(password) : '';
+  const confirmErr = touched.confirm  && confirm !== password  ? 'Passwords do not match' : '';
 
   const handleGoogle = useCallback(async () => {
     setError('');
     setIsGoogleLoading(true);
     try {
-      const { getAuth, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
-      const app = (await import('@/config/firebase')).default;
+      const auth     = getAuth(firebaseApp);
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithRedirect(getAuth(app), provider);
-      // onAuthStateChanged handles redirect on return
+      const result = await signInWithPopup(auth, provider);
+      console.log('[Google Sign-Up] Success:', result.user.email);
+      // onAuthStateChanged fires → useEffect redirects to dashboard
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
-      console.error('[Google Sign-Up Error]', { code, err });
-      if (code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for Google sign-in.');
+      console.error('[Google Sign-Up Error]', code, err);
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // user closed popup
+      } else if (code === 'auth/popup-blocked') {
+        setError('Popup was blocked. Please allow popups for this site and try again.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setError('Domain not authorized. Please contact support.');
       } else if (code === 'auth/operation-not-allowed') {
-        setError('Google sign-in is not enabled in Firebase Console.');
+        setError('Google sign-in is not enabled. Please contact support.');
+      } else if (code === 'auth/network-request-failed') {
+        setError('Network error. Check your connection.');
       } else if (code) {
-        setError(`Sign-up failed: ${code}`);
+        setError(`Sign-up failed (${code}). Please try again.`);
       } else {
         setError('Google sign-up failed. Please try again.');
       }
+    } finally {
       setIsGoogleLoading(false);
     }
   }, []);
@@ -165,23 +149,19 @@ export default function SignupPage() {
     if (!name.trim() || validateEmail(email) || validatePassword(password) || confirm !== password) return;
     setIsLoading(true);
     try {
-      const { getAuth, createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
-      const app = (await import('@/config/firebase')).default;
-      const auth = getAuth(app);
+      const auth = getAuth(firebaseApp);
       const { user: newUser } = await createUserWithEmailAndPassword(auth, email.trim(), password);
       await updateProfile(newUser, { displayName: name.trim() });
-      // onAuthStateChanged will fire and useEffect above redirects to dashboard
+      // onAuthStateChanged fires → useEffect redirects to dashboard
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
-      console.error('[Sign-Up Error]', { code, err });
+      console.error('[Sign-Up Error]', code, err);
       if (code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists. Try signing in.');
+        setError('An account with this email already exists. Try signing in instead.');
       } else if (code === 'auth/invalid-email') {
         setError('Invalid email address.');
       } else if (code === 'auth/weak-password') {
         setError('Password is too weak. Use at least 6 characters.');
-      } else if (code === 'auth/operation-not-allowed') {
-        setError('Email sign-up is not enabled in Firebase Console.');
       } else if (code === 'auth/network-request-failed') {
         setError('Network error. Check your connection.');
       } else {
@@ -192,15 +172,11 @@ export default function SignupPage() {
   }, [name, email, password, confirm]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center w-full">
-        <Spinner />
-      </div>
-    );
+    return <div className="flex items-center justify-center w-full"><Spinner /></div>;
   }
 
   return (
-    <div className="w-full max-w-[420px]">
+    <div className="w-full max-w-[400px]">
       <div className="flex flex-col items-center mb-4">
         <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 flex items-center justify-center shadow-lg shadow-emerald-900/20 mb-2">
           <svg className="w-6 h-6" viewBox="0 0 32 32" fill="none">
@@ -212,8 +188,7 @@ export default function SignupPage() {
         <span className="text-[14px] font-bold text-gray-900 tracking-tight">Sense Grain</span>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 p-5">
-
+      <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 px-6 py-5">
         <div className="text-center mb-4">
           <h1 className="text-[20px] font-bold text-gray-900 tracking-tight">Create your account</h1>
           <p className="text-[12px] text-gray-500 mt-0.5">Get started with Sense Grain</p>
@@ -229,17 +204,14 @@ export default function SignupPage() {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={anyLoading}
-          className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-gray-200 bg-white text-[13.5px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+        <button type="button" onClick={handleGoogle} disabled={anyLoading}
+          className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-gray-200 bg-white text-[13.5px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed mb-3"
         >
           {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
-          {isGoogleLoading ? 'Redirecting to Google…' : 'Continue with Google'}
+          {isGoogleLoading ? 'Opening Google…' : 'Continue with Google'}
         </button>
 
-        <div className="relative my-3">
+        <div className="relative mb-3">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
           <div className="relative flex justify-center">
             <span className="px-3 bg-white text-[11px] text-gray-400 font-medium uppercase tracking-wider">or</span>
@@ -247,50 +219,20 @@ export default function SignupPage() {
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-2.5">
-          <Input
-            label="Full name"
-            placeholder="Your full name"
-            value={name}
-            onChange={(v) => { setName(v); setError(''); }}
-            error={nameErr}
-            disabled={anyLoading}
-            autoComplete="name"
-          />
-          <Input
-            label="Email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(v) => { setEmail(v); setError(''); }}
-            error={emailErr}
-            disabled={anyLoading}
-            autoComplete="email"
-          />
-          <Input
-            label="Password"
-            type={showPw ? 'text' : 'password'}
-            placeholder="At least 6 characters"
-            value={password}
-            onChange={(v) => { setPassword(v); setError(''); }}
-            error={passErr}
-            disabled={anyLoading}
-            autoComplete="new-password"
-            rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw((v) => !v)} />}
-          />
-          <Input
-            label="Confirm password"
-            type={showPw ? 'text' : 'password'}
-            placeholder="Re-enter your password"
-            value={confirm}
-            onChange={(v) => { setConfirm(v); setError(''); }}
-            error={confirmErr}
-            disabled={anyLoading}
-            autoComplete="new-password"
-          />
-
-          <button
-            type="submit"
-            disabled={anyLoading}
+          <Input label="Full name" placeholder="Your full name" value={name}
+            onChange={(v) => { setName(v); setError(''); }} error={nameErr}
+            disabled={anyLoading} autoComplete="name" />
+          <Input label="Email" type="email" placeholder="you@example.com" value={email}
+            onChange={(v) => { setEmail(v); setError(''); }} error={emailErr}
+            disabled={anyLoading} autoComplete="email" />
+          <Input label="Password" type={showPw ? 'text' : 'password'} placeholder="At least 6 characters"
+            value={password} onChange={(v) => { setPassword(v); setError(''); }} error={passErr}
+            disabled={anyLoading} autoComplete="new-password"
+            rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw(v => !v)} />} />
+          <Input label="Confirm password" type={showPw ? 'text' : 'password'} placeholder="Re-enter your password"
+            value={confirm} onChange={(v) => { setConfirm(v); setError(''); }} error={confirmErr}
+            disabled={anyLoading} autoComplete="new-password" />
+          <button type="submit" disabled={anyLoading}
             className="w-full h-10 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13.5px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/20"
           >
             {isLoading ? <><Spinner /> Creating…</> : 'Create account'}
@@ -300,9 +242,7 @@ export default function SignupPage() {
 
       <p className="mt-4 text-center text-[13px] text-gray-500">
         Already have an account?{' '}
-        <Link href="/login" className="font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">
-          Sign in
-        </Link>
+        <Link href="/login" className="font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">Sign in</Link>
       </p>
     </div>
   );

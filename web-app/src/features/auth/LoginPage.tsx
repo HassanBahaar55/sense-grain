@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getAuth, signInWithRedirect, signInWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, signInWithPopup, signInWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
 import firebaseApp from '@/config/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -86,12 +86,9 @@ function Input({
 
 function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
+    <button type="button" onClick={onToggle}
       className="w-9 h-9 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-      tabIndex={-1}
-      aria-label={show ? 'Hide password' : 'Show password'}
+      tabIndex={-1} aria-label={show ? 'Hide password' : 'Show password'}
     >
       {show ? (
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -109,7 +106,7 @@ function EyeToggle({ show, onToggle }: { show: boolean; onToggle: () => void }) 
 
 export function LoginPage() {
   const router = useRouter();
-  const { user, loading, redirectError } = useAuth();
+  const { user, loading } = useAuth();
 
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -119,16 +116,16 @@ export function LoginPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError]       = useState('');
 
+  // When auth state resolves and user is logged in, go to dashboard
   useEffect(() => {
     if (!loading && user) {
       router.replace('/dashboard');
     }
   }, [user, loading, router]);
 
-  const displayError = redirectError || error;
-  const anyLoading   = isEmailLoading || isGoogleLoading || loading;
-  const emailErr     = touched.email    ? validateEmail(email)       : '';
-  const passErr      = touched.password ? validatePassword(password) : '';
+  const anyLoading = isEmailLoading || isGoogleLoading || loading;
+  const emailErr   = touched.email    ? validateEmail(email)       : '';
+  const passErr    = touched.password ? validatePassword(password) : '';
 
   const handleGoogle = useCallback(async () => {
     setError('');
@@ -137,11 +134,28 @@ export function LoginPage() {
       const auth     = getAuth(firebaseApp);
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithRedirect(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      // signInWithPopup resolves directly — onAuthStateChanged fires → useEffect redirects
+      console.log('[Google Sign-In] Success:', result.user.email);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
-      console.error('[Google Sign-In Error]', { code, err });
-      setError(code ? `Sign-in failed: ${code}` : 'Google sign-in failed. Please try again.');
+      console.error('[Google Sign-In Error]', code, err);
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // user closed popup — no message needed
+      } else if (code === 'auth/popup-blocked') {
+        setError('Popup was blocked by your browser. Please allow popups for this site and try again.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setError('Domain not authorized. Please contact support.');
+      } else if (code === 'auth/operation-not-allowed') {
+        setError('Google sign-in is not enabled. Please contact support.');
+      } else if (code === 'auth/network-request-failed') {
+        setError('Network error. Check your connection and try again.');
+      } else if (code) {
+        setError(`Sign-in failed (${code}). Please try again.`);
+      } else {
+        setError('Google sign-in failed. Please try again.');
+      }
+    } finally {
       setIsGoogleLoading(false);
     }
   }, []);
@@ -157,17 +171,17 @@ export function LoginPage() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
-      console.error('[Email Sign-In Error]', { code, err });
+      console.error('[Email Sign-In Error]', code, err);
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         setError('Incorrect email or password. Please try again.');
       } else if (code === 'auth/too-many-requests') {
-        setError('Too many failed attempts. Please wait and try again.');
+        setError('Too many failed attempts. Please wait a moment and try again.');
       } else if (code === 'auth/user-disabled') {
         setError('This account has been disabled.');
       } else if (code === 'auth/network-request-failed') {
         setError('Network error. Check your connection.');
       } else {
-        setError('Sign-in failed. Please try again.');
+        setError(`Sign-in failed. Please try again.`);
       }
     } finally {
       setIsEmailLoading(false);
@@ -185,32 +199,27 @@ export function LoginPage() {
   return (
     <div className="w-full max-w-[420px]">
       <Logo />
-
       <div className="bg-white rounded-2xl shadow-xl shadow-emerald-900/[0.04] ring-1 ring-gray-200/80 p-7 sm:p-8">
-
         <div className="text-center mb-6">
           <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Welcome back</h1>
           <p className="text-[13px] text-gray-500 mt-1">Sign in to continue to your dashboard</p>
         </div>
 
-        {displayError && (
+        {error && (
           <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-5">
             <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{displayError}</p>
+            <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
             <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 text-lg leading-none -mt-1">&times;</button>
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={anyLoading}
+        <button type="button" onClick={handleGoogle} disabled={anyLoading}
           className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl border border-gray-200 bg-white text-[14px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isGoogleLoading ? <Spinner /> : <GoogleIcon />}
-          {isGoogleLoading ? 'Redirecting to Google…' : 'Continue with Google'}
+          {isGoogleLoading ? 'Opening Google…' : 'Continue with Google'}
         </button>
 
         <div className="relative my-5">
@@ -221,47 +230,28 @@ export function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          <Input
-            label="Email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(v) => { setEmail(v); setError(''); }}
-            error={emailErr}
-            disabled={anyLoading}
-            autoComplete="email"
-          />
-          <Input
-            label="Password"
-            type={showPw ? 'text' : 'password'}
-            placeholder="Enter your password"
-            value={password}
-            onChange={(v) => { setPassword(v); setError(''); }}
-            error={passErr}
-            disabled={anyLoading}
-            autoComplete="current-password"
-            rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw((v) => !v)} />}
-          />
+          <Input label="Email" type="email" placeholder="you@example.com" value={email}
+            onChange={(v) => { setEmail(v); setError(''); }} error={emailErr}
+            disabled={anyLoading} autoComplete="email" />
+          <Input label="Password" type={showPw ? 'text' : 'password'} placeholder="Enter your password"
+            value={password} onChange={(v) => { setPassword(v); setError(''); }} error={passErr}
+            disabled={anyLoading} autoComplete="current-password"
+            rightEl={<EyeToggle show={showPw} onToggle={() => setShowPw(v => !v)} />} />
           <div className="flex justify-end -mt-1">
             <Link href="/forgot-password" className="text-[12.5px] font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">
               Forgot password?
             </Link>
           </div>
-          <button
-            type="submit"
-            disabled={anyLoading}
+          <button type="submit" disabled={anyLoading}
             className="w-full h-11 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/20"
           >
             {isEmailLoading ? <><Spinner /> Signing in…</> : 'Sign in'}
           </button>
         </form>
       </div>
-
       <p className="mt-6 text-center text-[13px] text-gray-500">
         Don&apos;t have an account?{' '}
-        <Link href="/signup" className="font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">
-          Sign up
-        </Link>
+        <Link href="/signup" className="font-semibold text-emerald-700 hover:text-emerald-800 transition-colors">Sign up</Link>
       </p>
     </div>
   );
