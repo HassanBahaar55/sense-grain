@@ -10,6 +10,7 @@ import {
 } from './mockData';
 import { useReportsData, type ReportItem } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -364,6 +365,7 @@ function GenerateModal({ onClose, onGenerate }: { onClose: () => void; onGenerat
 }
 
 export default function ReportsPage() {
+  const { toggle: toggleSidebar } = useSidebar();
   const { stats: reportStats, recentReports, reportTypeData, reportTrendData } = useReportsData();
   const [localSchedules, setLocalSchedules] = useState<NewSchedule[]>([]);
   const [scheduleEnabled, setScheduleEnabled] = useState<Record<string, boolean>>(
@@ -498,10 +500,20 @@ export default function ReportsPage() {
       {showCreateSchedule && <CreateScheduleModal onClose={() => setShowCreateSchedule(false)} onSave={handleCreateSchedule} />}
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-gray-100 flex items-center px-6 gap-4 sticky top-0 z-20 flex-shrink-0">
+      <header className="h-16 bg-white border-b border-gray-100 flex items-center px-4 sm:px-6 gap-3 sticky top-0 z-20 flex-shrink-0">
+        {/* Hamburger — mobile only */}
+        <button
+          onClick={toggleSidebar}
+          className="lg:hidden flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 active:scale-95 transition-all duration-150 flex-shrink-0"
+          aria-label="Open navigation menu"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-[16px] font-bold text-gray-900 leading-tight tracking-tight">Reports</h1>
-          <p className="text-[11px] text-gray-400 leading-tight mt-0.5 truncate">
+          <h1 className="text-[15px] sm:text-[16px] font-bold text-gray-900 leading-tight tracking-tight">Reports</h1>
+          <p className="text-[11px] text-gray-400 leading-tight mt-0.5 truncate hidden sm:block">
             View, download and share your monitoring reports
           </p>
         </div>
