@@ -135,8 +135,8 @@ export function LoginPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
-      // signInWithPopup resolves directly — onAuthStateChanged fires → useEffect redirects
       console.log('[Google Sign-In] Success:', result.user.email);
+      router.replace('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Google Sign-In Error]', code, err);
@@ -169,6 +169,7 @@ export function LoginPage() {
     try {
       const auth = getAuth(firebaseApp);
       await signInWithEmailAndPassword(auth, email.trim(), password);
+      router.replace('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Email Sign-In Error]', code, err);

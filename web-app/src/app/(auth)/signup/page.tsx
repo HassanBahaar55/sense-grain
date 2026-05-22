@@ -118,7 +118,7 @@ export default function SignupPage() {
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
       console.log('[Google Sign-Up] Success:', result.user.email);
-      // onAuthStateChanged fires → useEffect redirects to dashboard
+      router.replace('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Google Sign-Up Error]', code, err);
@@ -152,7 +152,7 @@ export default function SignupPage() {
       const auth = getAuth(firebaseApp);
       const { user: newUser } = await createUserWithEmailAndPassword(auth, email.trim(), password);
       await updateProfile(newUser, { displayName: name.trim() });
-      // onAuthStateChanged fires → useEffect redirects to dashboard
+      router.replace('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Sign-Up Error]', code, err);
