@@ -824,6 +824,26 @@ export function getParamTrendData(date: Date): ParamTrendPoint[] {
 
 // ─── React Hooks ─────────────────────────────────────────────────────────────
 
+export function getStabilityData(date: Date, days: number): StabilityPoint[] {
+  return Array.from({ length: days }, (_, i) => {
+    const d = addDays(date, i - (days - 1));
+    const dw = getWarehouseReadings(d);
+    function stability(whId: string): number {
+      const wh = dw.find(w => w.id === whId);
+      if (!wh || !wh.temp) return 50;
+      const tScore = Math.max(0, 100 - Math.max(0, wh.temp - 25) * 8);
+      const hScore = Math.max(0, 100 - Math.max(0, (wh.humidity ?? 60) - 60) * 4);
+      return Math.round(tScore * 0.6 + hScore * 0.4);
+    }
+    return { day: dayLabel(d), 'WH-A': stability('WH-A'), 'WH-B': stability('WH-B'), 'WH-C': stability('WH-C'), 'WH-D': stability('WH-D') };
+  });
+}
+
+export function useStabilityData(days: number): StabilityPoint[] {
+  const { selectedDate } = useHeader();
+  return useMemo(() => getStabilityData(selectedDate, days), [selectedDate, days]);
+}
+
 export function useDashboardData()   { const { selectedDate } = useHeader(); return useMemo(() => getDashboardData(selectedDate),   [selectedDate]); }
 export function useAlertsData()      { const { selectedDate } = useHeader(); return useMemo(() => getAlertsData(selectedDate),      [selectedDate]); }
 export function useStorageData()     { const { selectedDate } = useHeader(); return useMemo(() => getStorageData(selectedDate),     [selectedDate]); }

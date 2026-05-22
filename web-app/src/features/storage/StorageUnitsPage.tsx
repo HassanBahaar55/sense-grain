@@ -927,7 +927,7 @@ export default function StorageUnitsPage() {
               }
             />
             <p className="text-[10px] font-semibold text-gray-400 mb-2">Stability Index</p>
-            <EnvironmentalStabilityChart />
+            <EnvironmentalStabilityChart days={stabilityDays} />
             {/* Legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 pt-3 border-t border-gray-100">
               {stabilitySeriesConfig.map((s) => (

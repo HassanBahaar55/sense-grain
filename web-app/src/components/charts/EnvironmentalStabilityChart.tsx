@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { stabilitySeriesConfig } from '@/features/storage/mockData';
-import { useStorageData, type StabilityPoint } from '@/lib/dataEngine';
+import { useStabilityData, type StabilityPoint } from '@/lib/dataEngine';
 
 interface TooltipEntry {
   name?: string;
@@ -37,9 +37,9 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export function EnvironmentalStabilityChart({ data: propData }: { data?: StabilityPoint[] } = {}) {
-  const { stabilityData } = useStorageData();
-  const envStabilityData = propData ?? stabilityData;
+export function EnvironmentalStabilityChart({ days = 7, data: propData }: { days?: number; data?: StabilityPoint[] }) {
+  const liveData = useStabilityData(days);
+  const envStabilityData = propData ?? liveData;
   return (
     <ResponsiveContainer width="100%" height={180}>
       <LineChart data={envStabilityData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
