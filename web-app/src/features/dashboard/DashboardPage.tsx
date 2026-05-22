@@ -1,211 +1,213 @@
 'use client';
 
+import Link from 'next/link';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
-import { SpoilageRiskChart } from '@/components/charts/SpoilageRiskChart';
-import { RiskDonutChart } from '@/components/charts/RiskDonutChart';
-import { SparklineChart } from '@/components/charts/SparklineChart';
 import {
   warehouseUnits,
-  keyParameters,
   activeAlerts,
-  spoilageRiskForecast,
-  riskDistribution,
-  recommendations,
   type WarehouseStatus,
-  type ParameterStatus,
   type AlertSeverity,
-  type RecommendationPriority,
 } from './mockData';
 import { cn } from '@/lib/utils';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
+// ─── Configs ──────────────────────────────────────────────────────────────────
 
-const statusConfig: Record<WarehouseStatus, { stripe: string; badge: string; text: string; bg: string }> = {
-  good:     { stripe: 'bg-green-400', badge: 'bg-green-50 text-green-700', text: 'Good',     bg: 'bg-white' },
-  medium:   { stripe: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700', text: 'Medium',   bg: 'bg-white' },
-  high:     { stripe: 'bg-red-400',   badge: 'bg-red-50 text-red-600',     text: 'High',     bg: 'bg-white' },
-  inactive: { stripe: 'bg-gray-200',  badge: 'bg-gray-100 text-gray-400',  text: 'Offline',  bg: 'bg-gray-50/60' },
+const statusCfg: Record<WarehouseStatus, {
+  bar: string; tileBg: string; badge: string; label: string; valCls: string;
+}> = {
+  good:     { bar: 'bg-green-400', tileBg: '',                  badge: 'bg-green-50 text-green-700 ring-green-200',  label: 'Good',     valCls: 'text-gray-800' },
+  medium:   { bar: 'bg-amber-400', tileBg: 'bg-amber-50/40',    badge: 'bg-amber-50 text-amber-700 ring-amber-200',  label: 'Watch',    valCls: 'text-amber-800' },
+  high:     { bar: 'bg-red-400',   tileBg: 'bg-red-50/40',      badge: 'bg-red-50 text-red-600 ring-red-200',        label: 'Critical', valCls: 'text-red-600' },
+  inactive: { bar: 'bg-gray-200',  tileBg: 'bg-gray-50/70',     badge: 'bg-gray-100 text-gray-400 ring-gray-200',   label: 'Offline',  valCls: 'text-gray-400' },
 };
 
-const paramStatusConfig: Record<ParameterStatus, string> = {
-  good:     'bg-green-50 text-green-700 ring-green-100',
-  warning:  'bg-amber-50 text-amber-700 ring-amber-100',
-  critical: 'bg-red-50 text-red-600 ring-red-100',
+const alertCfg: Record<AlertSeverity, {
+  bar: string; bg: string; ring: string; badge: string; label: string; dot: string; valCls: string;
+}> = {
+  high:   { bar: 'bg-red-400',   bg: 'bg-red-50/50',   ring: 'ring-red-100/80',   badge: 'bg-red-100 text-red-700',    label: 'High',   dot: 'bg-red-400',   valCls: 'text-red-600'   },
+  medium: { bar: 'bg-amber-400', bg: 'bg-amber-50/50', ring: 'ring-amber-100/80', badge: 'bg-amber-100 text-amber-700', label: 'Medium', dot: 'bg-amber-400', valCls: 'text-amber-700' },
 };
 
-const alertConfig: Record<AlertSeverity, { stripe: string; bg: string; badge: string; dot: string; label: string }> = {
-  high:   { stripe: 'bg-red-400',   bg: 'bg-red-50/60 ring-red-100',    badge: 'bg-red-100 text-red-600',    dot: 'bg-red-400',   label: 'High' },
-  medium: { stripe: 'bg-amber-400', bg: 'bg-amber-50/60 ring-amber-100', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400', label: 'Medium' },
-};
+// ─── Derived counts ───────────────────────────────────────────────────────────
 
-const recConfig: Record<RecommendationPriority, { bar: string; badge: string; label: string }> = {
-  critical: { bar: 'bg-red-400',   badge: 'bg-red-100 text-red-600',     label: 'Critical' },
-  high:     { bar: 'bg-amber-400', badge: 'bg-amber-100 text-amber-700',  label: 'High' },
-  medium:   { bar: 'bg-blue-400',  badge: 'bg-blue-50 text-blue-600',     label: 'Medium' },
-};
+const goodCount     = warehouseUnits.filter(w => w.status === 'good').length;
+const watchCount    = warehouseUnits.filter(w => w.status === 'medium').length;
+const criticalCount = warehouseUnits.filter(w => w.status === 'high').length;
+const offlineCount  = warehouseUnits.filter(w => w.status === 'inactive').length;
+const activeCount   = warehouseUnits.length - offlineCount;
+const alertHigh     = activeAlerts.filter(a => a.severity === 'high').length;
+const alertMedium   = activeAlerts.filter(a => a.severity === 'medium').length;
 
-// ─── Section wrapper ──────────────────────────────────────────────────────────
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
-function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+function HeartbeatIcon() {
   return (
-    <div className="flex items-start justify-between mb-4">
-      <div>
-        <h2 className="text-[15px] font-bold text-gray-900 dark:text-gray-100">{title}</h2>
-        {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function Card({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <div
-      className={cn(
-        'bg-white dark:bg-gray-800 rounded-2xl ring-1 ring-black/[0.05] dark:ring-white/[0.08] shadow-sm',
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function ViewAllButton({ label = 'View all' }: { label?: string }) {
-  return (
-    <button className="text-xs font-semibold text-[#1f5135] hover:text-[#174028] transition-colors duration-150 flex-shrink-0">
-      {label}
-    </button>
-  );
-}
-
-// ─── Overview metric cards ────────────────────────────────────────────────────
-
-function ActivityIcon() {
-  return (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </svg>
   );
 }
-function BuildingIcon() {
+function SiloIcon() {
   return (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <polyline points="9 22 9 12 15 12 15 22" />
     </svg>
   );
 }
-function BellAlertIcon() {
+function BellIcon() {
   return (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-      <circle cx="12" cy="3" r="1" fill="currentColor" strokeWidth="0" />
     </svg>
   );
 }
-function WarningIcon() {
+function ShieldIcon() {
   return (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
+    <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
   );
 }
-function TrendingUpIcon() {
+function ArrowRightIcon() {
   return (
-    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-      <polyline points="17 6 23 6 23 12" />
+    <svg className="w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
     </svg>
   );
 }
+
+// ─── Metric card ──────────────────────────────────────────────────────────────
 
 interface MetricCardProps {
   label: string;
   value: string;
-  subtitle: string;
-  trend?: string;
-  trendUp?: boolean;
+  sub: string;
   icon: React.ReactNode;
-  iconBg: string;
-  iconColor: string;
-  valueColor?: string;
-  className?: string;
+  accentBar: string;
+  iconWrap: string;
+  iconCls: string;
+  valueCls?: string;
+  pill?: { text: string; cls: string };
 }
 
-function MetricCard({ label, value, subtitle, trend, trendUp, icon, iconBg, iconColor, valueColor, className }: MetricCardProps) {
+function MetricCard({ label, value, sub, icon, accentBar, iconWrap, iconCls, valueCls, pill }: MetricCardProps) {
   return (
-    <Card className={cn('p-5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group cursor-default', className)}>
-      <div className="flex items-start justify-between mb-3">
-        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-200', iconBg)}>
-          <span className={iconColor}>{icon}</span>
+    <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm overflow-hidden group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-default">
+      <div className={cn('h-[3px] w-full', accentBar)} />
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <p className="text-[10.5px] font-bold text-gray-400 uppercase tracking-[0.08em] mb-2">{label}</p>
+            <p className={cn('text-[30px] font-black tracking-tight leading-none', valueCls ?? 'text-gray-900')}>
+              {value}
+            </p>
+          </div>
+          <div className={cn('w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 mt-0.5 transition-transform duration-200 group-hover:scale-110', iconWrap)}>
+            <span className={iconCls}>{icon}</span>
+          </div>
         </div>
-        {trend && (
-          <span className={cn(
-            'inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-1 rounded-full flex-shrink-0',
-            trendUp ? 'text-green-700 bg-green-50' : 'text-red-600 bg-red-50',
-          )}>
-            {trendUp ? '↑' : '↓'} {trend}
-          </span>
-        )}
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100/80">
+          <p className="text-[11.5px] text-gray-500 leading-none">{sub}</p>
+          {pill && (
+            <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 leading-none', pill.cls)}>
+              {pill.text}
+            </span>
+          )}
+        </div>
       </div>
-      <p className={cn('text-[26px] font-bold tracking-tight leading-none mb-1', valueColor ?? 'text-gray-900 dark:text-gray-100')}>
-        {value}
-      </p>
-      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-[12px] text-gray-500">{subtitle}</p>
-    </Card>
+    </div>
   );
 }
 
 // ─── Warehouse tile ───────────────────────────────────────────────────────────
 
 function WarehouseTile({ wh }: { wh: typeof warehouseUnits[number] }) {
-  const cfg = statusConfig[wh.status];
+  const cfg = statusCfg[wh.status];
   return (
     <div className={cn(
-      'rounded-xl ring-1 ring-black/[0.06] overflow-hidden',
-      'hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer group',
-      cfg.bg,
+      'rounded-xl ring-1 ring-black/[0.07] overflow-hidden',
+      'hover:shadow-md hover:-translate-y-[3px] hover:ring-black/[0.12] transition-all duration-200 cursor-pointer group',
+      cfg.tileBg || 'bg-white',
     )}>
-      {/* Status stripe */}
-      <div className={cn('h-[3px]', cfg.stripe)} />
-      <div className="p-3">
-        <div className="flex items-center justify-between mb-2.5">
-          <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">{wh.id}</span>
-          <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full leading-none', cfg.badge)}>
-            {cfg.text}
+      <div className={cn('h-[4px]', cfg.bar)} />
+      <div className="p-3.5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[13px] font-bold text-gray-900 tracking-tight">{wh.id}</span>
+          <span className={cn('text-[9.5px] font-bold px-2 py-[3px] rounded-full ring-1 leading-none', cfg.badge)}>
+            {cfg.label}
           </span>
         </div>
         {wh.temp !== null ? (
-          <div className="space-y-1.5">
-            {[
-              { label: 'Temp', val: `${wh.temp}°C` },
-              { label: 'Humidity', val: `${wh.humidity}%` },
-              { label: 'Moisture', val: `${wh.moisture}%` },
-            ].map(({ label, val }) => (
-              <div key={label} className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-gray-400">{label}</span>
-                <span className="text-[11px] font-semibold text-gray-700">{val}</span>
-              </div>
-            ))}
+          <div className="space-y-[5px]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-gray-400">Temp</span>
+              <span className={cn('text-[12px] font-bold tabular-nums', cfg.valCls)}>{wh.temp}°C</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-gray-400">Humidity</span>
+              <span className={cn('text-[12px] font-bold tabular-nums', cfg.valCls)}>{wh.humidity}%</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-gray-400">Moisture</span>
+              <span className="text-[12px] font-bold tabular-nums text-gray-700">{wh.moisture}%</span>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center py-4">
-            <div className="text-center">
-              <div className="w-6 h-6 mx-auto mb-1 opacity-20">
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-5 h-5 opacity-20">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
                 </svg>
               </div>
-              <span className="text-[10px] text-gray-300 font-medium">No Signal</span>
+              <span className="text-[9.5px] text-gray-300 font-semibold">No Signal</span>
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Alert item ───────────────────────────────────────────────────────────────
+
+function AlertItem({ alert }: { alert: typeof activeAlerts[number] }) {
+  const cfg = alertCfg[alert.severity];
+  const isHigh = alert.severity === 'high';
+  return (
+    <div className={cn('flex rounded-xl ring-1 overflow-hidden hover:shadow-sm transition-shadow duration-150', cfg.bg, cfg.ring)}>
+      <div className={cn('w-[3px] flex-shrink-0', cfg.bar)} />
+      <div className="flex-1 px-3.5 py-3 min-w-0">
+        {/* Header row */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="relative flex-shrink-0">
+              <span className={cn('w-[7px] h-[7px] rounded-full block', cfg.dot)} />
+              {isHigh && (
+                <span className={cn('absolute inset-0 w-[7px] h-[7px] rounded-full animate-ping opacity-50', cfg.dot)} />
+              )}
+            </span>
+            <span className={cn('text-[10px] font-bold px-1.5 py-[3px] rounded-full leading-none', cfg.badge)}>
+              {cfg.label}
+            </span>
+          </div>
+          <span className="text-[10px] text-gray-400 font-medium flex-shrink-0">{alert.time}</span>
+        </div>
+        {/* Content */}
+        <p className="text-[12.5px] font-bold text-gray-800 leading-snug">{alert.title}</p>
+        <p className="text-[11px] text-gray-400 mt-0.5 mb-2.5">{alert.location}</p>
+        {/* Threshold row */}
+        <div className="flex items-center justify-between bg-white/60 rounded-lg px-2.5 py-1.5">
+          <span className="text-[10px] text-gray-400">
+            Threshold: <span className="font-semibold text-gray-600">{alert.threshold}</span>
+          </span>
+          <span className={cn('text-[12.5px] font-black tabular-nums', cfg.valCls)}>
+            {alert.value}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -218,277 +220,156 @@ export default function DashboardPage() {
     <div className="flex flex-col flex-1 min-h-0">
       <DashboardHeader
         title="Dashboard"
-        subtitle="Grain storage monitoring — real-time overview"
+        subtitle="Grain storage monitoring — at a glance"
       />
 
       <main className="flex-1 p-6 space-y-5 overflow-auto">
 
-        {/* ── Overview Metrics ──────────────────────────────────────────────── */}
-        <section className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        {/* ── Metric cards ─────────────────────────────────────────────────── */}
+        <section className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           <MetricCard
-            label="Overall Health"
+            label="System Health"
             value="Good"
-            subtitle="7 of 8 units healthy"
-            trend="2.1%"
-            trendUp
-            icon={<ActivityIcon />}
-            iconBg="bg-green-50 group-hover:bg-green-100"
-            iconColor="text-green-600"
-            valueColor="text-green-600"
+            sub={`${activeCount} of ${warehouseUnits.length} units active`}
+            icon={<HeartbeatIcon />}
+            accentBar="bg-green-400"
+            iconWrap="bg-green-50"
+            iconCls="text-green-600"
+            valueCls="text-green-600"
+            pill={{ text: '↑ Stable', cls: 'bg-green-50 text-green-700' }}
           />
           <MetricCard
-            label="Total Warehouses"
-            value="8"
-            subtitle="7 Active · 1 Inactive"
-            icon={<BuildingIcon />}
-            iconBg="bg-blue-50 group-hover:bg-blue-100"
-            iconColor="text-blue-600"
+            label="Storage Units"
+            value={String(warehouseUnits.length)}
+            sub={`${activeCount} Active · ${offlineCount} Offline`}
+            icon={<SiloIcon />}
+            accentBar="bg-blue-400"
+            iconWrap="bg-blue-50"
+            iconCls="text-blue-600"
           />
           <MetricCard
             label="Active Alerts"
-            value="3"
-            subtitle="1 High · 2 Medium"
-            trend="1 new"
-            trendUp={false}
-            icon={<BellAlertIcon />}
-            iconBg="bg-red-50 group-hover:bg-red-100"
-            iconColor="text-red-500"
-            valueColor="text-red-500"
+            value={String(activeAlerts.length)}
+            sub={`${alertHigh} Critical · ${alertMedium} Medium`}
+            icon={<BellIcon />}
+            accentBar="bg-red-400"
+            iconWrap="bg-red-50"
+            iconCls="text-red-500"
+            valueCls={activeAlerts.length > 0 ? 'text-red-500' : 'text-gray-900'}
+            pill={alertHigh > 0 ? { text: `${alertHigh} urgent`, cls: 'bg-red-50 text-red-600' } : undefined}
           />
           <MetricCard
-            label="Avg Spoilage Risk"
-            value="Medium"
-            subtitle="Closely monitored"
-            trend="Trending"
-            trendUp={false}
-            icon={<WarningIcon />}
-            iconBg="bg-amber-50 group-hover:bg-amber-100"
-            iconColor="text-amber-600"
-            valueColor="text-amber-600"
-          />
-          <MetricCard
-            label="Data Points 24h"
-            value="48.5K"
-            subtitle="vs 43.1K yesterday"
-            trend="12.5%"
-            trendUp
-            icon={<TrendingUpIcon />}
-            iconBg="bg-purple-50 group-hover:bg-purple-100"
-            iconColor="text-purple-600"
-            className="col-span-2 xl:col-span-1"
+            label="Spoilage Risk"
+            value={criticalCount > 0 ? 'Medium' : 'Low'}
+            sub={`${criticalCount} unit${criticalCount !== 1 ? 's' : ''} above threshold`}
+            icon={<ShieldIcon />}
+            accentBar={criticalCount > 0 ? 'bg-amber-400' : 'bg-green-400'}
+            iconWrap={criticalCount > 0 ? 'bg-amber-50' : 'bg-green-50'}
+            iconCls={criticalCount > 0 ? 'text-amber-600' : 'text-green-600'}
+            valueCls={criticalCount > 0 ? 'text-amber-600' : 'text-green-600'}
           />
         </section>
 
-        {/* ── Live Overview + Key Parameters ───────────────────────────────── */}
+        {/* ── Warehouse grid + Alerts ───────────────────────────────────────── */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-          {/* Live Overview */}
-          <Card className="xl:col-span-2 p-5">
-            <SectionHeader
-              title="Live Overview"
-              subtitle="Real-time status across all warehouse units"
-              action={
-                <div className="flex items-center gap-3 text-[11px] font-semibold text-gray-400">
-                  {[
-                    { label: 'Good',     cls: 'bg-green-400' },
-                    { label: 'Medium',   cls: 'bg-amber-400' },
-                    { label: 'High',     cls: 'bg-red-400' },
-                    { label: 'Offline',  cls: 'bg-gray-300' },
-                  ].map((s) => (
-                    <span key={s.label} className="flex items-center gap-1.5">
-                      <span className={cn('w-2 h-2 rounded-full', s.cls)} />
-                      {s.label}
-                    </span>
-                  ))}
-                </div>
-              }
-            />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {warehouseUnits.map((wh) => <WarehouseTile key={wh.id} wh={wh} />)}
+          {/* Storage Units */}
+          <div className="lg:col-span-2 bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">Storage Units</h2>
+                <p className="text-[11.5px] text-gray-400 mt-0.5">Live status across all warehouses</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {[
+                  { label: 'Good',     cls: 'bg-green-400' },
+                  { label: 'Watch',    cls: 'bg-amber-400' },
+                  { label: 'Critical', cls: 'bg-red-400' },
+                  { label: 'Offline',  cls: 'bg-gray-300' },
+                ].map((s) => (
+                  <span key={s.label} className="flex items-center gap-1.5 text-[10.5px] font-semibold text-gray-400">
+                    <span className={cn('w-[7px] h-[7px] rounded-full flex-shrink-0', s.cls)} />
+                    {s.label}
+                  </span>
+                ))}
+              </div>
             </div>
-          </Card>
 
-          {/* Key Parameters */}
-          <Card className="p-5">
-            <SectionHeader
-              title="Key Parameters"
-              subtitle="Current averages — all units"
-            />
-            <div className="space-y-3.5">
-              {keyParameters.map((p) => (
-                <div key={p.label} className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-semibold text-gray-500 truncate">{p.label}</span>
-                      <span className={cn(
-                        'text-[10px] font-bold px-1.5 py-0.5 rounded-full ring-1 ml-2 flex-shrink-0',
-                        paramStatusConfig[p.status],
-                      )}>
-                        {p.statusLabel}
-                      </span>
-                    </div>
-                    <span className="text-[17px] font-bold text-gray-900 leading-none">
-                      {p.value}
-                      <span className="text-[12px] font-semibold text-gray-400 ml-0.5">{p.unit}</span>
-                    </span>
-                  </div>
-                  <div className="w-20 flex-shrink-0">
-                    <SparklineChart values={p.sparkline} color={p.color} />
-                  </div>
+            {/* Tile grid */}
+            <div className="p-5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {warehouseUnits.map((wh) => <WarehouseTile key={wh.id} wh={wh} />)}
+              </div>
+            </div>
+
+            {/* Summary strip */}
+            <div className="mx-5 mb-4 px-4 py-3 rounded-xl bg-gray-50 ring-1 ring-gray-100 flex items-center justify-around gap-2">
+              {[
+                { count: goodCount,     label: 'Good',     dot: 'bg-green-400' },
+                { count: watchCount,    label: 'Watch',    dot: 'bg-amber-400' },
+                { count: criticalCount, label: 'Critical', dot: 'bg-red-400' },
+                { count: offlineCount,  label: 'Offline',  dot: 'bg-gray-300' },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center gap-2 min-w-0">
+                  <span className={cn('w-2 h-2 rounded-full flex-shrink-0', s.dot)} />
+                  <span className="text-[13px] font-bold text-gray-700">{s.count}</span>
+                  <span className="text-[11px] text-gray-400 font-medium">{s.label}</span>
                 </div>
               ))}
             </div>
-          </Card>
-        </section>
 
-        {/* ── Alerts + Forecast + Risk Distribution ────────────────────────── */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Footer link */}
+            <div className="px-5 pb-5 mt-auto">
+              <Link
+                href="/monitor"
+                className="group flex items-center justify-center gap-2 w-full h-9 rounded-xl bg-[#1f5135]/[0.07] hover:bg-[#1f5135]/[0.12] text-[12.5px] font-semibold text-[#1f5135] transition-colors duration-150"
+              >
+                View Realtime Monitor
+                <ArrowRightIcon />
+              </Link>
+            </div>
+          </div>
 
-          {/* Alerts Overview */}
-          <Card className="p-5">
-            <SectionHeader
-              title="Alerts Overview"
-              subtitle={`${activeAlerts.length} active alerts requiring attention`}
-              action={<ViewAllButton />}
-            />
-            <div className="space-y-3">
-              {activeAlerts.map((alert) => {
-                const cfg = alertConfig[alert.severity];
-                return (
-                  <div
-                    key={alert.id}
-                    className={cn('flex gap-0 rounded-xl ring-1 overflow-hidden transition-shadow duration-150 hover:shadow-sm', cfg.bg)}
-                  >
-                    <div className={cn('w-1 flex-shrink-0', cfg.stripe)} />
-                    <div className="flex-1 p-3 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', cfg.dot)} />
-                          <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0', cfg.badge)}>
-                            {cfg.label}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-gray-400 flex-shrink-0 font-medium">{alert.time}</span>
-                      </div>
-                      <p className="text-[12px] font-bold text-gray-800 leading-tight mb-0.5">{alert.title}</p>
-                      <p className="text-[11px] text-gray-500">{alert.location}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-[11px] text-gray-400">
-                          Threshold: <span className="font-semibold text-gray-600">{alert.threshold}</span>
-                        </span>
-                        <span className={cn('text-[12px] font-bold', alert.severity === 'high' ? 'text-red-600' : 'text-amber-700')}>
-                          {alert.value}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <button className="mt-3 w-full text-center text-[11px] font-semibold text-gray-400 hover:text-[#1f5135] transition-colors duration-150 py-1.5 rounded-lg hover:bg-gray-50">
-              View all alerts →
-            </button>
-          </Card>
-
-          {/* Spoilage Risk Forecast */}
-          <Card className="p-5">
-            <SectionHeader
-              title="Spoilage Risk Forecast"
-              subtitle="Predicted risk % · May 20–26"
-            />
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-[9px] font-semibold text-red-300 flex-shrink-0">75%</span>
-              <div className="flex-1 h-px bg-red-200/50" />
-            </div>
-            <SpoilageRiskChart />
-            <div className="flex items-center gap-1 mt-0.5 mb-3">
-              <span className="text-[9px] font-semibold text-amber-300 flex-shrink-0">50%</span>
-              <div className="flex-1 h-px bg-amber-200/40" />
-            </div>
-            {/* Legend */}
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
-              {spoilageRiskForecast.series.map((s) => (
-                <span key={s.key} className="flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
-                  <span className="w-5 h-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
-                  {s.label}
+          {/* Active Alerts */}
+          <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">Active Alerts</h2>
+                <p className="text-[11.5px] text-gray-400 mt-0.5">
+                  {activeAlerts.length} alerts requiring attention
+                </p>
+              </div>
+              {alertHigh > 0 && (
+                <span className="relative flex-shrink-0">
+                  <span className="w-7 h-7 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
+                    {activeAlerts.length}
+                  </span>
+                  <span className="absolute inset-0 w-7 h-7 rounded-full bg-red-400 animate-ping opacity-30" />
                 </span>
+              )}
+            </div>
+
+            {/* Alert list */}
+            <div className="flex-1 p-5 space-y-3">
+              {activeAlerts.map((alert) => (
+                <AlertItem key={alert.id} alert={alert} />
               ))}
             </div>
-          </Card>
 
-          {/* Risk Distribution */}
-          <Card className="p-5">
-            <SectionHeader
-              title="Risk Distribution"
-              subtitle="Across all 8 warehouses"
-            />
-            <RiskDonutChart />
-            <div className="mt-3 space-y-2.5">
-              {riskDistribution.map((d) => {
-                const pct = Math.round((d.count / 8) * 100);
-                return (
-                  <div key={d.label} className="flex items-center gap-2.5">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: d.color }}
-                    />
-                    <span className="text-[12px] font-medium text-gray-600 flex-1 min-w-0">{d.label}</span>
-                    <div className="w-20 h-1.5 rounded-full bg-gray-100 overflow-hidden flex-shrink-0">
-                      <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${pct}%`, backgroundColor: d.color }}
-                      />
-                    </div>
-                    <span className="text-[12px] font-bold text-gray-700 w-4 text-right flex-shrink-0">
-                      {d.count}
-                    </span>
-                  </div>
-                );
-              })}
+            {/* Footer link */}
+            <div className="px-5 pb-5 mt-auto">
+              <Link
+                href="/alerts"
+                className="group flex items-center justify-center gap-2 w-full h-9 rounded-xl bg-[#1f5135]/[0.07] hover:bg-[#1f5135]/[0.12] text-[12.5px] font-semibold text-[#1f5135] transition-colors duration-150"
+              >
+                View All Alerts
+                <ArrowRightIcon />
+              </Link>
             </div>
-          </Card>
-        </section>
+          </div>
 
-        {/* ── Recommendations ───────────────────────────────────────────────── */}
-        <section>
-          <Card className="p-5">
-            <SectionHeader
-              title="AI Recommendations"
-              subtitle="Automated action items based on current sensor readings"
-              action={<ViewAllButton />}
-            />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {recommendations.map((rec) => {
-                const cfg = recConfig[rec.priority];
-                return (
-                  <div
-                    key={rec.id}
-                    className="flex gap-3 p-4 rounded-xl bg-gray-50 ring-1 ring-gray-100 hover:ring-gray-200 hover:shadow-sm transition-all duration-200 group cursor-default"
-                  >
-                    <div className={cn('w-1 self-stretch rounded-full flex-shrink-0', cfg.bar)} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0', cfg.badge)}>
-                          {cfg.label}
-                        </span>
-                        <span className="text-[11px] text-gray-400 font-semibold flex-shrink-0">{rec.warehouse}</span>
-                      </div>
-                      <p className="text-[13px] font-bold text-gray-800 leading-snug mb-1.5">{rec.title}</p>
-                      <p className="text-[12px] text-gray-500 leading-relaxed mb-3">{rec.description}</p>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-[#1f5135] bg-green-50 px-2 py-0.5 rounded-full">
-                          {rec.estimatedImpact}
-                        </span>
-                        <button className="text-[11px] font-bold text-gray-400 hover:text-[#1f5135] transition-colors duration-150">
-                          Act →
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
         </section>
 
       </main>
