@@ -4,16 +4,17 @@ import {
   createContext, useContext, useState, useEffect,
   type ReactNode,
 } from 'react';
-import { liveEngine, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
+import { subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
+import type { LiveSensorReading, LiveAlert } from '@/lib/liveEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface LiveDataContextValue {
-  readings:    Record<string, LiveSensorReading>;
-  liveAlerts:  LiveAlert[];
-  tick:        number;
-  isRunning:   boolean;
+  readings:   Record<string, LiveSensorReading>;
+  liveAlerts: LiveAlert[];
+  tick:       number;
+  isRunning:  boolean;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -31,22 +32,24 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const [isRunning,  setIsRunning]  = useState(false);
 
   useEffect(() => {
-    // Start engine
-    liveEngine.start(7000);
     setIsRunning(true);
 
-    // Subscribe to updates
-    const unsub = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
-      setReadings({ ...newReadings });
-      setLiveAlerts([...newAlerts]);
-      setTick(newTick);
-      // Also push into dataEngine so all existing hooks get live values
+    // Subscribe to Firestore — data now comes from the Cloud Function,
+    // so web and mobile stay perfectly in sync with the same source of truth
+    const unsubReadings = subscribeToReadings((newReadings) => {
+      setReadings(newReadings);
+      setTick(t => t + 1);
+      // Push into dataEngine so all existing hooks get live values
       setLiveOverride(newReadings);
     });
 
+    const unsubAlerts = subscribeToAlerts((newAlerts) => {
+      setLiveAlerts(newAlerts);
+    });
+
     return () => {
-      unsub();
-      liveEngine.stop();
+      unsubReadings();
+      unsubAlerts();
       setIsRunning(false);
     };
   }, []);
@@ -58,7 +61,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// ─── Hooks ────────────────────────────────────────────────────────────────────
 
 export function useLiveData(): LiveDataContextValue {
   return useContext(LiveDataContext);
