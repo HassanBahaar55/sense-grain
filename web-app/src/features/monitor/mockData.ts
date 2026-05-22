@@ -14,6 +14,7 @@ export interface MonitorWarehouse {
 export interface ZoneReading {
   id: string;
   label: string;
+  bay: string;
   temp: number | null;
   humidity: number | null;
   moisture: number | null;
@@ -54,66 +55,67 @@ export const monitorWarehouses: MonitorWarehouse[] = [
 ];
 
 // ─── Zone data per warehouse ──────────────────────────────────────────────────
+// Each zone = one physical sensor node in the warehouse
+// Safe thresholds: Temp < 30°C · Humidity < 70% · Moisture < 14%
 
 export const zoneData: Record<string, ZoneReading[]> = {
   'WH-A': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 27.2, humidity: 58,   moisture: 11.8, co2: 520,  aqi: 38,  status: 'good'    },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 28.4, humidity: 62,   moisture: 12.1, co2: 535,  aqi: 42,  status: 'normal'  },
-    { id: 'Z3', label: 'Zone 3 — South Bay',  temp: 26.8, humidity: 56,   moisture: 11.5, co2: 510,  aqi: 36,  status: 'good'    },
-    { id: 'Z4', label: 'Zone 4 — West Bay',   temp: 27.8, humidity: 60,   moisture: 12.0, co2: 525,  aqi: 40,  status: 'good'    },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 27.2, humidity: 58,   moisture: 11.8, co2: 520,  aqi: 38,  status: 'good'    },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 28.4, humidity: 62,   moisture: 12.1, co2: 535,  aqi: 42,  status: 'normal'  },
+    { id: 'S3', label: 'Sensor 3', bay: 'South Bay',  temp: 26.8, humidity: 56,   moisture: 11.5, co2: 510,  aqi: 36,  status: 'good'    },
+    { id: 'S4', label: 'Sensor 4', bay: 'West Bay',   temp: 27.8, humidity: 60,   moisture: 12.0, co2: 525,  aqi: 40,  status: 'good'    },
   ],
   'WH-B': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 29.4, humidity: 65,   moisture: 13.1, co2: 548,  aqi: 46,  status: 'normal'  },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 30.1, humidity: 67,   moisture: 13.5, co2: 560,  aqi: 50,  status: 'warning' },
-    { id: 'Z3', label: 'Zone 3 — South Bay',  temp: 28.8, humidity: 63,   moisture: 12.8, co2: 542,  aqi: 44,  status: 'normal'  },
-    { id: 'Z4', label: 'Zone 4 — West Bay',   temp: 29.2, humidity: 65,   moisture: 13.0, co2: 545,  aqi: 47,  status: 'normal'  },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 29.4, humidity: 65,   moisture: 13.1, co2: 548,  aqi: 46,  status: 'normal'  },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 30.1, humidity: 67,   moisture: 13.5, co2: 560,  aqi: 50,  status: 'warning' },
+    { id: 'S3', label: 'Sensor 3', bay: 'South Bay',  temp: 28.8, humidity: 63,   moisture: 12.8, co2: 542,  aqi: 44,  status: 'normal'  },
+    { id: 'S4', label: 'Sensor 4', bay: 'West Bay',   temp: 29.2, humidity: 65,   moisture: 13.0, co2: 545,  aqi: 47,  status: 'normal'  },
   ],
   'WH-C': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 26.8, humidity: 57,   moisture: 11.2, co2: 512,  aqi: 36,  status: 'good'    },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 27.2, humidity: 58,   moisture: 11.5, co2: 518,  aqi: 38,  status: 'good'    },
-    { id: 'Z3', label: 'Zone 3 — South Bay',  temp: 26.5, humidity: 56,   moisture: 11.0, co2: 508,  aqi: 34,  status: 'good'    },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 26.8, humidity: 57,   moisture: 11.2, co2: 512,  aqi: 36,  status: 'good'    },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 27.2, humidity: 58,   moisture: 11.5, co2: 518,  aqi: 38,  status: 'good'    },
+    { id: 'S3', label: 'Sensor 3', bay: 'South Bay',  temp: 26.5, humidity: 56,   moisture: 11.0, co2: 508,  aqi: 34,  status: 'good'    },
   ],
   'WH-D': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 30.5, humidity: 68,   moisture: 14.2, co2: 562,  aqi: 52,  status: 'warning' },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 31.2, humidity: 70,   moisture: 14.8, co2: 570,  aqi: 55,  status: 'warning' },
-    { id: 'Z3', label: 'Zone 3 — Hotspot',    temp: 32.1, humidity: 74,   moisture: 15.6, co2: 582,  aqi: 60,  status: 'critical'},
-    { id: 'Z4', label: 'Zone 4 — West Bay',   temp: 29.8, humidity: 66,   moisture: 13.9, co2: 558,  aqi: 50,  status: 'normal'  },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 30.5, humidity: 68,   moisture: 14.2, co2: 562,  aqi: 52,  status: 'warning' },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 31.2, humidity: 70,   moisture: 14.8, co2: 570,  aqi: 55,  status: 'warning' },
+    { id: 'S3', label: 'Sensor 3', bay: 'Hot Spot',   temp: 32.1, humidity: 74,   moisture: 15.6, co2: 582,  aqi: 60,  status: 'critical'},
+    { id: 'S4', label: 'Sensor 4', bay: 'West Bay',   temp: 29.8, humidity: 66,   moisture: 13.9, co2: 558,  aqi: 50,  status: 'normal'  },
   ],
   'WH-E': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 27.5, humidity: 60,   moisture: 12.0, co2: 526,  aqi: 40,  status: 'good'    },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 27.8, humidity: 61,   moisture: 12.2, co2: 529,  aqi: 41,  status: 'good'    },
-    { id: 'Z3', label: 'Zone 3 — South Bay',  temp: 27.2, humidity: 59,   moisture: 11.8, co2: 522,  aqi: 39,  status: 'good'    },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 27.5, humidity: 60,   moisture: 12.0, co2: 526,  aqi: 40,  status: 'good'    },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 27.8, humidity: 61,   moisture: 12.2, co2: 529,  aqi: 41,  status: 'good'    },
+    { id: 'S3', label: 'Sensor 3', bay: 'South Bay',  temp: 27.2, humidity: 59,   moisture: 11.8, co2: 522,  aqi: 39,  status: 'good'    },
   ],
   'WH-F': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 30.2, humidity: 68,   moisture: 13.8, co2: 556,  aqi: 51,  status: 'warning' },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 30.8, humidity: 70,   moisture: 14.1, co2: 564,  aqi: 54,  status: 'warning' },
-    { id: 'Z3', label: 'Zone 3 — South Bay',  temp: 29.6, humidity: 66,   moisture: 13.5, co2: 548,  aqi: 49,  status: 'normal'  },
-    { id: 'Z4', label: 'Zone 4 — West Bay',   temp: 30.0, humidity: 67,   moisture: 13.7, co2: 552,  aqi: 50,  status: 'normal'  },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 30.2, humidity: 68,   moisture: 13.8, co2: 556,  aqi: 51,  status: 'warning' },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 30.8, humidity: 70,   moisture: 14.1, co2: 564,  aqi: 54,  status: 'warning' },
+    { id: 'S3', label: 'Sensor 3', bay: 'South Bay',  temp: 29.6, humidity: 66,   moisture: 13.5, co2: 548,  aqi: 49,  status: 'normal'  },
+    { id: 'S4', label: 'Sensor 4', bay: 'West Bay',   temp: 30.0, humidity: 67,   moisture: 13.7, co2: 552,  aqi: 50,  status: 'normal'  },
   ],
   'WH-G': [
-    { id: 'Z1', label: 'Zone 1 — North Bay',  temp: 26.5, humidity: 55,   moisture: 11.5, co2: 508,  aqi: 34,  status: 'good'    },
-    { id: 'Z2', label: 'Zone 2 — East Bay',   temp: 26.8, humidity: 56,   moisture: 11.7, co2: 514,  aqi: 36,  status: 'good'    },
-    { id: 'Z3', label: 'Zone 3 — South Bay',  temp: 26.2, humidity: 54,   moisture: 11.3, co2: 504,  aqi: 33,  status: 'good'    },
+    { id: 'S1', label: 'Sensor 1', bay: 'North Bay',  temp: 26.5, humidity: 55,   moisture: 11.5, co2: 508,  aqi: 34,  status: 'good'    },
+    { id: 'S2', label: 'Sensor 2', bay: 'East Bay',   temp: 26.8, humidity: 56,   moisture: 11.7, co2: 514,  aqi: 36,  status: 'good'    },
+    { id: 'S3', label: 'Sensor 3', bay: 'South Bay',  temp: 26.2, humidity: 54,   moisture: 11.3, co2: 504,  aqi: 33,  status: 'good'    },
   ],
   'WH-H': [
-    { id: 'Z1', label: 'Zone 1',  temp: null, humidity: null, moisture: null, co2: null, aqi: null, status: 'offline' },
-    { id: 'Z2', label: 'Zone 2',  temp: null, humidity: null, moisture: null, co2: null, aqi: null, status: 'offline' },
+    { id: 'S1', label: 'Sensor 1', bay: 'Bay 1',  temp: null, humidity: null, moisture: null, co2: null, aqi: null, status: 'offline' },
+    { id: 'S2', label: 'Sensor 2', bay: 'Bay 2',  temp: null, humidity: null, moisture: null, co2: null, aqi: null, status: 'offline' },
   ],
 };
 
 // ─── Top metric cards ─────────────────────────────────────────────────────────
 
 export const realtimeMetrics = [
-  { id: 'temp',     label: 'Temperature', value: '28.6', unit: '°C',  change: '+0.4', up: true,  status: 'warning' as const, sparkline: [27.2, 27.5, 27.8, 28.0, 28.2, 28.4, 28.6], color: '#f59e0b', icon: 'thermometer' },
-  { id: 'humidity', label: 'Humidity',    value: '62',   unit: '%',   change: '+1.5', up: true,  status: 'warning' as const, sparkline: [58, 58.5, 59, 59.5, 60, 61.5, 62],         color: '#3b82f6', icon: 'droplets'    },
-  { id: 'moisture', label: 'Moisture',    value: '12.4', unit: '%',   change: '-0.2', up: false, status: 'good'    as const, sparkline: [12.8, 12.6, 12.5, 12.3, 12.4, 12.2, 12.4],  color: '#22c55e', icon: 'moisture'    },
-  { id: 'co2',      label: 'CO₂ Level',  value: '540',  unit: ' ppm',change: '+8',   up: true,  status: 'good'    as const, sparkline: [520, 525, 530, 528, 532, 538, 540],           color: '#8b5cf6', icon: 'co2'         },
-  { id: 'aqi',      label: 'Air Quality', value: '42',   unit: ' AQI',change: '-2',   up: false, status: 'good'    as const, sparkline: [45, 44, 43, 44, 42, 43, 42],                  color: '#10b981', icon: 'wind'        },
-  { id: 'capacity', label: 'Capacity',    value: '78',   unit: '%',   change: '+0',   up: false, status: 'warning' as const, sparkline: [70, 72, 73, 74, 75, 76, 78],                  color: '#f97316', icon: 'capacity'    },
+  { id: 'temp',     label: 'Temperature', value: '28.6', unit: '°C',  change: '+0.4', up: true,  status: 'warning' as const, sparkline: [27.2, 27.5, 27.8, 28.0, 28.2, 28.4, 28.6], color: '#f59e0b' },
+  { id: 'humidity', label: 'Humidity',    value: '62',   unit: '%',   change: '+1.5', up: true,  status: 'warning' as const, sparkline: [58, 58.5, 59, 59.5, 60, 61.5, 62],         color: '#3b82f6' },
+  { id: 'moisture', label: 'Moisture',    value: '12.4', unit: '%',   change: '-0.2', up: false, status: 'good'    as const, sparkline: [12.8, 12.6, 12.5, 12.3, 12.4, 12.2, 12.4],  color: '#22c55e' },
+  { id: 'co2',      label: 'CO₂',         value: '540',  unit: ' ppm',change: '+8',   up: true,  status: 'good'    as const, sparkline: [520, 525, 530, 528, 532, 538, 540],           color: '#8b5cf6' },
+  { id: 'aqi',      label: 'Air Quality', value: '42',   unit: ' AQI',change: '-2',   up: false, status: 'good'    as const, sparkline: [45, 44, 43, 44, 42, 43, 42],                  color: '#10b981' },
+  { id: 'moisture2',label: 'Capacity',    value: '78',   unit: '%',   change: '+0',   up: false, status: 'warning' as const, sparkline: [70, 72, 73, 74, 75, 76, 78],                  color: '#f97316' },
 ];
 
 // ─── Parameter trends (normalized % of threshold) ────────────────────────────
-// Thresholds: temp=35°C, humidity=80%, moisture=15%, co2=1000ppm, aqi=100
 
 export const parameterTrends: TrendPoint[] = [
   { time: '12:30', temp: 77.7, humidity: 72.5, moisture: 78.7, co2: 52.0, aqi: 38.0 },
@@ -139,43 +141,55 @@ export const trendSeries = [
   { key: 'aqi'      as const, label: 'AQI',         color: '#10b981', unit: '',    threshold: 100  },
 ];
 
-// ─── Sensor positions for SVG warehouse visualization ─────────────────────────
+// ─── Sensor positions (per warehouse, 4 quadrant layout) ─────────────────────
+// Each sensor is placed at a fixed position in the SVG floor plan
 
-export const sensorPositions: Record<string, Array<{ cx: number; cy: number; zone: string; temp: number; status: ZoneStatus }>> = {
+export interface SensorPoint {
+  cx: number;
+  cy: number;
+  id: string;
+  bay: string;
+  temp: number;
+  humidity: number;
+  status: ZoneStatus;
+}
+
+export const sensorPositions: Record<string, SensorPoint[]> = {
   'WH-A': [
-    { cx: 130, cy: 105, zone: 'Z1', temp: 27.2, status: 'good'   },
-    { cx: 310, cy: 105, zone: 'Z2', temp: 28.4, status: 'normal' },
-    { cx: 130, cy: 225, zone: 'Z3', temp: 26.8, status: 'good'   },
-    { cx: 310, cy: 225, zone: 'Z4', temp: 27.8, status: 'good'   },
+    { cx: 130, cy: 105, id: 'S1', bay: 'N. Bay', temp: 27.2, humidity: 58, status: 'good'   },
+    { cx: 340, cy: 105, id: 'S2', bay: 'E. Bay', temp: 28.4, humidity: 62, status: 'normal' },
+    { cx: 130, cy: 210, id: 'S3', bay: 'S. Bay', temp: 26.8, humidity: 56, status: 'good'   },
+    { cx: 340, cy: 210, id: 'S4', bay: 'W. Bay', temp: 27.8, humidity: 60, status: 'good'   },
   ],
   'WH-B': [
-    { cx: 130, cy: 105, zone: 'Z1', temp: 29.4, status: 'normal'  },
-    { cx: 310, cy: 105, zone: 'Z2', temp: 30.1, status: 'warning' },
-    { cx: 130, cy: 225, zone: 'Z3', temp: 28.8, status: 'normal'  },
-    { cx: 310, cy: 225, zone: 'Z4', temp: 29.2, status: 'normal'  },
+    { cx: 130, cy: 105, id: 'S1', bay: 'N. Bay', temp: 29.4, humidity: 65, status: 'normal'  },
+    { cx: 340, cy: 105, id: 'S2', bay: 'E. Bay', temp: 30.1, humidity: 67, status: 'warning' },
+    { cx: 130, cy: 210, id: 'S3', bay: 'S. Bay', temp: 28.8, humidity: 63, status: 'normal'  },
+    { cx: 340, cy: 210, id: 'S4', bay: 'W. Bay', temp: 29.2, humidity: 65, status: 'normal'  },
   ],
   'WH-D': [
-    { cx: 130, cy: 105, zone: 'Z1', temp: 30.5, status: 'warning'  },
-    { cx: 310, cy: 105, zone: 'Z2', temp: 31.2, status: 'warning'  },
-    { cx: 130, cy: 225, zone: 'Z3', temp: 32.1, status: 'critical' },
-    { cx: 310, cy: 225, zone: 'Z4', temp: 29.8, status: 'normal'   },
+    { cx: 130, cy: 105, id: 'S1', bay: 'N. Bay', temp: 30.5, humidity: 68, status: 'warning'  },
+    { cx: 340, cy: 105, id: 'S2', bay: 'E. Bay', temp: 31.2, humidity: 70, status: 'warning'  },
+    { cx: 130, cy: 210, id: 'S3', bay: 'Hot Spot',temp: 32.1, humidity: 74, status: 'critical' },
+    { cx: 340, cy: 210, id: 'S4', bay: 'W. Bay', temp: 29.8, humidity: 66, status: 'normal'   },
   ],
 };
 
-// Fallback sensor positions for other warehouses
-export const defaultSensorPositions = (warehouseId: string) => {
+export const defaultSensorPositions = (warehouseId: string): SensorPoint[] => {
   const zones = zoneData[warehouseId] ?? [];
   const positions = [
     { cx: 130, cy: 105 },
-    { cx: 310, cy: 105 },
-    { cx: 130, cy: 225 },
-    { cx: 310, cy: 225 },
+    { cx: 340, cy: 105 },
+    { cx: 130, cy: 210 },
+    { cx: 340, cy: 210 },
   ];
   return zones.slice(0, 4).map((z, i) => ({
-    cx: positions[i]?.cx ?? 220,
-    cy: positions[i]?.cy ?? 165,
-    zone: z.id,
+    cx: positions[i]?.cx ?? 235,
+    cy: positions[i]?.cy ?? 155,
+    id: z.id,
+    bay: z.bay,
     temp: z.temp ?? 0,
+    humidity: z.humidity ?? 0,
     status: z.status,
   }));
 };
@@ -183,12 +197,12 @@ export const defaultSensorPositions = (warehouseId: string) => {
 // ─── Recent activity ──────────────────────────────────────────────────────────
 
 export const recentActivity: ActivityEvent[] = [
-  { id: 1,  type: 'alert',   title: 'Temperature Alert Triggered',    description: 'Zone 3 reached 32.1°C — exceeds 30°C threshold.',         warehouse: 'WH-D', time: '2 min ago'  },
-  { id: 2,  type: 'warning', title: 'Humidity Rising',                description: 'Humidity climbed to 74% in Zone 3. Threshold at 70%.',     warehouse: 'WH-D', time: '4 min ago'  },
-  { id: 3,  type: 'warning', title: 'Moisture Threshold Nearing',     description: 'Moisture at 13.1% — approaching safe limit of 14%.',       warehouse: 'WH-B', time: '15 min ago' },
-  { id: 4,  type: 'info',    title: 'Sensor Recalibrated',            description: 'CO₂ sensor auto-calibration completed successfully.',       warehouse: 'WH-A', time: '22 min ago' },
-  { id: 5,  type: 'success', title: 'Cooling Unit Activated',         description: 'Backup cooling unit activated. Temperature stabilizing.',   warehouse: 'WH-F', time: '31 min ago' },
-  { id: 6,  type: 'info',    title: 'Scheduled Health Check',         description: 'All sensors passed diagnostic check. Systems nominal.',     warehouse: 'All',  time: '45 min ago' },
-  { id: 7,  type: 'success', title: 'Moisture Normalized',            description: 'Moisture levels returned to safe range after treatment.',   warehouse: 'WH-C', time: '1 hr ago'   },
-  { id: 8,  type: 'info',    title: 'Data Sync Complete',             description: 'Full telemetry sync to cloud storage completed.',           warehouse: 'All',  time: '2 hr ago'   },
+  { id: 1,  type: 'alert',   title: 'Temperature Alert Triggered',    description: 'Sensor 3 (Hot Spot) reached 32.1°C — exceeds 30°C threshold.',  warehouse: 'WH-D', time: '2 min ago'  },
+  { id: 2,  type: 'warning', title: 'Humidity Rising',                description: 'Humidity climbed to 74% in Sensor 3. Threshold at 70%.',         warehouse: 'WH-D', time: '4 min ago'  },
+  { id: 3,  type: 'warning', title: 'Moisture Threshold Nearing',     description: 'Moisture at 13.1% — approaching safe limit of 14%.',              warehouse: 'WH-B', time: '15 min ago' },
+  { id: 4,  type: 'info',    title: 'Sensor Recalibrated',            description: 'CO₂ sensor auto-calibration completed successfully.',              warehouse: 'WH-A', time: '22 min ago' },
+  { id: 5,  type: 'success', title: 'Cooling Unit Activated',         description: 'Backup cooling unit activated. Temperature stabilizing.',          warehouse: 'WH-F', time: '31 min ago' },
+  { id: 6,  type: 'info',    title: 'Scheduled Health Check',         description: 'All sensors passed diagnostic check. Systems nominal.',            warehouse: 'All',  time: '45 min ago' },
+  { id: 7,  type: 'success', title: 'Moisture Normalized',            description: 'Moisture levels returned to safe range after treatment.',          warehouse: 'WH-C', time: '1 hr ago'   },
+  { id: 8,  type: 'info',    title: 'Data Sync Complete',             description: 'Full telemetry sync to cloud storage completed.',                  warehouse: 'All',  time: '2 hr ago'   },
 ];
