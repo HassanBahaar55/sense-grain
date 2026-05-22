@@ -8,6 +8,25 @@
   --sense-grain-color-gold: #d5a12f;
   --sense-grain-color-ink: #17211c;
   --sense-grain-color-surface: #f8faf7;
+  --sg-bg: #f8faf7;
+  --sg-surface: #ffffff;
+  --sg-border: rgba(0,0,0,0.06);
+  --sg-text: #17211c;
+  --sg-muted: #6b7280;
+}
+
+.dark {
+  color-scheme: dark;
+  --sg-bg: #0f1613;
+  --sg-surface: #16211b;
+  --sg-border: rgba(255,255,255,0.08);
+  --sg-text: #e8f0ea;
+  --sg-muted: #9ca3af;
+}
+
+.dark body {
+  background-color: var(--sg-bg);
+  color: var(--sg-text);
 }
 
 * {

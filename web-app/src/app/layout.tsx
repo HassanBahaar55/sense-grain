@@ -13,7 +13,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('sg-theme');var s=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);if(s)document.documentElement.classList.add('dark');}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body>
         <AuthProvider>
           {children}
