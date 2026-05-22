@@ -195,20 +195,6 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        {/* ── System Status ── */}
-        <div className="px-4 py-3 mx-3 mb-2 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex-shrink-0">
-              <span className="w-2 h-2 rounded-full bg-green-400 block" />
-              <span className="absolute inset-0 w-2 h-2 rounded-full bg-green-400 animate-ping opacity-60" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-white/70 truncate">All Systems Operational</p>
-              <p className="text-[9px] text-white/30 mt-0.5">Updated 2 min ago</p>
-            </div>
-          </div>
-        </div>
-
         {/* ── User + Logout ── */}
         <div className="px-3 pb-4 border-t border-white/[0.06] pt-3 flex-shrink-0 space-y-1">
           <div className="flex items-center gap-3 px-2.5 py-2.5 rounded-xl">
