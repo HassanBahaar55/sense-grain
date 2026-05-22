@@ -2,6 +2,10 @@
  * Live sensor simulation engine.
  * Physics-based model with realistic correlations between metrics.
  * Runs in the browser only; never imported on the server.
+ *
+ * Firestore sync: each tick writes readings + alerts to Firebase so the
+ * mobile app (and any other client) stays in real-time sync with zero
+ * extra infrastructure — no Cloud Functions, no billing upgrade needed.
  */
 
 export interface LiveSensorReading {
@@ -238,13 +242,48 @@ export class LiveEngine {
     this.listeners.forEach(fn => fn({ ...this.readings }, [...this.alerts], this.tickCount));
   }
 
+  // ── Firestore sync ──────────────────────────────────────────────────────────
+  // Writes current state to Firebase after each tick so mobile app and any
+  // other client receives the same data in real time via onSnapshot.
+
+  private async syncToFirestore() {
+    try {
+      // Dynamically import to keep this tree-shakeable on the server
+      const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const firebaseApp = (await import('@/config/firebase')).default;
+      const db = getFirestore(firebaseApp);
+
+      const writes = Object.values(this.readings).map(r =>
+        setDoc(doc(db, 'warehouseReadings', r.warehouseId), {
+          ...r,
+          updatedAt: serverTimestamp(),
+        }),
+      );
+
+      // Sync alerts — use deterministic doc id so resolving overwrites correctly
+      const alertWrites = this.alerts.map(a =>
+        setDoc(doc(db, 'alerts', `${a.warehouseId}_${a.param}_${a.severity}`), {
+          ...a,
+          updatedAt: serverTimestamp(),
+        }),
+      );
+
+      await Promise.all([...writes, ...alertWrites]);
+    } catch {
+      // Silently skip if offline or not authenticated yet
+    }
+  }
+
   // ── Public API ──────────────────────────────────────────────────────────────
 
   start(intervalMs = 7000) {
     if (this.timer) return;
-    this.timer = setInterval(() => this.tick(), intervalMs);
+    this.timer = setInterval(() => {
+      this.tick();
+      this.syncToFirestore();
+    }, intervalMs);
     // First tick slightly delayed so components mount first
-    setTimeout(() => this.tick(), 1200);
+    setTimeout(() => { this.tick(); this.syncToFirestore(); }, 1200);
   }
 
   stop() {
