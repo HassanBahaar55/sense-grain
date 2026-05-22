@@ -87,6 +87,219 @@ function SummaryCard({ label, value, sub, iconBg, iconColor, valueColor, icon }:
   );
 }
 
+// ─── Alert Settings Modal ─────────────────────────────────────────────────────
+
+const SETTINGS_KEY = 'sense-grain-alert-settings';
+
+interface AlertSettings {
+  thresholds: { temp: number; humidity: number; moisture: number; co2: number; aqi: number };
+  notifications: { inApp: boolean; email: boolean; sms: boolean; criticalOnly: boolean };
+  autoResolveHours: number;
+  muteNonCritical: boolean;
+  soundEnabled: boolean;
+}
+
+const DEFAULT_SETTINGS: AlertSettings = {
+  thresholds: { temp: 32, humidity: 70, moisture: 13, co2: 560, aqi: 50 },
+  notifications: { inApp: true, email: true, sms: false, criticalOnly: false },
+  autoResolveHours: 24,
+  muteNonCritical: false,
+  soundEnabled: true,
+};
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 flex-shrink-0',
+        checked ? 'bg-[#1f5135]' : 'bg-gray-200',
+      )}
+    >
+      <span className={cn('inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200', checked ? 'translate-x-[18px]' : 'translate-x-[3px]')} />
+    </button>
+  );
+}
+
+function AlertSettingsModal({ onClose }: { onClose: () => void }) {
+  const [settings, setSettings] = useState<AlertSettings>(() => {
+    try {
+      const saved = localStorage.getItem(SETTINGS_KEY);
+      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+    } catch { return DEFAULT_SETTINGS; }
+  });
+  const [saved, setSaved] = useState(false);
+
+  function updateThreshold(key: keyof AlertSettings['thresholds'], val: number) {
+    setSettings(s => ({ ...s, thresholds: { ...s.thresholds, [key]: val } }));
+  }
+  function updateNotif(key: keyof AlertSettings['notifications'], val: boolean) {
+    setSettings(s => ({ ...s, notifications: { ...s.notifications, [key]: val } }));
+  }
+  function handleSave() {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    setSaved(true);
+    setTimeout(() => { setSaved(false); onClose(); }, 900);
+  }
+  function handleReset() {
+    setSettings(DEFAULT_SETTINGS);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" />
+      <div
+        className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] overflow-hidden flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-[#1f5135]/[0.08] flex items-center justify-center">
+              <svg className="w-4 h-4 text-[#1f5135]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-[15px] font-black text-gray-900">Alert Settings</h2>
+              <p className="text-[11px] text-gray-400">Configure thresholds and notifications</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors">
+            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+          {/* Thresholds */}
+          <div>
+            <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-3">Sensor Thresholds</p>
+            <div className="space-y-4">
+              {([
+                { key: 'temp',     label: 'Temperature',    unit: '°C',  min: 20, max: 45, step: 0.5 },
+                { key: 'humidity', label: 'Humidity',       unit: '%',   min: 40, max: 90, step: 1   },
+                { key: 'moisture', label: 'Moisture',       unit: '%',   min: 8,  max: 20, step: 0.5 },
+                { key: 'co2',      label: 'CO₂',            unit: ' ppm',min: 400,max: 800,step: 10  },
+                { key: 'aqi',      label: 'AQI',            unit: '',    min: 20, max: 100, step: 1  },
+              ] as const).map(({ key, label, unit, min, max, step }) => (
+                <div key={key} className="flex items-center gap-4">
+                  <span className="text-[12px] font-semibold text-gray-700 w-28 flex-shrink-0">{label}</span>
+                  <input
+                    type="range"
+                    min={min} max={max} step={step}
+                    value={settings.thresholds[key]}
+                    onChange={e => updateThreshold(key, Number(e.target.value))}
+                    className="flex-1 h-1.5 rounded-full accent-[#1f5135] cursor-pointer"
+                  />
+                  <span className="text-[12px] font-bold text-gray-800 w-20 text-right tabular-nums">
+                    {settings.thresholds[key]}{unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100" />
+
+          {/* Notifications */}
+          <div>
+            <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-3">Notifications</p>
+            <div className="space-y-3">
+              {([
+                { key: 'inApp',        label: 'In-App Alerts',      desc: 'Show alerts inside the dashboard' },
+                { key: 'email',        label: 'Email Notifications', desc: 'Send alert emails to admin' },
+                { key: 'sms',          label: 'SMS Alerts',          desc: 'Text message for critical alerts' },
+                { key: 'criticalOnly', label: 'Critical Only',       desc: 'Only notify for critical severity' },
+              ] as const).map(({ key, label, desc }) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[12.5px] font-semibold text-gray-800">{label}</p>
+                    <p className="text-[10.5px] text-gray-400">{desc}</p>
+                  </div>
+                  <Toggle checked={settings.notifications[key]} onChange={v => updateNotif(key, v)} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100" />
+
+          {/* Behavior */}
+          <div>
+            <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-3">Behavior</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[12.5px] font-semibold text-gray-800">Mute Non-Critical</p>
+                  <p className="text-[10.5px] text-gray-400">Suppress low/medium/info alerts</p>
+                </div>
+                <Toggle checked={settings.muteNonCritical} onChange={v => setSettings(s => ({ ...s, muteNonCritical: v }))} />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[12.5px] font-semibold text-gray-800">Alert Sounds</p>
+                  <p className="text-[10.5px] text-gray-400">Play sound on new critical alerts</p>
+                </div>
+                <Toggle checked={settings.soundEnabled} onChange={v => setSettings(s => ({ ...s, soundEnabled: v }))} />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[12.5px] font-semibold text-gray-800">Auto-Resolve After</p>
+                  <p className="text-[10.5px] text-gray-400">Automatically mark as resolved</p>
+                </div>
+                <select
+                  value={settings.autoResolveHours}
+                  onChange={e => setSettings(s => ({ ...s, autoResolveHours: Number(e.target.value) }))}
+                  className="text-[11px] font-semibold border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#1f5135]/40"
+                >
+                  <option value={6}>6 hours</option>
+                  <option value={12}>12 hours</option>
+                  <option value={24}>24 hours</option>
+                  <option value={48}>48 hours</option>
+                  <option value={0}>Never</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 flex-shrink-0 bg-gray-50">
+          <button
+            onClick={handleReset}
+            className="text-[11.5px] font-semibold text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            Reset to defaults
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="h-9 px-4 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-100 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className={cn(
+                'h-9 px-5 rounded-xl text-[12px] font-bold transition-all duration-200 flex items-center gap-2',
+                saved ? 'bg-green-500 text-white' : 'bg-[#1f5135] hover:bg-[#174028] text-white',
+              )}
+            >
+              {saved ? (
+                <>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  Saved
+                </>
+              ) : 'Save Settings'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Alerts by Type donut ─────────────────────────────────────────────────────
 
 interface DonutTipEntry {
@@ -582,6 +795,7 @@ export default function AlertsPage() {
   const [statusOverrides, setStatusOverrides] = useState<Record<string, AlertStatus>>({});
   const [detailAlert, setDetailAlert] = useState<Alert | null>(null);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   function setAlertStatus(id: string, status: AlertStatus) {
     setStatusOverrides(prev => ({ ...prev, [id]: status }));
@@ -643,6 +857,7 @@ export default function AlertsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
+      {showSettings && <AlertSettingsModal onClose={() => setShowSettings(false)} />}
       {detailAlert && (
         <AlertDetailModal
           alert={detailAlert}
@@ -765,7 +980,10 @@ export default function AlertsPage() {
             {/* Spacer */}
             <div className="ml-auto flex items-center gap-2">
               {/* Alert Settings */}
-              <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 transition-colors">
+              <button
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+              >
                 <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
