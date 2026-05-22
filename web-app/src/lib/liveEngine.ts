@@ -269,8 +269,9 @@ export class LiveEngine {
       );
 
       await Promise.all([...writes, ...alertWrites]);
-    } catch {
-      // Silently skip if offline or not authenticated yet
+    } catch (err) {
+      // Not authenticated yet or offline — will retry on next tick
+      if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] Firestore sync skipped:', err);
     }
   }
 

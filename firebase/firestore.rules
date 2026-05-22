@@ -9,12 +9,12 @@ service cloud.firestore {
 
     match /devices/{deviceId} {
       allow read: if request.auth != null;
-      allow write: if false; // only Cloud Functions (Admin SDK) write here
+      allow write: if false;
     }
 
     match /grainReadings/{readingId} {
       allow read: if request.auth != null;
-      allow write: if false; // only Cloud Functions write here
+      allow write: if false;
     }
 
     match /storageBins/{storageBinId} {
@@ -22,16 +22,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Live warehouse sensor state — written every minute by Cloud Function
+    // Sensor simulation writes from authenticated web client
     match /warehouseReadings/{warehouseId} {
-      allow read: if request.auth != null;
-      allow write: if false; // only Cloud Functions (Admin SDK) write here
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
     }
 
-    // Active alerts — created/resolved by Cloud Function
+    // Alerts written by authenticated web client
     match /alerts/{alertId} {
-      allow read: if request.auth != null;
-      allow write: if false; // only Cloud Functions write here
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
     }
 
     match /{document=**} {
