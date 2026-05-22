@@ -1,12 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { getAuth, signOut } from 'firebase/auth';
-import firebaseApp from '@/config/firebase';
 
 function PlantIcon() {
   return (
@@ -109,16 +106,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router   = useRouter();
   const { isOpen, close } = useSidebar();
-  const { user } = useAuth();
-
-  const handleLogout = async () => {
-    close();
-    const auth = getAuth(firebaseApp);
-    await signOut(auth);
-    router.replace('/login');
-  };
 
   return (
     <>
@@ -195,29 +183,6 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        {/* ── User + Logout ── */}
-        <div className="px-3 pb-4 border-t border-white/[0.06] pt-3 flex-shrink-0 space-y-1">
-          <div className="flex items-center gap-3 px-2.5 py-2.5 rounded-xl">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#1f5135] to-[#2d7a4f] flex items-center justify-center flex-shrink-0 text-[13px] font-bold text-white shadow-md">
-              {(user?.displayName || user?.email || 'U')[0].toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-bold text-white/85 truncate leading-tight">{user?.displayName || user?.email?.split('@')[0] || 'User'}</p>
-              <p className="text-[10px] text-white/30 truncate leading-tight mt-0.5">{user?.email || ''}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-white/40 hover:text-red-400 hover:bg-red-500/10 active:bg-red-500/15 transition-all duration-200 group text-left"
-          >
-            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            <span className="text-[12px] font-medium">Sign Out</span>
-          </button>
-        </div>
       </aside>
     </>
   );
