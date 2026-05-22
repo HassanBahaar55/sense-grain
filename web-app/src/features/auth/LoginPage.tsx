@@ -153,7 +153,8 @@ export function LoginPage() {
       } else if (code) {
         setError(`Sign-in failed (${code}). Please try again.`);
       } else {
-        setError('Google sign-in failed. Please try again.');
+        const msg = (err as Error).message || '';
+        setError(`Google sign-in failed. ${msg ? `(${msg})` : 'Please try again.'}`);
       }
     } finally {
       setIsGoogleLoading(false);
