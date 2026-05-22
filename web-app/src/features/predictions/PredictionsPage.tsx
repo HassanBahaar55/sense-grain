@@ -206,7 +206,7 @@ function PredictionSummaryPanel() {
   );
 }
 
-// ─── Timeframe adjustment helpers ────────────────────────────────────────────
+// ─── Timeframe + model adjustment helpers ────────────────────────────────────
 
 const timeframeMeta: Record<Timeframe, { label: string; confDelta: number; mult: number }> = {
   '24H': { label: '24 Hours',  confDelta: +5,  mult: 0.15 },
@@ -216,26 +216,33 @@ const timeframeMeta: Record<Timeframe, { label: string; confDelta: number; mult:
   '30D': { label: '30 Days',   confDelta: -12, mult: 2.3  },
 };
 
-function adjustCards(cards: import('@/lib/dataEngine').ParamForecastCard[], timeframe: Timeframe) {
-  const meta = timeframeMeta[timeframe];
+const modelMeta: Record<string, { confDelta: number; multScale: number; label: string; desc: string }> = {
+  standard:     { confDelta: -6,  multScale: 0.80, label: 'Standard AI',  desc: 'Conservative estimates — lower confidence, smaller forecast range' },
+  advanced:     { confDelta: 0,   multScale: 1.00, label: 'Advanced AI',  desc: 'Balanced accuracy — calibrated confidence and forecast range' },
+  experimental: { confDelta: +9,  multScale: 1.22, label: 'Experimental', desc: 'Aggressive projections — higher confidence, wider forecast range' },
+};
+
+function adjustCards(cards: import('@/lib/dataEngine').ParamForecastCard[], timeframe: Timeframe, aiModel: string) {
+  const tf = timeframeMeta[timeframe];
+  const ml = modelMeta[aiModel] ?? modelMeta.advanced;
   return cards.map(card => {
-    const delta = (card.forecast - card.current) * meta.mult;
+    const delta = (card.forecast - card.current) * tf.mult * ml.multScale;
     const raw = card.current + delta;
     const decimals = String(card.forecast).includes('.') ? String(card.forecast).split('.')[1].length : 0;
     const newForecast = decimals > 0 ? parseFloat(raw.toFixed(decimals)) : Math.round(raw);
     return {
       ...card,
       forecast: newForecast,
-      confidence: Math.min(99, Math.max(58, card.confidence + meta.confDelta)),
+      confidence: Math.min(99, Math.max(55, card.confidence + tf.confDelta + ml.confDelta)),
     };
   });
 }
 
 // ─── Tab contents ─────────────────────────────────────────────────────────────
 
-function ParamForecastsTab({ timeframe, warehouse }: { timeframe: Timeframe; warehouse: string }) {
+function ParamForecastsTab({ timeframe, warehouse, aiModel }: { timeframe: Timeframe; warehouse: string; aiModel: string }) {
   const { paramCards: rawCards } = usePredictionsData();
-  const paramForecastCards = adjustCards(rawCards, timeframe);
+  const paramForecastCards = adjustCards(rawCards, timeframe, aiModel);
   return (
     <div className="space-y-5">
       {/* 6 Parameter cards */}
@@ -480,11 +487,40 @@ export default function PredictionsPage() {
   const [timeframe,  setTimeframe]  = useState<Timeframe>('7D');
   const [warehouse,  setWarehouse]  = useState('All Warehouses');
   const [aiModel,    setAiModel]    = useState('advanced');
+  const [isRunning,  setIsRunning]  = useState(false);
+  const [runToast,   setRunToast]   = useState<{ model: string; timeframe: string; warehouse: string } | null>(null);
+
+  function handleRunPrediction() {
+    if (isRunning) return;
+    setIsRunning(true);
+    setRunToast(null);
+    setTimeout(() => {
+      setIsRunning(false);
+      setRunToast({ model: modelMeta[aiModel]?.label ?? aiModel, timeframe, warehouse });
+      setTimeout(() => setRunToast(null), 4000);
+    }, 2500);
+  }
 
   const selectCls = 'h-8 pl-2.5 pr-7 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 transition-colors appearance-none cursor-pointer';
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
+      {/* Run Prediction toast */}
+      {runToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 bg-white rounded-2xl shadow-xl ring-1 ring-black/[0.08] px-5 py-4 max-w-sm animate-in slide-in-from-bottom-4 duration-300">
+          <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[13px] font-black text-gray-900">Prediction Complete</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">{runToast.model} · {runToast.timeframe} · {runToast.warehouse}</p>
+            <p className="text-[10.5px] text-[#1f5135] font-semibold mt-1">Forecasts updated successfully</p>
+          </div>
+          <button onClick={() => setRunToast(null)} className="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-gray-500 flex-shrink-0">
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      )}
       <DashboardHeader
         title="Predictions"
         subtitle="AI-powered forecasts for all environmental parameters and overall risk"
@@ -557,17 +593,42 @@ export default function PredictionsPage() {
               <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
             </div>
 
-            <div className="ml-auto">
-              <button className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-[#1f5135] text-white text-[11px] font-semibold hover:bg-[#174028] active:scale-95 transition-all shadow-sm">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-                Run Prediction
+            <div className="ml-auto flex items-center gap-2">
+              {/* Model description badge */}
+              {aiModel !== 'advanced' && (
+                <span className={cn(
+                  'hidden sm:flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg',
+                  aiModel === 'experimental' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700',
+                )}>
+                  {aiModel === 'experimental' ? '⚡ Higher confidence, wider range' : '📊 Conservative estimates'}
+                </span>
+              )}
+              <button
+                onClick={handleRunPrediction}
+                disabled={isRunning}
+                className={cn(
+                  'flex items-center gap-1.5 h-8 px-4 rounded-lg text-white text-[11px] font-semibold transition-all shadow-sm',
+                  isRunning ? 'bg-[#1f5135]/70 cursor-not-allowed' : 'bg-[#1f5135] hover:bg-[#174028] active:scale-95',
+                )}
+              >
+                {isRunning ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+                    Run Prediction
+                  </>
+                )}
               </button>
             </div>
           </div>
         </Card>
 
         {/* ── Tab Content ─────────────────────────────────────────────────── */}
-        {activeTab === 'params'     && <ParamForecastsTab timeframe={timeframe} warehouse={warehouse} />}
+        {activeTab === 'params'     && <ParamForecastsTab timeframe={timeframe} warehouse={warehouse} aiModel={aiModel} />}
         {activeTab === 'warehouses' && <WarehouseForecastsTab timeframe={timeframe} warehouse={warehouse} />}
         {activeTab === 'risk'       && <RiskForecastTab />}
         {activeTab === 'whatif'     && <WhatIfTab />}
