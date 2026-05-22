@@ -49,6 +49,8 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 
 export function ParameterTrendsChart() {
   return (
+    // touch-action: pan-y lets vertical scroll work on mobile while the chart handles horizontal drag
+    <div style={{ touchAction: 'pan-y' }}>
     <ResponsiveContainer width="100%" height={200}>
       <LineChart data={parameterTrends} margin={{ top: 4, right: 12, left: -16, bottom: 0 }}>
         {/* Warning zone shading */}
@@ -87,5 +89,6 @@ export function ParameterTrendsChart() {
         ))}
       </LineChart>
     </ResponsiveContainer>
+    </div>
   );
 }
