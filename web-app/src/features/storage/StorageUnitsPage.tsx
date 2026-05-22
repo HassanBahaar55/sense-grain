@@ -379,6 +379,149 @@ function CampusMap({ selectedId, onSelect }: { selectedId: string; onSelect: (id
   );
 }
 
+// ─── All Zones Modal ──────────────────────────────────────────────────────────
+
+const RISK_ORDER: Record<ZoneStatus, number> = { high: 0, medium: 1, good: 2, inactive: 3 };
+
+function AllZonesModal({ onClose }: { onClose: () => void }) {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<ZoneStatus | 'all'>('all');
+
+  const allZones = Object.entries(storageZones).flatMap(([wh, zones]) =>
+    zones.map(z => ({ ...z, warehouse: wh }))
+  ).sort((a, b) => RISK_ORDER[a.status] - RISK_ORDER[b.status]);
+
+  const filtered = allZones.filter(z => {
+    if (filterStatus !== 'all' && z.status !== filterStatus) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return z.warehouse.toLowerCase().includes(q) || z.label.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const counts = {
+    high:   allZones.filter(z => z.status === 'high').length,
+    medium: allZones.filter(z => z.status === 'medium').length,
+    good:   allZones.filter(z => z.status === 'good').length,
+    inactive: allZones.filter(z => z.status === 'inactive').length,
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" />
+      <div
+        className="relative w-full max-w-3xl max-h-[88vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] overflow-hidden flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="text-[16px] font-black text-gray-900">All Storage Zones</h2>
+            <p className="text-[11px] text-gray-400 mt-0.5">{allZones.length} zones across all warehouses</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+          >
+            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Filters + Search */}
+        <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0 flex-wrap">
+          {/* Status pills */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { value: 'all',      label: `All (${allZones.length})`,      cls: '' },
+              { value: 'high',     label: `High Risk (${counts.high})`,    cls: 'text-red-600' },
+              { value: 'medium',   label: `Medium (${counts.medium})`,     cls: 'text-amber-600' },
+              { value: 'good',     label: `Good (${counts.good})`,         cls: 'text-green-600' },
+              { value: 'inactive', label: `Inactive (${counts.inactive})`, cls: 'text-gray-400' },
+            ].map(f => (
+              <button
+                key={f.value}
+                onClick={() => setFilterStatus(f.value as ZoneStatus | 'all')}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-colors',
+                  filterStatus === f.value
+                    ? 'bg-[#1f5135] text-white shadow-sm'
+                    : `bg-gray-50 border border-gray-200 hover:bg-gray-100 ${f.cls || 'text-gray-600'}`,
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {/* Search */}
+          <div className="relative ml-auto">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search warehouse or zone..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-[11px] font-medium bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1f5135]/40 w-52"
+            />
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-[11.5px]">
+            <thead className="sticky top-0 bg-gray-50 z-10">
+              <tr className="border-b border-gray-200">
+                {['Warehouse', 'Zone', 'Status', 'Temperature', 'Humidity', 'Moisture', 'CO₂', 'AQI', 'Trend'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left font-bold text-gray-500 uppercase tracking-wide text-[9.5px]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-[12px] text-gray-400 font-medium">
+                    No zones match your filter
+                  </td>
+                </tr>
+              ) : filtered.map((z, i) => {
+                const cfg = zoneStatusConfig[z.status];
+                return (
+                  <tr key={i} className={cn('hover:bg-gray-50 transition-colors', cfg.row)}>
+                    <td className="px-4 py-2.5 font-bold text-gray-800">{z.warehouse}</td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-700">{z.label}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={cn('text-[9.5px] font-bold px-2 py-0.5 rounded-full', cfg.badge)}>
+                        {cfg.label}
+                      </span>
+                    </td>
+                    <td className={cn('px-4 py-2.5 font-bold tabular-nums', z.status === 'high' ? 'text-red-600' : z.status === 'medium' ? 'text-amber-700' : 'text-gray-700')}>
+                      {z.temp !== null ? `${z.temp} °C` : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-600 tabular-nums">{z.humidity !== null ? `${z.humidity} %` : '—'}</td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-600 tabular-nums">{z.moisture !== null ? `${z.moisture} %` : '—'}</td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-500 tabular-nums">{z.co2 !== null ? `${z.co2} ppm` : '—'}</td>
+                    <td className="px-4 py-2.5 font-semibold text-gray-500 tabular-nums">{z.aqi ?? '—'}</td>
+                    <td className="px-4 py-2.5"><TrendIcon trend={z.trend} riskContext={z.status === 'high' || z.status === 'medium'} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+          <p className="text-[11px] text-gray-400 font-medium">Showing {filtered.length} of {allZones.length} zones</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Warehouse table ──────────────────────────────────────────────────────────
 
 const WH_STATUS_FILTERS = [
@@ -574,6 +717,7 @@ export default function StorageUnitsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('Zones');
   const [stabilityDays, setStabilityDays] = useState<7 | 14 | 30>(7);
   const [whStatusFilter, setWhStatusFilter] = useState<StorageStatus | 'all'>('all');
+  const [showAllZones, setShowAllZones] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
 
   function scrollToTableWithFilter(filter: StorageStatus | 'all') {
@@ -588,6 +732,7 @@ export default function StorageUnitsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
+      {showAllZones && <AllZonesModal onClose={() => setShowAllZones(false)} />}
       <DashboardHeader
         title="Storage Units"
         subtitle="Monitor and manage all warehouses and storage zones"
@@ -765,7 +910,12 @@ export default function StorageUnitsPage() {
             <Card className="p-5 flex-1">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[14px] font-bold text-gray-900">Top 5 Critical Zones</h2>
-                <button className="text-[11px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors">View All</button>
+                <button
+                  onClick={() => setShowAllZones(true)}
+                  className="text-[11px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors underline-offset-2 hover:underline"
+                >
+                  View All
+                </button>
               </div>
               <div className="space-y-2.5">
                 {topCriticalZones.map((z, i) => {
