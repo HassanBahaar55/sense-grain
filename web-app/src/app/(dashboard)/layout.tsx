@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import { HeaderProvider } from '@/contexts/HeaderContext';
+import { UserProvider } from '@/contexts/UserContext';
+import { LiveDataProvider } from '@/contexts/LiveDataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
@@ -139,17 +141,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <HeaderProvider>
-      <SidebarProvider>
-        <div className="h-screen overflow-hidden bg-gray-50">
-          <Sidebar />
-          {/* pb-14 on mobile reserves space so content never hides under the bottom nav */}
-          <div className="lg:pl-60 h-full flex flex-col overflow-hidden pb-14 lg:pb-0">
-            {children}
-          </div>
-          <BottomNav />
-        </div>
-      </SidebarProvider>
-    </HeaderProvider>
+    <UserProvider>
+      <LiveDataProvider>
+        <HeaderProvider>
+          <SidebarProvider>
+            <div className="h-screen overflow-hidden bg-gray-50">
+              <Sidebar />
+              {/* pb-14 on mobile reserves space so content never hides under the bottom nav */}
+              <div className="lg:pl-60 h-full flex flex-col overflow-hidden pb-14 lg:pb-0">
+                {children}
+              </div>
+              <BottomNav />
+            </div>
+          </SidebarProvider>
+        </HeaderProvider>
+      </LiveDataProvider>
+    </UserProvider>
   );
 }

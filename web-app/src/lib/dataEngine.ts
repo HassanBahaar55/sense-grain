@@ -4,10 +4,68 @@
  * Centralized deterministic mock-data engine.
  * All generators are pure functions keyed on a date string,
  * ensuring the same date always produces the same data.
+ *
+ * Multi-user isolation: every seed is prefixed with _userPrefix so
+ * different users see completely different data.
+ *
+ * Live overlay: _liveOverride replaces warehouse sensor readings with
+ * real-time values from liveEngine, making all hooks live-aware.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useHeader } from '@/contexts/HeaderContext';
+import type { LiveSensorReading } from './liveEngine';
+
+// ─── User-prefix isolation ────────────────────────────────────────────────────
+
+let _userPrefix = 'SA'; // default: Super Admin
+
+export function setUserDataPrefix(prefix: string) {
+  _userPrefix = prefix;
+}
+
+// ─── Live-state overlay ───────────────────────────────────────────────────────
+
+type LiveOverride = Record<string, LiveSensorReading>;
+let _liveOverride: LiveOverride | null = null;
+const _liveListeners = new Set<() => void>();
+
+export function setLiveOverride(state: LiveOverride) {
+  _liveOverride = state;
+  _liveListeners.forEach(fn => fn());
+}
+
+function subscribeToLive(fn: () => void): () => void {
+  _liveListeners.add(fn);
+  return () => _liveListeners.delete(fn);
+}
+
+/** Hook: re-renders whenever live engine ticks */
+function useLiveTick(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => subscribeToLive(() => setTick(t => t + 1)), []);
+  return tick;
+}
+
+// ─── User-version counter (re-render on user switch) ─────────────────────────
+
+let _userVersion = 0;
+const _userVersionListeners = new Set<() => void>();
+
+export function incrementUserVersion() {
+  _userVersion++;
+  _userVersionListeners.forEach(fn => fn());
+}
+
+function useUserVersion(): number {
+  const [ver, setVer] = useState(_userVersion);
+  useEffect(() => {
+    const fn = () => setVer(_userVersion);
+    _userVersionListeners.add(fn);
+    return () => { _userVersionListeners.delete(fn); };
+  }, []);
+  return ver;
+}
 
 // ─── Seeded RNG ───────────────────────────────────────────────────────────────
 
@@ -20,9 +78,9 @@ function fnv32(str: string): number {
   return h >>> 0;
 }
 
-/** Returns a deterministic float in [0, 1) for a given seed string. */
+/** Returns a deterministic float in [0, 1) — seed includes user prefix for isolation. */
 function r(seed: string): number {
-  return fnv32(seed) / 4294967295;
+  return fnv32(_userPrefix + seed) / 4294967295;
 }
 
 /** Returns a deterministic float in [min, max). */
@@ -148,6 +206,29 @@ export function getWarehouseReadings(date: Date): WarehouseReading[] {
     temp: null, humidity: null, moisture: null, co2: null, aqi: null,
     capacity: 1200, used: 0, usedPct: 0, lastUpdate: null,
   });
+
+  // ── Apply live sensor overlay from liveEngine ─────────────────────────────
+  if (_liveOverride) {
+    return active.map(wh => {
+      const live = _liveOverride![wh.id];
+      if (!live || wh.temp === null) return wh;
+      const status: WHStatus = live.status;
+      const risk: RiskLevel  = status === 'high' ? 'high' : status === 'medium' ? 'medium' : 'low';
+      const trend: TrendDir  = live.trend === 'up' ? 'up' : live.trend === 'down' ? 'down' : 'stable';
+      return {
+        ...wh,
+        temp:     +live.temperature.toFixed(1),
+        humidity: live.humidity,
+        moisture: +live.moisture.toFixed(1),
+        co2:      live.co2,
+        aqi:      live.aqi,
+        usedPct:  live.capacity,
+        used:     Math.round(wh.capacity * live.capacity / 100),
+        status, risk, trend,
+        lastUpdate: 'Live',
+      };
+    });
+  }
 
   return active;
 }
@@ -841,28 +922,43 @@ export function getStabilityData(date: Date, days: number): StabilityPoint[] {
 
 export function useStabilityData(days: number): StabilityPoint[] {
   const { selectedDate } = useHeader();
-  return useMemo(() => getStabilityData(selectedDate, days), [selectedDate, days]);
+  const uv = useUserVersion(); const lt = useLiveTick();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => getStabilityData(selectedDate, days), [selectedDate, days, uv, lt]);
 }
 
-export function useDashboardData()   { const { selectedDate } = useHeader(); return useMemo(() => getDashboardData(selectedDate),   [selectedDate]); }
-export function useAlertsData()      { const { selectedDate } = useHeader(); return useMemo(() => getAlertsData(selectedDate),      [selectedDate]); }
-export function useStorageData()     { const { selectedDate } = useHeader(); return useMemo(() => getStorageData(selectedDate),     [selectedDate]); }
-export function useAnalyticsData()   { const { selectedDate } = useHeader(); return useMemo(() => getAnalyticsData(selectedDate),   [selectedDate]); }
-export function usePredictionsData() { const { selectedDate } = useHeader(); return useMemo(() => getPredictionsData(selectedDate), [selectedDate]); }
-export function useReportsData()     { const { selectedDate } = useHeader(); return useMemo(() => getReportsData(selectedDate),     [selectedDate]); }
-export function useParamTrendData()  { const { selectedDate } = useHeader(); return useMemo(() => getParamTrendData(selectedDate),  [selectedDate]); }
+export function useDashboardData()   { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getDashboardData(selectedDate),   // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
+export function useAlertsData()      { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getAlertsData(selectedDate),      // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
+export function useStorageData()     { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getStorageData(selectedDate),     // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
+export function useAnalyticsData()   { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getAnalyticsData(selectedDate),   // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
+export function usePredictionsData() { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getPredictionsData(selectedDate), // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
+export function useReportsData()     { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getReportsData(selectedDate),     // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
+export function useParamTrendData()  { const { selectedDate } = useHeader(); const uv = useUserVersion(); const lt = useLiveTick(); return useMemo(() => getParamTrendData(selectedDate),  // eslint-disable-next-line react-hooks/exhaustive-deps
+[selectedDate, uv, lt]); }
 
 export function useAlertTrendData(): AlertTrendPoint[] {
   const { selectedDate } = useHeader();
-  return useMemo(() => getAlertsData(selectedDate).alertTrendData, [selectedDate]);
+  const uv = useUserVersion(); const lt = useLiveTick();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => getAlertsData(selectedDate).alertTrendData, [selectedDate, uv, lt]);
 }
 
 export function useEnvTrendData(): EnvTrendPoint[] {
   const { selectedDate } = useHeader();
-  return useMemo(() => getAnalyticsData(selectedDate).envTrendData, [selectedDate]);
+  const uv = useUserVersion(); const lt = useLiveTick();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => getAnalyticsData(selectedDate).envTrendData, [selectedDate, uv, lt]);
 }
 
 export function useWhPerformanceData(): WHPerformancePoint[] {
   const { selectedDate } = useHeader();
-  return useMemo(() => getAnalyticsData(selectedDate).whPerformanceData, [selectedDate]);
+  const uv = useUserVersion(); const lt = useLiveTick();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => getAnalyticsData(selectedDate).whPerformanceData, [selectedDate, uv, lt]);
 }
