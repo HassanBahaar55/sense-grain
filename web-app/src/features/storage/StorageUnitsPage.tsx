@@ -65,14 +65,51 @@ function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: 
   );
 }
 
-function DropdownBtn({ label }: { label: string }) {
+function DropdownBtn({ label, options, onChange }: {
+  label: string;
+  options?: string[];
+  onChange?: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(label);
+  if (!options?.length) {
+    return (
+      <button className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-600 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors duration-150">
+        {label}
+        <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+    );
+  }
   return (
-    <button className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-600 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors duration-150">
-      {label}
-      <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="6 9 12 15 18 9" />
-      </svg>
-    </button>
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-600 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors duration-150"
+      >
+        {selected}
+        <svg className={cn('w-3.5 h-3.5 text-gray-400 transition-transform duration-150', open ? 'rotate-180' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-lg ring-1 ring-black/[0.08] py-1 min-w-[140px] animate-fade-slide-in">
+          {options.map(opt => (
+            <button
+              key={opt}
+              onClick={() => { setSelected(opt); onChange?.(opt); setOpen(false); }}
+              className={cn(
+                'w-full text-left px-3 py-1.5 text-[11px] font-semibold transition-colors',
+                opt === selected ? 'text-[#1f5135] bg-green-50' : 'text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -658,7 +695,7 @@ export default function StorageUnitsPage() {
               <SectionHeader
                 title="Warehouse Overview"
                 subtitle="Click a warehouse to inspect"
-                action={<DropdownBtn label="All Warehouses" />}
+                action={<DropdownBtn label="All Warehouses" options={['All Warehouses', 'WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G']} onChange={(v) => v !== 'All Warehouses' && setSelectedWH(v)} />}
               />
               <CampusMap selectedId={selectedWH} onSelect={setSelectedWH} />
             </Card>
@@ -670,7 +707,7 @@ export default function StorageUnitsPage() {
             <SectionHeader
               title="All Warehouses"
               subtitle="Operational status and capacity"
-              action={<DropdownBtn label="All Warehouses" />}
+              action={<DropdownBtn label="All Warehouses" options={['All Warehouses', 'WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G']} onChange={(v) => v !== 'All Warehouses' && setSelectedWH(v)} />}
             />
             <WarehouseTable selectedId={selectedWH} onSelect={setSelectedWH} />
           </Card>
@@ -761,7 +798,7 @@ export default function StorageUnitsPage() {
                   Last updated: {selectedWarehouse.lastUpdate ?? 'Offline'}
                 </p>
               </div>
-              <DropdownBtn label="All Zones" />
+              <DropdownBtn label="All Zones" options={['All Zones', 'Zone A', 'Zone B', 'Zone C', 'Zone D']} />
             </div>
 
             {/* Tabs */}

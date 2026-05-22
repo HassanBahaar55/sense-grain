@@ -8,7 +8,7 @@ import {
   scheduledReports,
   type ReportType,
 } from './mockData';
-import { useReportsData } from '@/lib/dataEngine';
+import { useReportsData, type ReportItem } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -126,17 +126,125 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: () => void 
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+// ─── Generate modal ───────────────────────────────────────────────────────────
+
+const REPORT_TYPES: { type: ReportType; label: string; desc: string }[] = [
+  { type: 'environmental', label: 'Environmental Report', desc: 'Temperature, humidity, CO₂ across all zones' },
+  { type: 'compliance',    label: 'Compliance Report',    desc: 'Regulatory adherence and audit trail' },
+  { type: 'performance',   label: 'Performance Report',   desc: 'Efficiency metrics and warehouse scores' },
+  { type: 'alert-summary', label: 'Alert Summary',        desc: 'All alerts grouped by severity and warehouse' },
+  { type: 'custom',        label: 'Custom Report',        desc: 'Select specific parameters and date range' },
+];
+
+function GenerateModal({ onClose, onGenerate }: { onClose: () => void; onGenerate: (type: ReportType) => void }) {
+  const [selected, setSelected] = useState<ReportType>('environmental');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] w-full max-w-sm animate-fade-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h3 className="text-[14px] font-bold text-gray-900">Generate Report</h3>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="p-4 space-y-2">
+          {REPORT_TYPES.map(({ type, label, desc }) => (
+            <button
+              key={type}
+              onClick={() => setSelected(type)}
+              className={cn(
+                'w-full text-left p-3 rounded-xl transition-all border',
+                selected === type
+                  ? 'border-[#1f5135] bg-green-50 ring-1 ring-[#1f5135]/20'
+                  : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50',
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', typeConfig[type].dot)} />
+                <p className="text-[12px] font-bold text-gray-800">{label}</p>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-0.5 ml-4">{desc}</p>
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 p-4 pt-0">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl bg-gray-100 text-gray-600 text-[12px] font-bold hover:bg-gray-200 transition-colors">Cancel</button>
+          <button
+            onClick={() => { onGenerate(selected); onClose(); }}
+            className="flex-1 h-9 rounded-xl bg-[#1f5135] text-white text-[12px] font-bold hover:bg-[#174028] transition-colors"
+          >
+            Generate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const { stats: reportStats, recentReports, reportTypeData, reportTrendData } = useReportsData();
   const [scheduleEnabled, setScheduleEnabled] = useState<Record<string, boolean>>(
     () => Object.fromEntries(scheduledReports.map((s) => [s.id, s.enabled]))
   );
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [localReports, setLocalReports] = useState<typeof recentReports>([]);
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportTypeFilter, setReportTypeFilter] = useState<ReportType | 'all'>('all');
 
   const toggleSchedule = (id: string) =>
     setScheduleEnabled((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  function handleGenerate(type: ReportType) {
+    const newId = `RPT-${Date.now().toString(36).toUpperCase()}`;
+    const newReport: ReportItem = {
+      id: newId,
+      title: `${typeConfig[type].label} — All Warehouses`,
+      type,
+      warehouse: 'All Warehouses',
+      period: 'Custom',
+      generatedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      dateGenerated: 'Just now',
+      generatedBy: 'You (Admin)',
+      size: '',
+      downloads: 0,
+      status: 'processing',
+    };
+    setLocalReports(prev => [newReport, ...prev]);
+    setGeneratingId(newId);
+    setTimeout(() => {
+      setLocalReports(prev => prev.map(r =>
+        r.id === newId ? { ...r, status: 'ready' as const, size: `${(Math.random() * 3 + 0.5).toFixed(1)} MB` } : r
+      ));
+      setGeneratingId(null);
+    }, 2500);
+  }
+
+  function handleDownload(id: string, title: string) {
+    setDownloadingId(id);
+    setTimeout(() => {
+      setDownloadingId(null);
+      setDownloadedIds(prev => new Set([...prev, id]));
+      setTimeout(() => setDownloadedIds(prev => { const s = new Set(prev); s.delete(id); return s; }), 2000);
+    }, 1200);
+  }
+
+  const allReports = [...localReports, ...recentReports];
+  const filteredReports = allReports.filter(r => {
+    if (reportTypeFilter !== 'all' && r.type !== reportTypeFilter) return false;
+    if (reportSearch) {
+      const q = reportSearch.toLowerCase();
+      return r.title.toLowerCase().includes(q) || r.warehouse.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
+      {showGenerate && <GenerateModal onClose={() => setShowGenerate(false)} onGenerate={handleGenerate} />}
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="h-16 bg-white border-b border-gray-100 flex items-center px-6 gap-4 sticky top-0 z-20 flex-shrink-0">
@@ -179,12 +287,14 @@ export default function ReportsPage() {
             <svg className="hidden md:block w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
           </button>
           {/* Generate Report */}
-          <button className="hidden lg:flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] active:scale-[0.97] transition-all duration-150 shadow-sm shadow-green-900/20 select-none">
+          <button
+            onClick={() => setShowGenerate(true)}
+            className="hidden lg:flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] active:scale-[0.97] transition-all duration-150 shadow-sm shadow-green-900/20 select-none"
+          >
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" />
             </svg>
             Generate Report
-            <svg className="w-3 h-3 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
           </button>
         </div>
       </header>
@@ -277,14 +387,46 @@ export default function ReportsPage() {
           <Card className="p-5 min-w-0 overflow-hidden">
             <SectionHeader
               title="Recent Reports"
-              subtitle="All generated reports — latest first"
+              subtitle={`${filteredReports.length} report${filteredReports.length !== 1 ? 's' : ''} found`}
               action={
-                <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-all duration-150 flex-shrink-0">
-                  View All
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                <button
+                  onClick={() => setShowGenerate(true)}
+                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-[#1f5135] text-white text-[11px] font-semibold hover:bg-[#174028] transition-all duration-150 flex-shrink-0"
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  New
                 </button>
               }
             />
+
+            {/* Search + Type filter */}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="relative flex-1">
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input
+                  type="text"
+                  placeholder="Search reports..."
+                  value={reportSearch}
+                  onChange={e => setReportSearch(e.target.value)}
+                  className="w-full h-7 pl-8 pr-3 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-medium text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 transition-colors"
+                />
+              </div>
+              <div className="relative">
+                <select
+                  value={reportTypeFilter}
+                  onChange={e => setReportTypeFilter(e.target.value as ReportType | 'all')}
+                  className="h-7 pl-2.5 pr-7 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 cursor-pointer"
+                >
+                  <option value="all">All Types</option>
+                  <option value="environmental">Environmental</option>
+                  <option value="compliance">Compliance</option>
+                  <option value="performance">Performance</option>
+                  <option value="alert-summary">Alert Summary</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
+            </div>
             <div className="overflow-x-auto max-w-full rounded-xl ring-1 ring-gray-200">
               <table className="w-full text-[11px] whitespace-nowrap">
                 <thead>
@@ -297,7 +439,13 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {recentReports.map((row) => {
+                  {filteredReports.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-[12px] text-gray-400 font-medium">
+                        No reports match your search.
+                      </td>
+                    </tr>
+                  ) : filteredReports.map((row) => {
                     const tc = typeConfig[row.type];
                     return (
                       <tr key={row.id} className="hover:bg-gray-50 transition-colors duration-150 cursor-pointer group">
@@ -348,18 +496,29 @@ export default function ReportsPage() {
                           <div className="flex items-center gap-1.5">
                             {/* Download */}
                             <button
+                              onClick={() => row.status === 'ready' && handleDownload(row.id, row.title)}
                               className={cn(
                                 'w-6 h-6 flex items-center justify-center rounded-lg transition-all duration-150',
                                 row.status === 'processing'
                                   ? 'text-gray-300 cursor-not-allowed'
+                                  : downloadedIds.has(row.id)
+                                  ? 'text-green-600 bg-green-50'
+                                  : downloadingId === row.id
+                                  ? 'text-amber-500 animate-spin'
                                   : 'text-gray-400 hover:text-[#1f5135] hover:bg-green-50',
                               )}
                               disabled={row.status === 'processing'}
-                              title="Download"
+                              title={downloadedIds.has(row.id) ? 'Downloaded!' : 'Download'}
                             >
-                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                              </svg>
+                              {downloadedIds.has(row.id) ? (
+                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                              ) : downloadingId === row.id ? (
+                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9" /></svg>
+                              ) : (
+                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                              )}
                             </button>
                             {/* Share */}
                             <button

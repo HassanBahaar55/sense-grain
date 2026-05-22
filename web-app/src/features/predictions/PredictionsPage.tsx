@@ -206,10 +206,36 @@ function PredictionSummaryPanel() {
   );
 }
 
+// ─── Timeframe adjustment helpers ────────────────────────────────────────────
+
+const timeframeMeta: Record<Timeframe, { label: string; confDelta: number; mult: number }> = {
+  '24H': { label: '24 Hours',  confDelta: +5,  mult: 0.15 },
+  '3D':  { label: '3 Days',    confDelta: +2,  mult: 0.45 },
+  '7D':  { label: '7 Days',    confDelta: 0,   mult: 1.0  },
+  '14D': { label: '14 Days',   confDelta: -5,  mult: 1.55 },
+  '30D': { label: '30 Days',   confDelta: -12, mult: 2.3  },
+};
+
+function adjustCards(cards: import('@/lib/dataEngine').ParamForecastCard[], timeframe: Timeframe) {
+  const meta = timeframeMeta[timeframe];
+  return cards.map(card => {
+    const delta = (card.forecast - card.current) * meta.mult;
+    const raw = card.current + delta;
+    const decimals = String(card.forecast).includes('.') ? String(card.forecast).split('.')[1].length : 0;
+    const newForecast = decimals > 0 ? parseFloat(raw.toFixed(decimals)) : Math.round(raw);
+    return {
+      ...card,
+      forecast: newForecast,
+      confidence: Math.min(99, Math.max(58, card.confidence + meta.confDelta)),
+    };
+  });
+}
+
 // ─── Tab contents ─────────────────────────────────────────────────────────────
 
-function ParamForecastsTab() {
-  const { paramCards: paramForecastCards } = usePredictionsData();
+function ParamForecastsTab({ timeframe, warehouse }: { timeframe: Timeframe; warehouse: string }) {
+  const { paramCards: rawCards } = usePredictionsData();
+  const paramForecastCards = adjustCards(rawCards, timeframe);
   return (
     <div className="space-y-5">
       {/* 6 Parameter cards */}
@@ -223,11 +249,13 @@ function ParamForecastsTab() {
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="text-[15px] font-bold text-gray-900">Environmental Forecast</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Stability index — Historical (solid) & AI Forecast (dashed)</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Stability index — Historical (solid) & AI Forecast (dashed) · {warehouse}
+              </p>
             </div>
             <div className="flex items-center gap-1.5 text-[9px] font-bold text-[#1f5135] bg-green-50 px-2 py-1 rounded-full flex-shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              7D Forecast
+              {timeframe} Forecast
             </div>
           </div>
           <PredictionForecastChart />
@@ -249,14 +277,18 @@ function ParamForecastsTab() {
   );
 }
 
-function WarehouseForecastsTab() {
+function WarehouseForecastsTab({ timeframe, warehouse }: { timeframe: Timeframe; warehouse: string }) {
   const { whPredTable: whPredictionTable } = usePredictionsData();
+  const filteredTable = warehouse === 'All Warehouses'
+    ? whPredictionTable
+    : whPredictionTable.filter(r => r.id === warehouse || r.name.includes(warehouse.replace('WH-', '')));
+  const displayTable = filteredTable.length > 0 ? filteredTable : whPredictionTable;
   return (
     <Card className="p-5 min-w-0 overflow-hidden">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-[15px] font-bold text-gray-900">Warehouse-wise Forecasts</h2>
-          <p className="text-xs text-gray-400 mt-0.5">AI-predicted values across all parameters — 7-day horizon</p>
+          <p className="text-xs text-gray-400 mt-0.5">AI-predicted values · {timeframe} horizon · {warehouse}</p>
         </div>
         <span className="flex items-center gap-1.5 text-[9px] font-bold text-[#1f5135] bg-green-50 px-2.5 py-1 rounded-full">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -267,13 +299,13 @@ function WarehouseForecastsTab() {
         <table className="w-full text-[11px] whitespace-nowrap">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              {['Warehouse', 'Overall Risk', 'Temp (7D)', 'Humidity (7D)', 'Moisture (7D)', 'CO₂ (7D)', 'AQI (7D)', 'Capacity (7D)', 'Trend'].map((h) => (
+              {['Warehouse', 'Overall Risk', `Temp (${timeframe})`, `Humidity (${timeframe})`, `Moisture (${timeframe})`, `CO₂ (${timeframe})`, `AQI (${timeframe})`, `Capacity (${timeframe})`, 'Trend'].map((h) => (
                 <th key={h} className="px-3 py-2.5 text-left font-bold text-gray-500 uppercase tracking-wide text-[9px]">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {whPredictionTable.map((row) => {
+            {displayTable.map((row) => {
               const rc = riskConfig[row.overallRisk];
               const isInactive = row.overallRisk === 'inactive';
               const nullCell = <span className="text-gray-300">—</span>;
@@ -535,8 +567,8 @@ export default function PredictionsPage() {
         </Card>
 
         {/* ── Tab Content ─────────────────────────────────────────────────── */}
-        {activeTab === 'params'     && <ParamForecastsTab />}
-        {activeTab === 'warehouses' && <WarehouseForecastsTab />}
+        {activeTab === 'params'     && <ParamForecastsTab timeframe={timeframe} warehouse={warehouse} />}
+        {activeTab === 'warehouses' && <WarehouseForecastsTab timeframe={timeframe} warehouse={warehouse} />}
         {activeTab === 'risk'       && <RiskForecastTab />}
         {activeTab === 'whatif'     && <WhatIfTab />}
 

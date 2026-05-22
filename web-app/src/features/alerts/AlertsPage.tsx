@@ -291,9 +291,13 @@ interface TableProps {
   statusF: string;
   page: number;
   setPage: (p: number) => void;
+  onAcknowledge: (id: string) => void;
+  onResolve: (id: string) => void;
+  onMute: (id: string) => void;
+  onViewDetail: (id: string) => void;
 }
 
-function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage }: TableProps) {
+function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage, onAcknowledge, onResolve, onMute, onViewDetail }: TableProps) {
   const filtered = alerts.filter((a) => {
     if (search) {
       const q = search.toLowerCase();
@@ -396,7 +400,14 @@ function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage 
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
                         <button
-                          className="w-6 h-6 rounded-md flex items-center justify-center text-amber-500 hover:bg-amber-50 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); onAcknowledge(a.id); }}
+                          disabled={a.status !== 'active'}
+                          className={cn(
+                            'w-6 h-6 rounded-md flex items-center justify-center transition-colors',
+                            a.status === 'active'
+                              ? 'text-amber-500 hover:bg-amber-50'
+                              : 'text-gray-200 cursor-not-allowed',
+                          )}
                           title="Acknowledge"
                         >
                           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -404,14 +415,22 @@ function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage 
                           </svg>
                         </button>
                         <button
-                          className="w-6 h-6 rounded-md flex items-center justify-center text-green-600 hover:bg-green-50 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); onResolve(a.id); }}
+                          disabled={a.status === 'resolved'}
+                          className={cn(
+                            'w-6 h-6 rounded-md flex items-center justify-center transition-colors',
+                            a.status !== 'resolved'
+                              ? 'text-green-600 hover:bg-green-50'
+                              : 'text-gray-200 cursor-not-allowed',
+                          )}
                           title="Resolve"
                         >
                           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                            <circle cx="12" cy="12" r="10" /><polyline points="9 12 11 14 15 10" />
                           </svg>
                         </button>
                         <button
+                          onClick={(e) => { e.stopPropagation(); onViewDetail(a.id); }}
                           className="w-6 h-6 rounded-md flex items-center justify-center text-blue-500 hover:bg-blue-50 transition-colors"
                           title="View details"
                         >
@@ -469,6 +488,86 @@ function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage 
   );
 }
 
+// ─── Alert detail modal ───────────────────────────────────────────────────────
+
+function AlertDetailModal({ alert, onClose, onAcknowledge, onResolve }: {
+  alert: Alert;
+  onClose: () => void;
+  onAcknowledge: (id: string) => void;
+  onResolve: (id: string) => void;
+}) {
+  const sCfg = severityConfig[alert.severity];
+  const stCfg = statusConfig[alert.status];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] w-full max-w-md animate-fade-slide-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-gray-100">
+          <div className="flex items-start gap-3">
+            <span className={cn('w-2 h-2 rounded-full mt-2 flex-shrink-0', sCfg.dot)} />
+            <div>
+              <h3 className="text-[14px] font-bold text-gray-900">{alert.title}</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">{alert.id}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 transition-colors">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        {/* Body */}
+        <div className="p-5 space-y-3.5">
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Severity', value: <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', sCfg.badge)}>{sCfg.label}</span> },
+              { label: 'Status',   value: <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', stCfg.badge)}>{stCfg.label}</span> },
+              { label: 'Warehouse', value: <span className="text-[11px] font-semibold text-gray-700">{alert.warehouse}</span> },
+              { label: 'Zone',      value: <span className="text-[11px] font-semibold text-gray-700">{alert.zone}</span> },
+              { label: 'Parameter', value: <span className="text-[11px] font-semibold text-gray-700">{alert.parameter}</span> },
+              { label: 'Time',      value: <span className="text-[11px] font-semibold text-gray-700">{alert.time}</span> },
+            ].map((row) => (
+              <div key={row.label} className="p-2.5 rounded-xl bg-gray-50">
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">{row.label}</p>
+                {row.value}
+              </div>
+            ))}
+          </div>
+          <div className="p-3 rounded-xl bg-gray-50">
+            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Measured Value</p>
+            <p className="text-[20px] font-bold text-gray-900 tabular-nums">{alert.value}</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Threshold: {alert.threshold}</p>
+          </div>
+        </div>
+        {/* Footer */}
+        <div className="flex items-center gap-2 px-5 pb-5">
+          {alert.status === 'active' && (
+            <button
+              onClick={() => { onAcknowledge(alert.id); onClose(); }}
+              className="flex-1 h-8 rounded-xl bg-amber-50 text-amber-700 text-[11px] font-bold hover:bg-amber-100 transition-colors border border-amber-200"
+            >
+              Acknowledge
+            </button>
+          )}
+          {alert.status !== 'resolved' && (
+            <button
+              onClick={() => { onResolve(alert.id); onClose(); }}
+              className="flex-1 h-8 rounded-xl bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors border border-green-200"
+            >
+              Mark Resolved
+            </button>
+          )}
+          <button onClick={onClose} className="flex-1 h-8 rounded-xl bg-gray-100 text-gray-600 text-[11px] font-bold hover:bg-gray-200 transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AlertsPage() {
@@ -478,9 +577,59 @@ export default function AlertsPage() {
   const alertsByType = alertsData.alertsByType;
   const recentAlertFeed = alertsData.recentFeed;
   const heatmapData = alertsData.heatmapData;
-  const acknowledgedAlerts = alerts.filter(a => a.status === 'acknowledged').map((a, i) => ({
-    id: `ack${i + 1}`, warehouse: a.warehouse, zone: a.zone, title: a.title, acknowledgedBy: 'Admin User', acknowledgedAt: a.time,
+
+  // Local state for status mutations
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, AlertStatus>>({});
+  const [detailAlert, setDetailAlert] = useState<Alert | null>(null);
+  const [exportSuccess, setExportSuccess] = useState(false);
+
+  function setAlertStatus(id: string, status: AlertStatus) {
+    setStatusOverrides(prev => ({ ...prev, [id]: status }));
+  }
+
+  // Effective alerts = engine data merged with local overrides
+  const effectiveAlerts: Alert[] = alerts.map(a => ({
+    ...a,
+    status: (statusOverrides[a.id] ?? a.status) as AlertStatus,
   }));
+
+  // Dynamic summary counts based on effective alerts
+  const activeEffective = effectiveAlerts.filter(a => a.status === 'active');
+  const effectiveSummary = {
+    total: alertSummary.total,
+    critical: activeEffective.filter(a => a.severity === 'critical').length,
+    warning: activeEffective.filter(a => ['high', 'medium'].includes(a.severity)).length,
+    info: activeEffective.filter(a => ['low', 'info'].includes(a.severity)).length,
+    resolved: effectiveAlerts.filter(a => a.status === 'resolved').length,
+  };
+
+  // Acknowledged panel — show all acknowledged (engine + user-acknowledged)
+  const acknowledgedAlerts = effectiveAlerts
+    .filter(a => a.status === 'acknowledged')
+    .map(a => ({
+      id: a.id, warehouse: a.warehouse, zone: a.zone, title: a.title,
+      acknowledgedBy: statusOverrides[a.id] ? 'You (Admin)' : 'Admin User',
+      acknowledgedAt: statusOverrides[a.id] ? 'Just now' : a.time,
+    }));
+
+  // CSV export
+  function handleExport() {
+    const rows = effectiveAlerts.map(a =>
+      [a.severity, `"${a.title}"`, a.warehouse, a.zone, a.parameter, a.value, a.threshold, a.time, a.status].join(',')
+    );
+    const csv = ['Severity,Alert,Warehouse,Zone,Parameter,Value,Threshold,Time,Status', ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sense-grain-alerts-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setExportSuccess(true);
+    setTimeout(() => setExportSuccess(false), 2000);
+  }
 
   const [search, setSearch]     = useState('');
   const [severityF, setSeverityF] = useState('all');
@@ -494,6 +643,14 @@ export default function AlertsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
+      {detailAlert && (
+        <AlertDetailModal
+          alert={detailAlert}
+          onClose={() => setDetailAlert(null)}
+          onAcknowledge={(id) => { setAlertStatus(id, 'acknowledged'); }}
+          onResolve={(id) => { setAlertStatus(id, 'resolved'); }}
+        />
+      )}
       <DashboardHeader
         title="Alert Management"
         subtitle="Monitor, triage and resolve sensor alerts across all warehouses"
@@ -505,7 +662,7 @@ export default function AlertsPage() {
         <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
           <SummaryCard
             label="Total Alerts"
-            value={alertSummary.total}
+            value={effectiveSummary.total}
             sub="Last 7 days"
             iconBg="bg-blue-50"
             iconColor="text-blue-600"
@@ -513,8 +670,8 @@ export default function AlertsPage() {
           />
           <SummaryCard
             label="Critical Alerts"
-            value={alertSummary.critical}
-            sub="+1 today · Immediate action"
+            value={effectiveSummary.critical}
+            sub={effectiveSummary.critical > 0 ? 'Immediate action required' : 'No critical alerts'}
             iconBg="bg-red-50"
             iconColor="text-red-500"
             valueColor="text-red-500"
@@ -522,7 +679,7 @@ export default function AlertsPage() {
           />
           <SummaryCard
             label="Warning Alerts"
-            value={alertSummary.warning}
+            value={effectiveSummary.warning}
             sub="Medium + High severity"
             iconBg="bg-amber-50"
             iconColor="text-amber-500"
@@ -531,7 +688,7 @@ export default function AlertsPage() {
           />
           <SummaryCard
             label="Info Alerts"
-            value={alertSummary.info}
+            value={effectiveSummary.info}
             sub="Informational events"
             iconBg="bg-purple-50"
             iconColor="text-purple-500"
@@ -539,8 +696,8 @@ export default function AlertsPage() {
           />
           <SummaryCard
             label="Resolved"
-            value={alertSummary.resolved}
-            sub="Auto-resolved: 8"
+            value={effectiveSummary.resolved}
+            sub={`${effectiveSummary.resolved} total resolved`}
             iconBg="bg-green-50"
             iconColor="text-green-600"
             valueColor="text-green-600"
@@ -616,11 +773,28 @@ export default function AlertsPage() {
                 Alert Settings
               </button>
               {/* Export */}
-              <button className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#1f5135] text-white text-[11px] font-semibold hover:bg-[#174028] active:scale-95 transition-all duration-150 shadow-sm">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                Export Alerts
+              <button
+                onClick={handleExport}
+                className={cn(
+                  'flex items-center gap-1.5 h-8 px-3 rounded-lg text-[11px] font-semibold active:scale-95 transition-all duration-150 shadow-sm',
+                  exportSuccess
+                    ? 'bg-green-600 text-white'
+                    : 'bg-[#1f5135] text-white hover:bg-[#174028]',
+                )}
+              >
+                {exportSuccess ? (
+                  <>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                    Downloaded!
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Export Alerts
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -631,13 +805,17 @@ export default function AlertsPage() {
 
           {/* Alerts table */}
           <AlertsTable
-            alerts={alerts}
+            alerts={effectiveAlerts}
             search={search}
             severityF={severityF}
             typeF={typeF}
             statusF={statusF}
             page={page}
             setPage={setPage}
+            onAcknowledge={(id) => setAlertStatus(id, 'acknowledged')}
+            onResolve={(id) => setAlertStatus(id, 'resolved')}
+            onMute={(id) => setAlertStatus(id, 'muted')}
+            onViewDetail={(id) => setDetailAlert(effectiveAlerts.find(a => a.id === id) ?? null)}
           />
 
           {/* Right sidebar */}
