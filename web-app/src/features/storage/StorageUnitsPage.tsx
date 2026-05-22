@@ -156,7 +156,12 @@ const activityMeta: Record<ActivityType, { bg: string; dot: string; icon: React.
   },
 };
 
+const ACTIVITY_PREVIEW = 5;
+
 function LiveActivityFeed() {
+  const [expanded, setExpanded] = useState(false);
+  const displayItems = expanded ? warehouseActivity : warehouseActivity.slice(0, ACTIVITY_PREVIEW);
+
   return (
     <Card className="p-5 min-w-0">
       {/* Header */}
@@ -175,8 +180,8 @@ function LiveActivityFeed() {
       </div>
 
       {/* Feed */}
-      <div className="space-y-0 max-h-[272px] overflow-y-auto pr-0.5 scrollbar-thin">
-        {warehouseActivity.map((item, i) => {
+      <div className={cn('space-y-0 overflow-y-auto pr-0.5', expanded ? 'max-h-[400px]' : 'max-h-[220px]')}>
+        {displayItems.map((item, i) => {
           const meta = activityMeta[item.type];
           return (
             <div
@@ -222,7 +227,14 @@ function LiveActivityFeed() {
       {/* Footer */}
       <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between">
         <span className="text-[10px] text-gray-400 font-medium">{warehouseActivity.length} events today</span>
-        <button className="text-[10px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors">View all logs</button>
+        {warehouseActivity.length > ACTIVITY_PREVIEW && (
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="text-[10px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors"
+          >
+            {expanded ? 'Show less' : `View all ${warehouseActivity.length} logs`}
+          </button>
+        )}
       </div>
     </Card>
   );
@@ -232,8 +244,8 @@ function LiveActivityFeed() {
 
 function CampusMap({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   return (
-    <div className="relative w-full bg-[#eef2ee] rounded-xl overflow-hidden border border-gray-200" style={{ minHeight: 310 }}>
-      <svg viewBox="0 0 424 316" className="w-full h-full" preserveAspectRatio="xMidYMid meet" style={{ minHeight: 310 }}>
+    <div className="relative w-full bg-[#eef2ee] dark:bg-[#111a14] rounded-xl overflow-hidden border border-gray-200" style={{ minHeight: 310 }}>
+      <svg viewBox="0 0 424 316" className="w-full h-full campus-svg" preserveAspectRatio="xMidYMid meet" style={{ minHeight: 310 }}>
         <defs>
           <pattern id="grass" width="8" height="8" patternUnits="userSpaceOnUse">
             <rect width="8" height="8" fill="#e8f0e8" />
@@ -332,9 +344,42 @@ function CampusMap({ selectedId, onSelect }: { selectedId: string; onSelect: (id
 
 // ─── Warehouse table ──────────────────────────────────────────────────────────
 
+const WH_STATUS_FILTERS = [
+  { value: 'all',      label: 'All' },
+  { value: 'good',     label: 'Good' },
+  { value: 'medium',   label: 'Medium' },
+  { value: 'high',     label: 'High Risk' },
+  { value: 'inactive', label: 'Inactive' },
+] as const;
+
 function WarehouseTable({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   const { warehouses: storageWarehouses } = useStorageData();
+  const [statusFilter, setStatusFilter] = useState<StorageStatus | 'all'>('all');
+
+  const filtered = statusFilter === 'all'
+    ? storageWarehouses
+    : storageWarehouses.filter((w) => w.status === statusFilter);
+
   return (
+    <div>
+      {/* Status filter pills */}
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+        {WH_STATUS_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setStatusFilter(f.value)}
+            className={cn(
+              'px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-colors duration-150',
+              statusFilter === f.value
+                ? 'bg-[#1f5135] text-white shadow-sm'
+                : 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 hover:text-gray-700',
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
     <div className="overflow-x-auto max-w-full rounded-xl ring-1 ring-gray-200">
       <table className="w-full text-[12px] whitespace-nowrap">
         <thead>
@@ -347,7 +392,7 @@ function WarehouseTable({ selectedId, onSelect }: { selectedId: string; onSelect
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {storageWarehouses.map((wh) => {
+          {filtered.map((wh) => {
             const sCfg = storageStatusConfig[wh.status];
             const rCfg = riskConfig[wh.risk];
             const usedPct = wh.capacity > 0 ? Math.round((wh.used / wh.capacity) * 100) : 0;
@@ -404,8 +449,9 @@ function WarehouseTable({ selectedId, onSelect }: { selectedId: string; onSelect
         </tbody>
       </table>
       <div className="px-3 py-2 border-t border-gray-100 text-[11px] text-gray-400 font-medium">
-        Showing 1 to {storageWarehouses.length} of {storageWarehouses.length} warehouses
+        Showing {filtered.length} of {storageWarehouses.length} warehouses
       </div>
+    </div>
     </div>
   );
 }
@@ -485,6 +531,7 @@ export default function StorageUnitsPage() {
   const { warehouses: storageWarehouses, totals: storageTotals, stabilityData, zoneSummary } = useStorageData();
   const [selectedWH, setSelectedWH] = useState('WH-C');
   const [activeTab, setActiveTab] = useState<Tab>('Zones');
+  const [stabilityDays, setStabilityDays] = useState<7 | 14 | 30>(7);
 
   const selectedWarehouse = storageWarehouses.find((w) => w.id === selectedWH) ?? storageWarehouses[0];
   const safeCap = Math.round(selectedWarehouse.capacity * 0.8);
@@ -800,7 +847,17 @@ export default function StorageUnitsPage() {
             <SectionHeader
               title="Environmental Stability"
               subtitle="All Warehouses — Stability Index (0–100)"
-              action={<DropdownBtn label="7 Days" />}
+              action={
+                <select
+                  value={stabilityDays}
+                  onChange={(e) => setStabilityDays(Number(e.target.value) as 7 | 14 | 30)}
+                  className="h-7 px-2 pr-6 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 cursor-pointer"
+                >
+                  <option value={7}>7 Days</option>
+                  <option value={14}>14 Days</option>
+                  <option value={30}>30 Days</option>
+                </select>
+              }
             />
             <p className="text-[10px] font-semibold text-gray-400 mb-2">Stability Index</p>
             <EnvironmentalStabilityChart />

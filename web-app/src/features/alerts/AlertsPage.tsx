@@ -196,15 +196,18 @@ function AcknowledgedPanel({ acknowledgedAlerts }: { acknowledgedAlerts: { id: s
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-[14px] font-bold text-gray-900">Acknowledged</h2>
-        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+        <span className="text-[10px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full ring-1 ring-green-200">
           {acknowledgedAlerts.length}
         </span>
       </div>
-      <div className="space-y-2.5">
+      <div className="max-h-[260px] overflow-y-auto space-y-0 pr-0.5">
         {acknowledgedAlerts.map((item) => (
-          <div key={item.id} className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-50/50 ring-1 ring-amber-100">
-            <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <svg className="w-3.5 h-3.5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <div
+            key={item.id}
+            className="flex items-start gap-2.5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/60 rounded-lg px-1.5 -mx-1.5 transition-colors"
+          >
+            <div className="w-5 h-5 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <svg className="w-3 h-3 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
@@ -212,11 +215,10 @@ function AcknowledgedPanel({ acknowledgedAlerts }: { acknowledgedAlerts: { id: s
               <p className="text-[11px] font-bold text-gray-700 leading-none truncate">
                 {item.warehouse} · {item.zone}
               </p>
-              <p className="text-[10px] text-gray-500 mt-0.5">{item.title}</p>
-              <p className="text-[9px] text-gray-400 mt-0.5">
-                {item.acknowledgedBy} · {item.acknowledgedAt}
-              </p>
+              <p className="text-[10px] text-gray-500 mt-0.5 leading-snug truncate">{item.title}</p>
+              <p className="text-[9px] text-gray-400 mt-0.5">{item.acknowledgedBy}</p>
             </div>
+            <span className="text-[9px] font-medium text-gray-400 flex-shrink-0 tabular-nums mt-0.5 whitespace-nowrap">{item.acknowledgedAt}</span>
           </div>
         ))}
       </div>
