@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { ZoneSummaryDonut } from '@/components/charts/ZoneSummaryDonut';
 import { CapacityGaugeChart } from '@/components/charts/CapacityGaugeChart';
@@ -389,9 +389,13 @@ const WH_STATUS_FILTERS = [
   { value: 'inactive', label: 'Inactive' },
 ] as const;
 
-function WarehouseTable({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
+function WarehouseTable({ selectedId, onSelect, statusFilter, setStatusFilter }: {
+  selectedId: string;
+  onSelect: (id: string) => void;
+  statusFilter: StorageStatus | 'all';
+  setStatusFilter: (v: StorageStatus | 'all') => void;
+}) {
   const { warehouses: storageWarehouses } = useStorageData();
-  const [statusFilter, setStatusFilter] = useState<StorageStatus | 'all'>('all');
 
   const filtered = statusFilter === 'all'
     ? storageWarehouses
@@ -569,6 +573,15 @@ export default function StorageUnitsPage() {
   const [selectedWH, setSelectedWH] = useState('WH-C');
   const [activeTab, setActiveTab] = useState<Tab>('Zones');
   const [stabilityDays, setStabilityDays] = useState<7 | 14 | 30>(7);
+  const [whStatusFilter, setWhStatusFilter] = useState<StorageStatus | 'all'>('all');
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  function scrollToTableWithFilter(filter: StorageStatus | 'all') {
+    setWhStatusFilter(filter);
+    setTimeout(() => {
+      tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
 
   const selectedWarehouse = storageWarehouses.find((w) => w.id === selectedWH) ?? storageWarehouses[0];
   const safeCap = Math.round(selectedWarehouse.capacity * 0.8);
@@ -585,20 +598,25 @@ export default function StorageUnitsPage() {
         {/* ── Top Metric Cards ──────────────────────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* Total Warehouses */}
-          <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
-                </svg>
+          <button
+            onClick={() => scrollToTableWithFilter('all')}
+            className="text-left w-full"
+          >
+            <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-blue-200">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Total Warehouses</p>
+                  <p className="text-[24px] font-bold text-gray-900 leading-none mt-1">{storageTotals.totalWarehouses}</p>
+                  <p className="text-[11px] font-semibold text-blue-600 mt-0.5">Active · View all →</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Total Warehouses</p>
-                <p className="text-[24px] font-bold text-gray-900 leading-none mt-1">{storageTotals.totalWarehouses}</p>
-                <p className="text-[11px] font-semibold text-blue-600 mt-0.5">Active</p>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          </button>
 
           {/* Total Zones */}
           <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
@@ -669,21 +687,26 @@ export default function StorageUnitsPage() {
           </Card>
 
           {/* High Risk Units */}
-          <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
+          <button
+            onClick={() => scrollToTableWithFilter('high')}
+            className="text-left w-full"
+          >
+            <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer ring-1 ring-transparent hover:ring-red-200">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">High Risk Units</p>
+                  <p className="text-[24px] font-bold text-red-500 leading-none mt-1">{storageTotals.highRiskUnits}</p>
+                  <p className="text-[11px] font-semibold text-red-500 mt-0.5">Tap to inspect →</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">High Risk Units</p>
-                <p className="text-[24px] font-bold text-red-500 leading-none mt-1">{storageTotals.highRiskUnits}</p>
-                <p className="text-[11px] font-semibold text-red-500 mt-0.5">Requires attention</p>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          </button>
         </section>
 
         {/* ── Warehouse Overview ────────────────────────────────────────────── */}
@@ -703,14 +726,21 @@ export default function StorageUnitsPage() {
           </div>
 
           {/* Center: Warehouse Table */}
-          <Card className="p-5 min-w-0 overflow-hidden">
-            <SectionHeader
-              title="All Warehouses"
-              subtitle="Operational status and capacity"
-              action={<DropdownBtn label="All Warehouses" options={['All Warehouses', 'WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G']} onChange={(v) => v !== 'All Warehouses' && setSelectedWH(v)} />}
-            />
-            <WarehouseTable selectedId={selectedWH} onSelect={setSelectedWH} />
-          </Card>
+          <div ref={tableRef}>
+            <Card className="p-5 min-w-0 overflow-hidden">
+              <SectionHeader
+                title="All Warehouses"
+                subtitle="Operational status and capacity"
+                action={<DropdownBtn label="All Warehouses" options={['All Warehouses', 'WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G']} onChange={(v) => v !== 'All Warehouses' && setSelectedWH(v)} />}
+              />
+              <WarehouseTable
+                selectedId={selectedWH}
+                onSelect={setSelectedWH}
+                statusFilter={whStatusFilter}
+                setStatusFilter={setWhStatusFilter}
+              />
+            </Card>
+          </div>
 
           {/* Right: Zone Summary + Critical Zones */}
           <div className="flex flex-col gap-4 min-w-0">
