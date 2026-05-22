@@ -161,7 +161,7 @@ function SensorHealthBars() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
-  const { kpis: analyticsKPIs, topWarehouse, worstWarehouse, overallStability, sensorSummary } = useAnalyticsData();
+  const { kpis: analyticsKPIs, overallStability, sensorSummary } = useAnalyticsData();
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
       <DashboardHeader
@@ -402,35 +402,6 @@ export default function AnalyticsPage() {
 
           {/* Right Sidebar */}
           <div className="flex flex-col gap-4 min-w-0">
-
-            {/* Top / Worst Warehouse */}
-            <Card className="p-5">
-              <h2 className="text-[13px] font-bold text-gray-900 mb-3 tracking-tight">Warehouse Highlights</h2>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-green-50 ring-1 ring-green-100 hover:shadow-sm transition-shadow duration-150">
-                  <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold text-green-600 uppercase tracking-wider">Top Performing</p>
-                    <p className="text-[13px] font-bold text-gray-800 mt-0.5">{topWarehouse.name}</p>
-                    <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{topWarehouse.detail}</p>
-                    <p className="text-[11px] font-bold text-green-700 mt-1">{topWarehouse.score}% efficiency</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-red-50 ring-1 ring-red-100 hover:shadow-sm transition-shadow duration-150">
-                  <div className="w-8 h-8 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold text-red-600 uppercase tracking-wider">Highest Risk</p>
-                    <p className="text-[13px] font-bold text-gray-800 mt-0.5">{worstWarehouse.name}</p>
-                    <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{worstWarehouse.detail}</p>
-                    <p className="text-[11px] font-bold text-red-600 mt-1">{worstWarehouse.score}% spoilage risk</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
 
             {/* System Health */}
             <Card className="p-5">
