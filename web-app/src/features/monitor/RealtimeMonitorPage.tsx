@@ -71,7 +71,9 @@ const viewLegend: Record<ViewMode, Array<{ color: string; text: string }>> = {
   ],
 };
 
-function getSensorColors(s: SensorPoint, mode: ViewMode) {
+type SensorColorSet = { fill: string; stroke: string; text: string; pulse: string };
+
+function getSensorColors(s: SensorPoint, mode: ViewMode): SensorColorSet {
   if (mode === 'temp') {
     if (s.temp >= T.temp.warn)  return { fill: '#fee2e2', stroke: '#ef4444', text: '#dc2626', pulse: '#f87171' };
     if (s.temp >= T.temp.safe)  return { fill: '#fef3c7', stroke: '#f59e0b', text: '#b45309', pulse: '#fbbf24' };
@@ -82,7 +84,7 @@ function getSensorColors(s: SensorPoint, mode: ViewMode) {
     if (s.humidity >= T.humidity.safe) return { fill: '#fef3c7', stroke: '#f59e0b', text: '#b45309', pulse: '#fbbf24' };
     return                                     { fill: '#dcfce7', stroke: '#22c55e', text: '#15803d', pulse: '#4ade80' };
   }
-  const map: Record<ZoneStatus, typeof getSensorColors extends (...a: never[]) => infer R ? R : never> = {
+  const map: Record<ZoneStatus, SensorColorSet> = {
     good:     { fill: '#dcfce7', stroke: '#22c55e', text: '#15803d', pulse: '#4ade80' },
     normal:   { fill: '#dbeafe', stroke: '#3b82f6', text: '#1d4ed8', pulse: '#60a5fa' },
     warning:  { fill: '#fef3c7', stroke: '#f59e0b', text: '#b45309', pulse: '#fbbf24' },
