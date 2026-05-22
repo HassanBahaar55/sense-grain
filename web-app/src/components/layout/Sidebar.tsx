@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { getAuth, signOut } from 'firebase/auth';
+import firebaseApp from '@/config/firebase';
 
 function PlantIcon() {
   return (
@@ -108,10 +111,13 @@ export function Sidebar() {
   const pathname = usePathname();
   const router   = useRouter();
   const { isOpen, close } = useSidebar();
+  const { user } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     close();
-    router.push('/login');
+    const auth = getAuth(firebaseApp);
+    await signOut(auth);
+    router.replace('/login');
   };
 
   return (
@@ -207,11 +213,11 @@ export function Sidebar() {
         <div className="px-3 pb-4 border-t border-white/[0.06] pt-3 flex-shrink-0 space-y-1">
           <div className="flex items-center gap-3 px-2.5 py-2.5 rounded-xl">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#1f5135] to-[#2d7a4f] flex items-center justify-center flex-shrink-0 text-[13px] font-bold text-white shadow-md">
-              A
+              {(user?.displayName || user?.email || 'U')[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-bold text-white/85 truncate leading-tight">Admin User</p>
-              <p className="text-[10px] text-white/30 truncate leading-tight mt-0.5">admin@sensegrain.com</p>
+              <p className="text-[12px] font-bold text-white/85 truncate leading-tight">{user?.displayName || user?.email?.split('@')[0] || 'User'}</p>
+              <p className="text-[10px] text-white/30 truncate leading-tight mt-0.5">{user?.email || ''}</p>
             </div>
           </div>
           <button
