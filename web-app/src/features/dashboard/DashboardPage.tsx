@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { useDashboardData, type WHStatus, type DashAlert } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
@@ -161,13 +163,165 @@ function WarehouseTile({ wh }: { wh: { id: string; status: WHStatus; temp: numbe
   );
 }
 
+// ─── Alert detail modal ───────────────────────────────────────────────────────
+
+const alertDescriptions: Record<string, string> = {
+  'High Temperature Detected':    'Temperature has exceeded the critical threshold. Elevated heat accelerates grain respiration and may lead to rapid moisture loss or spoilage. Immediate ventilation or cooling is recommended.',
+  'Temperature Elevated':         'Temperature is above the safe storage range. Continued exposure may promote mold growth and reduce grain quality. Inspect the unit and adjust ventilation settings.',
+  'High Humidity Detected':       'Relative humidity is critically high inside this unit. High moisture levels create ideal conditions for fungal growth and mycotoxin production. Check sealing and dehumidifiers.',
+  'Humidity Elevated':            'Humidity is above the recommended storage level. Monitor grain moisture content and ensure proper aeration to prevent moisture migration.',
+  'CO₂ Level Elevated':           'Carbon dioxide concentration is above normal, indicating active grain respiration or fermentation. This may signal a hotspot developing within the grain mass.',
+  'Moisture Content High':        'Grain moisture content exceeds safe storage limits. High moisture increases risk of mold, heating, and spoilage. Consider drying or aeration treatment.',
+};
+
+function getDescription(title: string): string {
+  return alertDescriptions[title] ?? 'This alert was triggered because a sensor reading exceeded the defined safety threshold for this storage unit. Review conditions and take corrective action.';
+}
+
+function AlertDetailModal({ alert, onClose, onAcknowledge }: {
+  alert: DashAlert;
+  onClose: () => void;
+  onAcknowledge: (id: number) => void;
+}) {
+  const router = useRouter();
+  const cfg = alertCfg[alert.severity];
+  const isHigh = alert.severity === 'high';
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  function handleAcknowledge() {
+    setAcknowledged(true);
+    onAcknowledge(alert.id);
+    setTimeout(onClose, 800);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+
+      {/* Panel */}
+      <div
+        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Accent bar */}
+        <div className={cn('h-[4px]', cfg.bar)} />
+
+        {/* Header */}
+        <div className={cn('px-5 pt-4 pb-4 border-b border-gray-100', cfg.bg)}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="relative flex-shrink-0">
+                <span className={cn('w-2 h-2 rounded-full block', cfg.dot)} />
+                {isHigh && (
+                  <span className={cn('absolute inset-0 w-2 h-2 rounded-full animate-ping opacity-50', cfg.dot)} />
+                )}
+              </span>
+              <div className="min-w-0">
+                <span className={cn('text-[10.5px] font-bold px-2 py-[3px] rounded-full leading-none', cfg.badge)}>
+                  {cfg.label} Priority
+                </span>
+                <h3 className="text-[15px] font-black text-gray-900 leading-snug mt-1.5">{alert.title}</h3>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors mt-0.5"
+            >
+              <svg className="w-3.5 h-3.5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+
+          {/* Meta row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-xl px-3.5 py-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Location</p>
+              <p className="text-[13px] font-bold text-gray-800">{alert.location}</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl px-3.5 py-3">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Detected</p>
+              <p className="text-[13px] font-bold text-gray-800">{alert.time}</p>
+            </div>
+          </div>
+
+          {/* Reading vs Threshold */}
+          <div className={cn('rounded-xl px-4 py-3 ring-1', cfg.bg, cfg.ring)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Safe Threshold</p>
+                <p className="text-[14px] font-bold text-gray-700">{alert.threshold}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Current Reading</p>
+                <p className={cn('text-[20px] font-black tabular-nums', cfg.valCls)}>{alert.value}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Details</p>
+            <p className="text-[12.5px] text-gray-600 leading-relaxed">{getDescription(alert.title)}</p>
+          </div>
+
+        </div>
+
+        {/* Actions */}
+        <div className="px-5 pb-5 flex gap-2.5">
+          {acknowledged ? (
+            <div className="flex-1 h-10 rounded-xl bg-green-50 ring-1 ring-green-200 flex items-center justify-center gap-2 text-[12.5px] font-bold text-green-700">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Acknowledged
+            </div>
+          ) : (
+            <button
+              onClick={handleAcknowledge}
+              className={cn(
+                'flex-1 h-10 rounded-xl text-[12.5px] font-bold transition-colors duration-150 flex items-center justify-center gap-2',
+                isHigh
+                  ? 'bg-red-500 hover:bg-red-600 text-white'
+                  : 'bg-amber-500 hover:bg-amber-600 text-white',
+              )}
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Acknowledge
+            </button>
+          )}
+          <button
+            onClick={() => router.push('/alerts')}
+            className="flex-1 h-10 rounded-xl bg-[#1f5135]/[0.08] hover:bg-[#1f5135]/[0.14] text-[12.5px] font-bold text-[#1f5135] transition-colors duration-150"
+          >
+            View in Alerts
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Alert item ───────────────────────────────────────────────────────────────
 
-function AlertItem({ alert }: { alert: DashAlert }) {
+function AlertItem({ alert, onClick }: { alert: DashAlert; onClick: () => void }) {
   const cfg = alertCfg[alert.severity];
   const isHigh = alert.severity === 'high';
   return (
-    <div className={cn('flex rounded-xl ring-1 overflow-hidden hover:shadow-sm transition-shadow duration-150', cfg.bg, cfg.ring)}>
+    <div
+      onClick={onClick}
+      className={cn('flex rounded-xl ring-1 overflow-hidden cursor-pointer hover:shadow-md hover:-translate-y-[2px] transition-all duration-150', cfg.bg, cfg.ring)}
+    >
       <div className={cn('w-[3px] flex-shrink-0', cfg.bar)} />
       <div className="flex-1 px-3.5 py-3 min-w-0">
         {/* Header row */}
@@ -208,8 +362,23 @@ export default function DashboardPage() {
   const { warehouses: warehouseUnits, alerts: activeAlerts, goodCount, watchCount, criticalCount, offlineCount, activeCount } = useDashboardData();
   const alertHigh   = activeAlerts.filter(a => a.severity === 'high').length;
   const alertMedium = activeAlerts.filter(a => a.severity === 'medium').length;
+
+  const [selectedAlert, setSelectedAlert] = useState<DashAlert | null>(null);
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<number>>(new Set());
+
+  function handleAcknowledge(id: number) {
+    setAcknowledgedIds(prev => new Set([...prev, id]));
+  }
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
+      {selectedAlert && (
+        <AlertDetailModal
+          alert={selectedAlert}
+          onClose={() => setSelectedAlert(null)}
+          onAcknowledge={handleAcknowledge}
+        />
+      )}
       <DashboardHeader
         title="Dashboard"
         subtitle="Grain storage monitoring — at a glance"
@@ -346,7 +515,11 @@ export default function DashboardPage() {
             {/* Alert list */}
             <div className="flex-1 p-5 space-y-3">
               {activeAlerts.map((alert) => (
-                <AlertItem key={alert.id} alert={alert} />
+                <AlertItem
+                  key={alert.id}
+                  alert={alert}
+                  onClick={() => setSelectedAlert(alert)}
+                />
               ))}
             </div>
 
