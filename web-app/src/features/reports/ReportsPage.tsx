@@ -124,6 +124,187 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: () => void 
   );
 }
 
+// ─── Create Schedule Modal ────────────────────────────────────────────────────
+
+const FREQ_OPTIONS = [
+  { value: 'daily',   label: 'Daily' },
+  { value: 'weekly',  label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
+const DAY_OPTIONS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const TIME_OPTIONS = ['06:00','08:00','09:00','10:00','12:00','15:00','18:00','20:00'];
+
+interface NewSchedule {
+  id: string; name: string; type: ReportType;
+  schedule: string; nextRun: string; enabled: boolean;
+}
+
+function CreateScheduleModal({ onClose, onSave }: { onClose: () => void; onSave: (s: NewSchedule) => void }) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState<ReportType>('environmental');
+  const [freq, setFreq] = useState('daily');
+  const [day,  setDay]  = useState('Monday');
+  const [time, setTime] = useState('08:00');
+  const [saved, setSaved] = useState(false);
+
+  function scheduleLabel() {
+    if (freq === 'daily')   return `Daily at ${time}`;
+    if (freq === 'weekly')  return `${day} at ${time}`;
+    return `1st of month, ${time}`;
+  }
+  function nextRunLabel() {
+    if (freq === 'daily')   return `Today, ${time}`;
+    if (freq === 'weekly')  return `${day}, ${time}`;
+    return `Jun 1, ${time}`;
+  }
+
+  function handleSave() {
+    if (!name.trim()) return;
+    setSaved(true);
+    setTimeout(() => {
+      onSave({
+        id: `SCH-${Date.now().toString(36).toUpperCase()}`,
+        name: name.trim(),
+        type,
+        schedule: scheduleLabel(),
+        nextRun: nextRunLabel(),
+        enabled: true,
+      });
+      onClose();
+    }, 600);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] w-full max-w-sm overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-[14px] font-bold text-gray-900">Create Schedule</h3>
+            <p className="text-[11px] text-gray-400 mt-0.5">Set up automated report generation</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {/* Report name */}
+          <div>
+            <label className="text-[10.5px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Report Name</label>
+            <input
+              type="text"
+              placeholder="e.g. Weekly WH-C Summary"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full h-9 px-3 rounded-xl border border-gray-200 bg-gray-50 text-[12px] font-medium text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/30 focus:border-[#1f5135]/40 transition-all"
+            />
+          </div>
+
+          {/* Report Type */}
+          <div>
+            <label className="text-[10.5px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Report Type</label>
+            <div className="relative">
+              <select
+                value={type}
+                onChange={e => setType(e.target.value as ReportType)}
+                className="w-full h-9 pl-3 pr-8 rounded-xl border border-gray-200 bg-gray-50 text-[12px] font-medium text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/30 cursor-pointer"
+              >
+                {REPORT_TYPES.map(r => <option key={r.type} value={r.type}>{r.label}</option>)}
+              </select>
+              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </div>
+          </div>
+
+          {/* Frequency */}
+          <div>
+            <label className="text-[10.5px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Frequency</label>
+            <div className="flex gap-2">
+              {FREQ_OPTIONS.map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setFreq(f.value)}
+                  className={cn(
+                    'flex-1 h-8 rounded-xl text-[11px] font-semibold border transition-all',
+                    freq === f.value
+                      ? 'bg-[#1f5135] text-white border-[#1f5135] shadow-sm'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100',
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Day (only for weekly) */}
+          {freq === 'weekly' && (
+            <div>
+              <label className="text-[10.5px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Day of Week</label>
+              <div className="relative">
+                <select
+                  value={day}
+                  onChange={e => setDay(e.target.value)}
+                  className="w-full h-9 pl-3 pr-8 rounded-xl border border-gray-200 bg-gray-50 text-[12px] font-medium text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/30 cursor-pointer"
+                >
+                  {DAY_OPTIONS.map(d => <option key={d}>{d}</option>)}
+                </select>
+                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
+            </div>
+          )}
+
+          {/* Time */}
+          <div>
+            <label className="text-[10.5px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Time</label>
+            <div className="relative">
+              <select
+                value={time}
+                onChange={e => setTime(e.target.value)}
+                className="w-full h-9 pl-3 pr-8 rounded-xl border border-gray-200 bg-gray-50 text-[12px] font-medium text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/30 cursor-pointer"
+              >
+                {TIME_OPTIONS.map(t => <option key={t}>{t}</option>)}
+              </select>
+              <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="bg-gray-50 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5">
+            <svg className="w-4 h-4 text-[#1f5135] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+            <div>
+              <p className="text-[10px] text-gray-400 font-semibold">Will run: <span className="text-gray-700 font-bold">{scheduleLabel()}</span></p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Next: <span className="text-[#1f5135] font-bold">{nextRunLabel()}</span></p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-5 pb-5">
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl bg-gray-100 text-gray-600 text-[12px] font-bold hover:bg-gray-200 transition-colors">Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={!name.trim()}
+            className={cn(
+              'flex-1 h-9 rounded-xl text-white text-[12px] font-bold transition-all flex items-center justify-center gap-1.5',
+              saved ? 'bg-green-500' : !name.trim() ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#1f5135] hover:bg-[#174028]',
+            )}
+          >
+            {saved ? (
+              <><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg> Saved</>
+            ) : 'Create Schedule'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 // ─── Generate modal ───────────────────────────────────────────────────────────
@@ -184,10 +365,17 @@ function GenerateModal({ onClose, onGenerate }: { onClose: () => void; onGenerat
 
 export default function ReportsPage() {
   const { stats: reportStats, recentReports, reportTypeData, reportTrendData } = useReportsData();
+  const [localSchedules, setLocalSchedules] = useState<NewSchedule[]>([]);
   const [scheduleEnabled, setScheduleEnabled] = useState<Record<string, boolean>>(
     () => Object.fromEntries(scheduledReports.map((s) => [s.id, s.enabled]))
   );
   const [showGenerate, setShowGenerate] = useState(false);
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
+
+  function handleCreateSchedule(s: NewSchedule) {
+    setLocalSchedules(prev => [s, ...prev]);
+    setScheduleEnabled(prev => ({ ...prev, [s.id]: true }));
+  }
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
@@ -307,6 +495,7 @@ export default function ReportsPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
       {showGenerate && <GenerateModal onClose={() => setShowGenerate(false)} onGenerate={handleGenerate} />}
+      {showCreateSchedule && <CreateScheduleModal onClose={() => setShowCreateSchedule(false)} onSave={handleCreateSchedule} />}
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <header className="h-16 bg-white border-b border-gray-100 flex items-center px-6 gap-4 sticky top-0 z-20 flex-shrink-0">
@@ -623,7 +812,7 @@ export default function ReportsPage() {
                 subtitle="Automated report generation"
               />
               <div className="space-y-0">
-                {scheduledReports.map((sched, idx) => {
+                {[...localSchedules, ...scheduledReports].map((sched, idx) => {
                   const enabled = scheduleEnabled[sched.id] ?? sched.enabled;
                   return (
                     <div
@@ -670,7 +859,10 @@ export default function ReportsPage() {
               </div>
 
               {/* Create Schedule button */}
-              <button className="mt-4 w-full flex items-center justify-center gap-2 h-8 rounded-xl border border-dashed border-gray-300 text-[11px] font-semibold text-gray-500 hover:border-[#1f5135] hover:text-[#1f5135] hover:bg-green-50/50 transition-all duration-150">
+              <button
+                onClick={() => setShowCreateSchedule(true)}
+                className="mt-4 w-full flex items-center justify-center gap-2 h-8 rounded-xl border border-dashed border-gray-300 text-[11px] font-semibold text-gray-500 hover:border-[#1f5135] hover:text-[#1f5135] hover:bg-green-50/50 transition-all duration-150"
+              >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
