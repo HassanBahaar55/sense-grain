@@ -6,13 +6,11 @@ import { WarehousePerformanceChart } from '@/components/charts/WarehousePerforma
 import { SpoilagePredictionChart } from '@/components/charts/SpoilagePredictionChart';
 import {
   analyticsTableData,
-  aiInsights,
   sensorHealthData,
   envTrendSeries,
   recentAnalyticsEvents,
   type TrendDir,
   type RiskLevel,
-  type InsightType,
   type EventType,
 } from './mockData';
 import { useAnalyticsData } from '@/lib/dataEngine';
@@ -34,47 +32,6 @@ const riskConfig: Record<RiskLevel, { badge: string; label: string }> = {
   medium:   { badge: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',  label: 'Medium'   },
   high:     { badge: 'bg-red-50 text-red-600 ring-1 ring-red-200',        label: 'High'     },
   inactive: { badge: 'bg-gray-100 text-gray-400 ring-1 ring-gray-200',    label: 'Inactive' },
-};
-
-const insightAccentColor: Record<InsightType, string> = {
-  warning:      '#f59e0b',
-  optimization: '#3b82f6',
-  prediction:   '#8b5cf6',
-  success:      '#22c55e',
-  anomaly:      '#ef4444',
-};
-
-const insightMeta: Record<InsightType, { bg: string; icon: React.ReactNode; accent: string; textColor: string }> = {
-  warning: {
-    bg: 'bg-amber-50',
-    accent: 'border-l-amber-400',
-    textColor: 'text-amber-700',
-    icon: <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>,
-  },
-  optimization: {
-    bg: 'bg-blue-50',
-    accent: 'border-l-blue-400',
-    textColor: 'text-blue-700',
-    icon: <svg className="w-3.5 h-3.5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>,
-  },
-  prediction: {
-    bg: 'bg-purple-50',
-    accent: 'border-l-purple-400',
-    textColor: 'text-purple-700',
-    icon: <svg className="w-3.5 h-3.5 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>,
-  },
-  success: {
-    bg: 'bg-green-50',
-    accent: 'border-l-green-400',
-    textColor: 'text-green-700',
-    icon: <svg className="w-3.5 h-3.5 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>,
-  },
-  anomaly: {
-    bg: 'bg-red-50',
-    accent: 'border-l-red-400',
-    textColor: 'text-red-700',
-    icon: <svg className="w-3.5 h-3.5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>,
-  },
 };
 
 const eventMeta: Record<EventType, { dot: string; icon: React.ReactNode }> = {
@@ -242,82 +199,22 @@ export default function AnalyticsPage() {
           })}
         </section>
 
-        {/* ── Environmental Trends + AI Insights ───────────────────────────── */}
-        <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,312px)] gap-5">
-
-          {/* Environmental Trends */}
-          <Card className="p-5 min-w-0">
-            <SectionHeader
-              title="Environmental Trends"
-              subtitle="14-day stability index across all warehouses (0–100)"
-            />
-            <EnvironmentalTrendsChart />
-            <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 pt-3 border-t border-gray-100">
-              {envTrendSeries.map((s) => (
-                <span key={s.key} className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500">
-                  <span className="w-5 h-[2px] rounded-full" style={{ backgroundColor: s.color }} />
-                  {s.label}
-                </span>
-              ))}
-            </div>
-          </Card>
-
-          {/* AI Insights */}
-          <Card className="p-5 min-w-0 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">AI Insights</h2>
-                <p className="text-[11px] text-gray-400 mt-0.5">Predictive · Operational</p>
-              </div>
-              <span className="flex items-center gap-1.5 text-[9px] font-bold text-purple-700 bg-purple-50 px-2 py-1 rounded-full ring-1 ring-purple-100 flex-shrink-0">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-purple-500" />
-                </span>
-                AI Active
+        {/* ── Environmental Trends ─────────────────────────────────────────── */}
+        <Card className="p-5 min-w-0">
+          <SectionHeader
+            title="Environmental Trends"
+            subtitle="14-day stability index across all warehouses (0–100)"
+          />
+          <EnvironmentalTrendsChart />
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 pt-3 border-t border-gray-100">
+            {envTrendSeries.map((s) => (
+              <span key={s.key} className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-500">
+                <span className="w-5 h-[2px] rounded-full" style={{ backgroundColor: s.color }} />
+                {s.label}
               </span>
-            </div>
-            <div className="space-y-2.5 flex-1">
-              {aiInsights.map((insight) => {
-                const meta  = insightMeta[insight.type];
-                const color = insightAccentColor[insight.type];
-                return (
-                  <div
-                    key={insight.id}
-                    className={cn(
-                      'rounded-xl p-3 border-l-[3px] transition-all duration-150 hover:shadow-sm hover:-translate-y-px cursor-default',
-                      meta.bg, meta.accent,
-                    )}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <span className="flex-shrink-0 mt-0.5 w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center">
-                        {meta.icon}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-0.5">
-                          <p className="text-[11px] font-bold text-gray-800 leading-tight">{insight.title}</p>
-                          <span className="text-[9px] font-semibold text-gray-400 flex-shrink-0 tabular-nums">{insight.time}</span>
-                        </div>
-                        <p className="text-[10px] text-gray-500 leading-snug">{insight.detail}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="flex-1 h-1 bg-white/70 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${insight.confidence}%`, backgroundColor: color, opacity: 0.7 }}
-                            />
-                          </div>
-                          <span className={cn('text-[9px] font-bold tabular-nums', meta.textColor)}>
-                            {insight.confidence}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </section>
+            ))}
+          </div>
+        </Card>
 
         {/* ── WH Performance + Spoilage Prediction ─────────────────────────── */}
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-5">
