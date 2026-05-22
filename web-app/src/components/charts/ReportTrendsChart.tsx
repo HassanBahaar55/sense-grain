@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { reportTrendSeries } from '@/features/reports/mockData';
-import { useReportsData } from '@/lib/dataEngine';
+import { useFirestoreReports as useReportsData } from '@/lib/useFirestoreData';
 
 interface TooltipEntry {
   name?:  string;

@@ -3,7 +3,8 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { useAlertTrendData, type AlertTrendPoint } from '@/lib/dataEngine';
+import { type AlertTrendPoint } from '@/lib/dataEngine';
+import { useFirestoreAlertTrend as useAlertTrendData } from '@/lib/useFirestoreData';
 
 interface TooltipEntry {
   name?: string;

@@ -7,6 +7,7 @@ import {
 import { liveEngine, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
 import { subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
+import { seedFirestoreIfEmpty } from '@/lib/firestoreSeeder';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,9 +33,12 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const [isRunning,  setIsRunning]  = useState(false);
 
   useEffect(() => {
-    // 1. Start simulation — runs physics, writes to Firestore each tick
-    liveEngine.start(30000); // every 30s to stay well within free Firestore write limits
+    // 1. Start simulation — UI ticks every 30s, Firestore sync every 60s
+    liveEngine.start(30000, 60000);
     setIsRunning(true);
+
+    // Seed Firestore on first login (no-op if already seeded)
+    seedFirestoreIfEmpty().catch(() => {});
 
     // 2. Also drive local UI from simulation directly (smooth, instant updates)
     const unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {

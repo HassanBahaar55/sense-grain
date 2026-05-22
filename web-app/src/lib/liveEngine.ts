@@ -84,12 +84,13 @@ function circadian(): number {
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 export class LiveEngine {
-  private readings:   Record<string, LiveSensorReading> = {};
-  private alerts:     LiveAlert[] = [];
-  private listeners:  Set<Listener> = new Set();
-  private timer:      ReturnType<typeof setInterval> | null = null;
-  private alertSeq  = 1;
-  private tickCount = 0;
+  private readings:    Record<string, LiveSensorReading> = {};
+  private alerts:      LiveAlert[] = [];
+  private listeners:   Set<Listener> = new Set();
+  private timer:       ReturnType<typeof setInterval> | null = null;
+  private syncTimer:   ReturnType<typeof setInterval> | null = null;
+  private alertSeq   = 1;
+  private tickCount  = 0;
 
   constructor() {
     // Seed initial state from base configs
@@ -277,18 +278,23 @@ export class LiveEngine {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  start(intervalMs = 7000) {
+  start(uiIntervalMs = 30000, syncIntervalMs = 60000) {
     if (this.timer) return;
-    this.timer = setInterval(() => {
-      this.tick();
-      this.syncToFirestore();
-    }, intervalMs);
-    // First tick slightly delayed so components mount first
-    setTimeout(() => { this.tick(); this.syncToFirestore(); }, 1200);
+
+    // UI tick — drives local state for smooth updates
+    this.timer = setInterval(() => { this.tick(); }, uiIntervalMs);
+
+    // Firestore sync — separate, less frequent to stay within free quota
+    this.syncTimer = setInterval(() => { this.syncToFirestore(); }, syncIntervalMs);
+
+    // First tick slightly delayed so components mount first; sync right after
+    setTimeout(() => { this.tick(); }, 1200);
+    setTimeout(() => { this.syncToFirestore(); }, 2000);
   }
 
   stop() {
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.timer)     { clearInterval(this.timer);     this.timer     = null; }
+    if (this.syncTimer) { clearInterval(this.syncTimer); this.syncTimer = null; }
   }
 
   subscribe(fn: Listener): () => void {

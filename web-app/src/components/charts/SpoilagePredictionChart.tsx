@@ -3,7 +3,7 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { usePredictionsData } from '@/lib/dataEngine';
+import { useFirestorePredictions as usePredictionsData } from '@/lib/useFirestoreData';
 
 interface TooltipEntry {
   name?: string;

@@ -8,7 +8,8 @@ import {
   scheduledReports,
   type ReportType,
 } from './mockData';
-import { useReportsData, type ReportItem } from '@/lib/dataEngine';
+import { type ReportItem } from '@/lib/dataEngine';
+import { useFirestoreReports as useReportsData } from '@/lib/useFirestoreData';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
 

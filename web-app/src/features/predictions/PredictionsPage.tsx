@@ -12,7 +12,8 @@ import {
   type RiskLevel,
   type Timeframe,
 } from './mockData';
-import { usePredictionsData, type ParamForecastCard } from '@/lib/dataEngine';
+import { type ParamForecastCard } from '@/lib/dataEngine';
+import { useFirestorePredictions as usePredictionsData } from '@/lib/useFirestoreData';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────

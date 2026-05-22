@@ -13,7 +13,7 @@ import {
   type RiskLevel,
   type EventType,
 } from './mockData';
-import { useAnalyticsData } from '@/lib/dataEngine';
+import { useFirestoreAnalytics as useAnalyticsData } from '@/lib/useFirestoreData';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────

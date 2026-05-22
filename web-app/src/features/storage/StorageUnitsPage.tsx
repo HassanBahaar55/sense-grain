@@ -17,7 +17,7 @@ import {
   type ZoneStatus,
   type ActivityType,
 } from './mockData';
-import { useStorageData } from '@/lib/dataEngine';
+import { useFirestoreStorage as useStorageData } from '@/lib/useFirestoreData';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────

@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { AlertsTrendChart } from '@/components/charts/AlertsTrendChart';
-import { useAlertsData, type Alert, type AlertSeverity, type AlertStatus, type AlertParamType } from '@/lib/dataEngine';
+import { type Alert, type AlertSeverity, type AlertStatus, type AlertParamType } from '@/lib/dataEngine';
+import { useFirestoreAlertsData as useAlertsData } from '@/lib/useFirestoreData';
 
 const heatmapDays   = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const heatmapBlocks = ['00–03', '03–06', '06–09', '09–12', '12–15', '15–18', '18–21', '21–24'];

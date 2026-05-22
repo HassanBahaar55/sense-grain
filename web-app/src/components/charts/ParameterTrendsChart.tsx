@@ -11,7 +11,8 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { useParamTrendData, type ParamTrendPoint } from '@/lib/dataEngine';
+import { type ParamTrendPoint } from '@/lib/dataEngine';
+import { useFirestoreParamTrend as useParamTrendData } from '@/lib/useFirestoreData';
 
 const trendSeries = [
   { key: 'temp' as const,     label: 'Temperature', color: '#f59e0b', threshold: 35,  unit: '°C'  },

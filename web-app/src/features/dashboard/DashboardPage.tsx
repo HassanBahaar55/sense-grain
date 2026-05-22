@@ -4,7 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
-import { useDashboardData, type WHStatus, type DashAlert } from '@/lib/dataEngine';
+import { type WHStatus, type DashAlert } from '@/lib/dataEngine';
+import { useFirestoreDashboard as useDashboardData } from '@/lib/useFirestoreData';
 import { cn } from '@/lib/utils';
 
 type WarehouseStatus = WHStatus;

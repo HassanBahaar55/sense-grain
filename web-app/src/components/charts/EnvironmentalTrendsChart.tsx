@@ -3,7 +3,8 @@
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { useEnvTrendData, type EnvTrendPoint } from '@/lib/dataEngine';
+import { type EnvTrendPoint } from '@/lib/dataEngine';
+import { useFirestoreEnvTrend as useEnvTrendData } from '@/lib/useFirestoreData';
 
 const envTrendSeries = [
   { key: 'Temperature' as const, color: '#f59e0b', label: 'Temperature' },

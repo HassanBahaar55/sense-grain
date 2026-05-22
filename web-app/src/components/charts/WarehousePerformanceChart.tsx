@@ -3,7 +3,8 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { useWhPerformanceData, type WHPerformancePoint } from '@/lib/dataEngine';
+import { type WHPerformancePoint } from '@/lib/dataEngine';
+import { useFirestoreWhPerformance as useWhPerformanceData } from '@/lib/useFirestoreData';
 
 interface TooltipEntry {
   name?: string;

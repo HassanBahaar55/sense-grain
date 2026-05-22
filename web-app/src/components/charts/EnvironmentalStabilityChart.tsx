@@ -10,7 +10,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { stabilitySeriesConfig } from '@/features/storage/mockData';
-import { useStabilityData, type StabilityPoint } from '@/lib/dataEngine';
+import { type StabilityPoint } from '@/lib/dataEngine';
+import { useFirestoreStability as useStabilityData } from '@/lib/useFirestoreData';
 
 interface TooltipEntry {
   name?: string;
