@@ -3,7 +3,8 @@
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { reportTrendData, reportTrendSeries } from '@/features/reports/mockData';
+import { reportTrendSeries } from '@/features/reports/mockData';
+import { useReportsData } from '@/lib/dataEngine';
 
 interface TooltipEntry {
   name?:  string;
@@ -30,12 +31,17 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 }
 
 export function ReportTrendsChart() {
+  const { reportTrendData } = useReportsData();
+  const trendSeries = [
+    { key: 'Generated'  as const, label: 'Generated',  color: '#1f5135' },
+    { key: 'Downloaded' as const, label: 'Downloaded', color: '#3b82f6' },
+  ];
   return (
     <ResponsiveContainer width="100%" height={210}>
       <LineChart data={reportTrendData} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 6" stroke="#f0f1f3" vertical={false} />
         <XAxis
-          dataKey="week"
+          dataKey="day"
           tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 600 }}
           tickLine={false}
           axisLine={false}
@@ -52,7 +58,7 @@ export function ReportTrendsChart() {
           content={<CustomTooltip />}
           cursor={{ stroke: '#d1d5db', strokeWidth: 1.5, strokeDasharray: '4 3' }}
         />
-        {reportTrendSeries.map((s) => (
+        {trendSeries.map((s) => (
           <Line
             key={s.key}
             type="monotone"

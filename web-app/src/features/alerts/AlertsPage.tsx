@@ -4,19 +4,10 @@ import { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { AlertsTrendChart } from '@/components/charts/AlertsTrendChart';
-import {
-  alerts,
-  alertSummary,
-  alertsByType,
-  recentAlertFeed,
-  acknowledgedAlerts,
-  heatmapDays,
-  heatmapBlocks,
-  heatmapData,
-  type AlertSeverity,
-  type AlertStatus,
-  type AlertParamType,
-} from './mockData';
+import { useAlertsData, type Alert, type AlertSeverity, type AlertStatus, type AlertParamType } from '@/lib/dataEngine';
+
+const heatmapDays   = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const heatmapBlocks = ['00–03', '03–06', '06–09', '09–12', '12–15', '15–18', '18–21', '21–24'];
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -118,7 +109,7 @@ function DonutTooltip({ active, payload }: { active?: boolean; payload?: DonutTi
   );
 }
 
-function AlertsByTypePanel() {
+function AlertsByTypePanel({ alertsByType }: { alertsByType: { label: string; count: number; color: string }[] }) {
   const total = alertsByType.reduce((s, d) => s + d.count, 0);
   return (
     <Card className="p-5">
@@ -165,7 +156,7 @@ function AlertsByTypePanel() {
 
 // ─── Recent alerts feed ────────────────────────────────────────────────────────
 
-function RecentAlertsPanel() {
+function RecentAlertsPanel({ recentAlertFeed }: { recentAlertFeed: { id: string; severity: AlertSeverity; warehouse: string; zone: string; message: string; time: string }[] }) {
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
@@ -200,7 +191,7 @@ function RecentAlertsPanel() {
 
 // ─── Acknowledged feed ────────────────────────────────────────────────────────
 
-function AcknowledgedPanel() {
+function AcknowledgedPanel({ acknowledgedAlerts }: { acknowledgedAlerts: { id: string; warehouse: string; zone: string; title: string; acknowledgedBy: string; acknowledgedAt: string }[] }) {
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
@@ -235,7 +226,7 @@ function AcknowledgedPanel() {
 
 // ─── Heatmap ──────────────────────────────────────────────────────────────────
 
-function AlertHeatmap() {
+function AlertHeatmap({ heatmapData }: { heatmapData: number[][] }) {
   const maxVal = Math.max(...heatmapData.flat());
   return (
     <Card className="p-5">
@@ -291,6 +282,7 @@ function AlertHeatmap() {
 const PAGE_SIZE = 10;
 
 interface TableProps {
+  alerts: Alert[];
   search: string;
   severityF: string;
   typeF: string;
@@ -299,7 +291,7 @@ interface TableProps {
   setPage: (p: number) => void;
 }
 
-function AlertsTable({ search, severityF, typeF, statusF, page, setPage }: TableProps) {
+function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage }: TableProps) {
   const filtered = alerts.filter((a) => {
     if (search) {
       const q = search.toLowerCase();
@@ -478,6 +470,16 @@ function AlertsTable({ search, severityF, typeF, statusF, page, setPage }: Table
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AlertsPage() {
+  const alertsData = useAlertsData();
+  const alerts = alertsData.alerts;
+  const alertSummary = alertsData.alertSummary;
+  const alertsByType = alertsData.alertsByType;
+  const recentAlertFeed = alertsData.recentFeed;
+  const heatmapData = alertsData.heatmapData;
+  const acknowledgedAlerts = alerts.filter(a => a.status === 'acknowledged').map((a, i) => ({
+    id: `ack${i + 1}`, warehouse: a.warehouse, zone: a.zone, title: a.title, acknowledgedBy: 'Admin User', acknowledgedAt: a.time,
+  }));
+
   const [search, setSearch]     = useState('');
   const [severityF, setSeverityF] = useState('all');
   const [typeF, setTypeF]       = useState('all');
@@ -627,6 +629,7 @@ export default function AlertsPage() {
 
           {/* Alerts table */}
           <AlertsTable
+            alerts={alerts}
             search={search}
             severityF={severityF}
             typeF={typeF}
@@ -637,9 +640,9 @@ export default function AlertsPage() {
 
           {/* Right sidebar */}
           <div className="flex flex-col gap-4 min-w-0">
-            <AlertsByTypePanel />
-            <RecentAlertsPanel />
-            <AcknowledgedPanel />
+            <AlertsByTypePanel alertsByType={alertsByType} />
+            <RecentAlertsPanel recentAlertFeed={recentAlertFeed} />
+            <AcknowledgedPanel acknowledgedAlerts={acknowledgedAlerts} />
           </div>
         </section>
 
@@ -670,7 +673,7 @@ export default function AlertsPage() {
           </Card>
 
           {/* Heatmap */}
-          <AlertHeatmap />
+          <AlertHeatmap heatmapData={heatmapData} />
         </section>
 
       </main>

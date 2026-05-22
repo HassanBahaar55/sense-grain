@@ -9,7 +9,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { envStabilityData, stabilitySeriesConfig } from '@/features/storage/mockData';
+import { stabilitySeriesConfig } from '@/features/storage/mockData';
+import { useStorageData, type StabilityPoint } from '@/lib/dataEngine';
 
 interface TooltipEntry {
   name?: string;
@@ -36,7 +37,9 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export function EnvironmentalStabilityChart() {
+export function EnvironmentalStabilityChart({ data: propData }: { data?: StabilityPoint[] } = {}) {
+  const { stabilityData } = useStorageData();
+  const envStabilityData = propData ?? stabilityData;
   return (
     <ResponsiveContainer width="100%" height={180}>
       <LineChart data={envStabilityData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>

@@ -1,4 +1,4 @@
-export type TrendDir = 'up' | 'down' | 'stable' | 'slight-up';
+export type TrendDir = 'up' | 'down' | 'stable' | 'slight-up' | null;
 export type RiskLevel = 'low' | 'medium' | 'high' | 'inactive';
 export type InsightType = 'warning' | 'optimization' | 'prediction' | 'success' | 'anomaly';
 export type EventType = 'ai' | 'insight' | 'sync' | 'alert' | 'success';

@@ -3,7 +3,7 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { alertTrendData } from '@/features/alerts/mockData';
+import { useAlertTrendData, type AlertTrendPoint } from '@/lib/dataEngine';
 
 interface TooltipEntry {
   name?: string;
@@ -29,7 +29,9 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export function AlertsTrendChart() {
+export function AlertsTrendChart({ data: propData }: { data?: AlertTrendPoint[] } = {}) {
+  const generated = useAlertTrendData();
+  const alertTrendData = propData ?? generated;
   return (
     <ResponsiveContainer width="100%" height={200}>
       <AreaChart data={alertTrendData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>

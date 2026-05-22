@@ -3,7 +3,15 @@
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { envTrendData, envTrendSeries } from '@/features/analytics/mockData';
+import { useEnvTrendData, type EnvTrendPoint } from '@/lib/dataEngine';
+
+const envTrendSeries = [
+  { key: 'Temperature' as const, color: '#f59e0b', label: 'Temperature' },
+  { key: 'Humidity'    as const, color: '#3b82f6', label: 'Humidity'    },
+  { key: 'Moisture'    as const, color: '#10b981', label: 'Moisture'    },
+  { key: 'CO2'         as const, color: '#8b5cf6', label: 'CO₂'         },
+  { key: 'AQI'         as const, color: '#14b8a6', label: 'AQI'         },
+];
 
 interface TooltipEntry {
   name?: string;
@@ -29,7 +37,9 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export function EnvironmentalTrendsChart() {
+export function EnvironmentalTrendsChart({ data: propData }: { data?: EnvTrendPoint[] } = {}) {
+  const generated = useEnvTrendData();
+  const envTrendData = propData ?? generated;
   return (
     <ResponsiveContainer width="100%" height={228}>
       <LineChart data={envTrendData} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>

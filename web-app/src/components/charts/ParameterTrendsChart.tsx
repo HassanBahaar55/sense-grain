@@ -11,7 +11,14 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { parameterTrends, trendSeries } from '@/features/monitor/mockData';
+import { useParamTrendData, type ParamTrendPoint } from '@/lib/dataEngine';
+
+const trendSeries = [
+  { key: 'temp' as const,     label: 'Temperature', color: '#f59e0b', threshold: 35,  unit: '°C'  },
+  { key: 'humidity' as const, label: 'Humidity',    color: '#3b82f6', threshold: 85,  unit: '%'   },
+  { key: 'moisture' as const, label: 'Moisture',    color: '#10b981', threshold: 16,  unit: '%'   },
+  { key: 'co2' as const,      label: 'CO₂',         color: '#8b5cf6', threshold: 650, unit: ' ppm'},
+];
 
 interface TooltipEntry {
   name?: string;
@@ -47,7 +54,9 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export function ParameterTrendsChart() {
+export function ParameterTrendsChart({ data: propData }: { data?: ParamTrendPoint[] } = {}) {
+  const generated = useParamTrendData();
+  const parameterTrends = propData ?? generated;
   return (
     // touch-action: pan-y lets vertical scroll work on mobile while the chart handles horizontal drag
     <div style={{ touchAction: 'pan-y' }}>

@@ -5,21 +5,17 @@ import { EnvironmentalTrendsChart } from '@/components/charts/EnvironmentalTrend
 import { WarehousePerformanceChart } from '@/components/charts/WarehousePerformanceChart';
 import { SpoilagePredictionChart } from '@/components/charts/SpoilagePredictionChart';
 import {
-  analyticsKPIs,
   analyticsTableData,
   aiInsights,
   sensorHealthData,
   envTrendSeries,
   recentAnalyticsEvents,
-  topWarehouse,
-  worstWarehouse,
-  overallStability,
-  sensorSummary,
   type TrendDir,
   type RiskLevel,
   type InsightType,
   type EventType,
 } from './mockData';
+import { useAnalyticsData } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -208,6 +204,7 @@ function SensorHealthBars() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
+  const { kpis: analyticsKPIs, topWarehouse, worstWarehouse, overallStability, sensorSummary } = useAnalyticsData();
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
       <DashboardHeader

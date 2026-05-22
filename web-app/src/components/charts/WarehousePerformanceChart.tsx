@@ -3,7 +3,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { whPerformanceData } from '@/features/analytics/mockData';
+import { useWhPerformanceData, type WHPerformancePoint } from '@/lib/dataEngine';
 
 interface TooltipEntry {
   name?: string;
@@ -35,7 +35,9 @@ const barSeries = [
   { key: 'Utilization' as const, color: '#f59e0b', label: 'Utilization' },
 ];
 
-export function WarehousePerformanceChart() {
+export function WarehousePerformanceChart({ data: propData }: { data?: WHPerformancePoint[] } = {}) {
+  const generated = useWhPerformanceData();
+  const whPerformanceData = propData ?? generated;
   return (
     <ResponsiveContainer width="100%" height={208}>
       <BarChart data={whPerformanceData} margin={{ top: 6, right: 8, left: -18, bottom: 0 }} barGap={2} barCategoryGap="28%">

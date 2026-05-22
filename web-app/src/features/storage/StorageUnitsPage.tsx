@@ -6,10 +6,7 @@ import { ZoneSummaryDonut } from '@/components/charts/ZoneSummaryDonut';
 import { CapacityGaugeChart } from '@/components/charts/CapacityGaugeChart';
 import { EnvironmentalStabilityChart } from '@/components/charts/EnvironmentalStabilityChart';
 import {
-  storageWarehouses,
-  storageTotals,
   storageZones,
-  zoneSummary,
   topCriticalZones,
   campusBuildings,
   stabilitySeriesConfig,
@@ -20,6 +17,7 @@ import {
   type ZoneStatus,
   type ActivityType,
 } from './mockData';
+import { useStorageData } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -335,6 +333,7 @@ function CampusMap({ selectedId, onSelect }: { selectedId: string; onSelect: (id
 // ─── Warehouse table ──────────────────────────────────────────────────────────
 
 function WarehouseTable({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
+  const { warehouses: storageWarehouses } = useStorageData();
   return (
     <div className="overflow-x-auto max-w-full rounded-xl ring-1 ring-gray-200">
       <table className="w-full text-[12px] whitespace-nowrap">
@@ -483,10 +482,11 @@ function TabPlaceholder({ tab }: { tab: Tab }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function StorageUnitsPage() {
+  const { warehouses: storageWarehouses, totals: storageTotals, stabilityData, zoneSummary } = useStorageData();
   const [selectedWH, setSelectedWH] = useState('WH-C');
   const [activeTab, setActiveTab] = useState<Tab>('Zones');
 
-  const selectedWarehouse = storageWarehouses.find((w) => w.id === selectedWH)!;
+  const selectedWarehouse = storageWarehouses.find((w) => w.id === selectedWH) ?? storageWarehouses[0];
   const safeCap = Math.round(selectedWarehouse.capacity * 0.8);
 
   return (

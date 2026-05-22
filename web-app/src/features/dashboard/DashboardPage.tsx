@@ -2,13 +2,11 @@
 
 import Link from 'next/link';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
-import {
-  warehouseUnits,
-  activeAlerts,
-  type WarehouseStatus,
-  type AlertSeverity,
-} from './mockData';
+import { useDashboardData, type WHStatus, type DashAlert } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
+
+type WarehouseStatus = WHStatus;
+type AlertSeverity = 'high' | 'medium';
 
 // ─── Configs ──────────────────────────────────────────────────────────────────
 
@@ -28,15 +26,6 @@ const alertCfg: Record<AlertSeverity, {
   medium: { bar: 'bg-amber-400', bg: 'bg-amber-50/50', ring: 'ring-amber-100/80', badge: 'bg-amber-100 text-amber-700', label: 'Medium', dot: 'bg-amber-400', valCls: 'text-amber-700' },
 };
 
-// ─── Derived counts ───────────────────────────────────────────────────────────
-
-const goodCount     = warehouseUnits.filter(w => w.status === 'good').length;
-const watchCount    = warehouseUnits.filter(w => w.status === 'medium').length;
-const criticalCount = warehouseUnits.filter(w => w.status === 'high').length;
-const offlineCount  = warehouseUnits.filter(w => w.status === 'inactive').length;
-const activeCount   = warehouseUnits.length - offlineCount;
-const alertHigh     = activeAlerts.filter(a => a.severity === 'high').length;
-const alertMedium   = activeAlerts.filter(a => a.severity === 'medium').length;
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -123,7 +112,7 @@ function MetricCard({ label, value, sub, icon, accentBar, iconWrap, iconCls, val
 
 // ─── Warehouse tile ───────────────────────────────────────────────────────────
 
-function WarehouseTile({ wh }: { wh: typeof warehouseUnits[number] }) {
+function WarehouseTile({ wh }: { wh: { id: string; status: WHStatus; temp: number | null; humidity: number | null; moisture: number | null } }) {
   const cfg = statusCfg[wh.status];
   return (
     <div className={cn(
@@ -174,7 +163,7 @@ function WarehouseTile({ wh }: { wh: typeof warehouseUnits[number] }) {
 
 // ─── Alert item ───────────────────────────────────────────────────────────────
 
-function AlertItem({ alert }: { alert: typeof activeAlerts[number] }) {
+function AlertItem({ alert }: { alert: DashAlert }) {
   const cfg = alertCfg[alert.severity];
   const isHigh = alert.severity === 'high';
   return (
@@ -216,6 +205,9 @@ function AlertItem({ alert }: { alert: typeof activeAlerts[number] }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { warehouses: warehouseUnits, alerts: activeAlerts, goodCount, watchCount, criticalCount, offlineCount, activeCount } = useDashboardData();
+  const alertHigh   = activeAlerts.filter(a => a.severity === 'high').length;
+  const alertMedium = activeAlerts.filter(a => a.severity === 'medium').length;
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <DashboardHeader

@@ -6,15 +6,13 @@ import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { PredictionForecastChart } from '@/components/charts/PredictionForecastChart';
 import { RiskForecastChart } from '@/components/charts/RiskForecastChart';
 import {
-  paramForecastCards,
   forecastSeries,
   predictionSummary,
-  whPredictionTable,
-  riskForecastData,
   type TrendDir,
   type RiskLevel,
   type Timeframe,
 } from './mockData';
+import { usePredictionsData, type ParamForecastCard } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -87,9 +85,9 @@ function TrendIcon({ trend }: { trend: TrendDir | null }) {
 
 // ─── Parameter card ───────────────────────────────────────────────────────────
 
-function ParamCard({ card }: { card: typeof paramForecastCards[0] }) {
+function ParamCard({ card }: { card: ParamForecastCard }) {
   const cfg = paramColorMap[card.colorKey];
-  const tCfg = trendLabels[card.trend] ?? { label: '—', cls: 'bg-gray-100 text-gray-400' };
+  const tCfg = (card.trend ? trendLabels[card.trend] : null) ?? { label: '—', cls: 'bg-gray-100 text-gray-400' };
   return (
     <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
       {/* Header row */}
@@ -211,6 +209,7 @@ function PredictionSummaryPanel() {
 // ─── Tab contents ─────────────────────────────────────────────────────────────
 
 function ParamForecastsTab() {
+  const { paramCards: paramForecastCards } = usePredictionsData();
   return (
     <div className="space-y-5">
       {/* 6 Parameter cards */}
@@ -251,6 +250,7 @@ function ParamForecastsTab() {
 }
 
 function WarehouseForecastsTab() {
+  const { whPredTable: whPredictionTable } = usePredictionsData();
   return (
     <Card className="p-5 min-w-0 overflow-hidden">
       <div className="flex items-center justify-between mb-4">
@@ -289,23 +289,23 @@ function WarehouseForecastsTab() {
                   <td className={cn(
                     'px-3 py-3 font-bold tabular-nums',
                     isInactive ? 'text-gray-300' :
-                    row.tempForecast && parseFloat(row.tempForecast) >= 34 ? 'text-red-600' :
-                    row.tempForecast && parseFloat(row.tempForecast) >= 30 ? 'text-orange-600' :
-                    row.tempForecast && parseFloat(row.tempForecast) >= 28 ? 'text-amber-600' : 'text-gray-700',
+                    row.tempForecast >= 34 ? 'text-red-600' :
+                    row.tempForecast >= 30 ? 'text-orange-600' :
+                    row.tempForecast >= 28 ? 'text-amber-600' : 'text-gray-700',
                   )}>
-                    {row.tempForecast ?? nullCell}
+                    {row.tempForecast.toFixed(1)}
                   </td>
-                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.humForecast && parseInt(row.humForecast) >= 75 ? 'text-amber-600' : 'text-gray-700')}>
-                    {row.humForecast ?? nullCell}
+                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.humForecast >= 75 ? 'text-amber-600' : 'text-gray-700')}>
+                    {row.humForecast}%
                   </td>
-                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.moistForecast && parseFloat(row.moistForecast) >= 14 ? 'text-amber-600' : 'text-gray-700')}>
-                    {row.moistForecast ?? nullCell}
+                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.moistForecast >= 14 ? 'text-amber-600' : 'text-gray-700')}>
+                    {row.moistForecast.toFixed(1)}%
                   </td>
-                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.co2Forecast && parseInt(row.co2Forecast) >= 580 ? 'text-red-600' : 'text-gray-700')}>
-                    {row.co2Forecast ?? nullCell}
+                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.co2Forecast >= 580 ? 'text-red-600' : 'text-gray-700')}>
+                    {row.co2Forecast}
                   </td>
-                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.aqiForecast && parseInt(row.aqiForecast) >= 50 ? 'text-amber-600' : 'text-gray-700')}>
-                    {row.aqiForecast ?? nullCell}
+                  <td className={cn('px-3 py-3 font-semibold tabular-nums', isInactive ? 'text-gray-300' : row.aqiForecast >= 50 ? 'text-amber-600' : 'text-gray-700')}>
+                    {row.aqiForecast}
                   </td>
                   <td className="px-3 py-3 font-semibold text-gray-700 tabular-nums">
                     {row.capForecast ?? nullCell}
@@ -327,6 +327,7 @@ function WarehouseForecastsTab() {
 }
 
 function RiskForecastTab() {
+  const { riskForecastData } = usePredictionsData();
   const lastDay = riskForecastData[riskForecastData.length - 1];
   return (
     <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,280px)] gap-5">

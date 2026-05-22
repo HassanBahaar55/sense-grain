@@ -3,7 +3,7 @@
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { spoilagePredData } from '@/features/analytics/mockData';
+import { usePredictionsData } from '@/lib/dataEngine';
 
 interface TooltipEntry {
   name?: string;
@@ -30,6 +30,8 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 }
 
 export function SpoilagePredictionChart() {
+  const { riskForecastData } = usePredictionsData();
+  const spoilagePredData = riskForecastData.map(r => ({ day: r.day, 'Low Risk': r.Low * 5, 'Medium Risk': r.Medium * 10, 'High Risk': r.High * 18 }));
   return (
     <ResponsiveContainer width="100%" height={208}>
       <AreaChart data={spoilagePredData} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>

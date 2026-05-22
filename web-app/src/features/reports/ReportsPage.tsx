@@ -4,13 +4,11 @@ import { useState } from 'react';
 import { ReportTrendsChart } from '@/components/charts/ReportTrendsChart';
 import { ReportTypesChart } from '@/components/charts/ReportTypesChart';
 import {
-  reportStats,
-  recentReports,
-  reportTypeData,
   reportTrendSeries,
   scheduledReports,
   type ReportType,
 } from './mockData';
+import { useReportsData } from '@/lib/dataEngine';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -129,6 +127,7 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: () => void 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
+  const { stats: reportStats, recentReports, reportTypeData, reportTrendData } = useReportsData();
   const [scheduleEnabled, setScheduleEnabled] = useState<Record<string, boolean>>(
     () => Object.fromEntries(scheduledReports.map((s) => [s.id, s.enabled]))
   );
@@ -252,19 +251,20 @@ export default function ReportsPage() {
             />
             <ReportTypesChart />
             <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
-              {reportTypeData.map((item) => (
-                <div key={item.name} className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="flex-1 text-[11px] text-gray-600 font-medium">{item.name}</span>
-                  <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${item.value}%`, backgroundColor: item.color, opacity: 0.85 }}
-                    />
+              {reportTypeData.map((item) => {
+                const total = reportTypeData.reduce((s, x) => s + x.count, 0);
+                const pct = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                return (
+                  <div key={item.label} className="flex items-center gap-2.5">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="flex-1 text-[11px] text-gray-600 font-medium">{item.label}</span>
+                    <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: item.color, opacity: 0.85 }} />
+                    </div>
+                    <span className="text-[11px] font-bold text-gray-700 tabular-nums w-8 text-right flex-shrink-0">{pct}%</span>
                   </div>
-                  <span className="text-[11px] font-bold text-gray-700 tabular-nums w-8 text-right flex-shrink-0">{item.value}%</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
 
@@ -304,7 +304,7 @@ export default function ReportsPage() {
 
                         {/* Report Name */}
                         <td className="px-3 py-2.5 max-w-[220px]">
-                          <p className="font-semibold text-gray-800 truncate">{row.name}</p>
+                          <p className="font-semibold text-gray-800 truncate">{row.title}</p>
                           <p className="text-gray-400 text-[9px] font-mono mt-0.5">{row.id}</p>
                         </td>
 
