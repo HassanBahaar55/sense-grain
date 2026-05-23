@@ -10,7 +10,7 @@
 
 import {
   getFirestore, doc, getDoc, setDoc, writeBatch,
-  serverTimestamp,
+  serverTimestamp, collection, query, where, orderBy, getDocs, deleteDoc,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
 import {
@@ -173,4 +173,38 @@ export async function saveReport(report: ReportItem): Promise<void> {
     ...report,
     createdAt: serverTimestamp(),
   });
+}
+
+// ─── 7-day auto-cleanup (called on app startup) ───────────────────────────────
+
+export async function cleanupOldAlerts(): Promise<void> {
+  try {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    // Delete alertHistory docs older than 7 days
+    const historyQ = query(
+      collection(db, 'alertHistory'),
+      orderBy('triggeredAt'),
+      where('triggeredAt', '<', cutoff),
+    );
+    const historySnap = await getDocs(historyQ);
+    await Promise.all(historySnap.docs.map(d => deleteDoc(doc(db, 'alertHistory', d.id))));
+
+    // Delete resolved alerts in the live alerts collection older than 7 days
+    // Single-field filter only (avoids composite index requirement)
+    const alertsQ = query(
+      collection(db, 'alerts'),
+      where('timestamp', '<', cutoff),
+    );
+    const alertsSnap = await getDocs(alertsQ);
+    // Only delete if resolved (filter in JS to keep active old alerts safe)
+    const toDelete = alertsSnap.docs.filter(d => d.data().resolved === true);
+    await Promise.all(toDelete.map(d => deleteDoc(doc(db, 'alerts', d.id))));
+
+    if (historySnap.size + toDelete.length > 0) {
+      console.info(`[cleanup] Deleted ${historySnap.size} alertHistory + ${toDelete.length} resolved alerts older than 7 days`);
+    }
+  } catch {
+    // Non-fatal — cleanup will retry on next app startup
+  }
 }

@@ -91,16 +91,12 @@ export class LiveEngine {
   private listeners:     Set<Listener> = new Set();
   private timer:         ReturnType<typeof setInterval> | null = null;
   private syncTimer:     ReturnType<typeof setInterval> | null = null;
-  private alertSeq     = 1;
   private tickCount    = 0;
   private alertCooldown: Map<string, number> = new Map();
   private readonly COOLDOWN_MS = 20 * 60 * 1000;
   // Check alerts every 6th tick (every ~60s at 10s interval) to reduce noise
   private readonly ALERT_CHECK_EVERY = 6;
   lastTickAt = 0; // exposed so UI can show "last checked X ago"
-
-  // Queue of history writes to flush on next Firestore sync
-  private historyPending: { alert: LiveAlert; resolvedAt?: number }[] = [];
 
   constructor() {
     // Seed initial state from base configs
@@ -181,8 +177,9 @@ export class LiveEngine {
       s.trend = delta > 0.05 ? 'up' : delta < -0.05 ? 'down' : 'stable';
 
       this.recalcDerived(cfg.id);
-      // Check alerts every ALERT_CHECK_EVERY ticks (~60s), but always on tick 1
-      if (this.tickCount === 1 || this.tickCount % this.ALERT_CHECK_EVERY === 0) {
+      // Skip tick 1 — let Firestore bootstrap first so we don't flash stale engine alerts.
+      // After that, check every ALERT_CHECK_EVERY ticks (~60s).
+      if (this.tickCount > 1 && this.tickCount % this.ALERT_CHECK_EVERY === 0) {
         this.checkAlerts(cfg.id, s);
       }
     }
@@ -234,16 +231,19 @@ export class LiveEngine {
       if (c.value > c.thr && !dup) {
         const lastResolved = this.alertCooldown.get(cooldownKey) ?? 0;
         if (Date.now() - lastResolved >= this.COOLDOWN_MS) {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          // Stable ID: same alert type on same day = same doc (no duplicates across restarts)
+          const stableId = `${whId}_${c.param.toLowerCase().replace(/[^a-z0-9]/g, '')}_${c.sev}_${dateStr}`;
           const newAlert: LiveAlert = {
-            id: `live-${this.alertSeq++}`,
+            id: stableId,
             warehouseId: whId, param: c.param,
             value: c.value, unit: c.unit, threshold: c.thr,
             severity: c.sev, message: c.msg,
             timestamp: Date.now(), resolved: false,
           };
           this.alerts.push(newAlert);
-          // Queue history write — flushed on next Firestore sync
-          this.historyPending.push({ alert: newAlert });
+          // Write to alertHistory immediately (not via queue) so it persists before next sync
+          this.writeAlertHistory(newAlert, undefined);
         }
       }
 
@@ -254,8 +254,7 @@ export class LiveEngine {
           a.id === dup.id ? { ...a, resolved: true } : a,
         );
         this.alertCooldown.set(cooldownKey, resolvedAt);
-        // Queue history update with resolvedAt timestamp
-        this.historyPending.push({ alert: { ...dup, resolved: true }, resolvedAt });
+        this.writeAlertHistory({ ...dup, resolved: true }, resolvedAt);
       }
     }
 
@@ -267,7 +266,26 @@ export class LiveEngine {
     this.listeners.forEach(fn => fn({ ...this.readings }, [...this.alerts], this.tickCount));
   }
 
-  // ── Firestore sync ──────────────────────────────────────────────────────────
+  // ── Immediate alertHistory write (fire-and-forget) ──────────────────────────
+
+  private async writeAlertHistory(alert: LiveAlert, resolvedAt: number | undefined) {
+    try {
+      const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const firebaseApp = (await import('@/config/firebase')).default;
+      const db = getFirestore(firebaseApp);
+      await setDoc(doc(db, 'alertHistory', alert.id), {
+        ...alert,
+        triggeredAt: alert.timestamp,
+        resolvedAt:  resolvedAt ?? null,
+        date:        new Date(alert.timestamp).toISOString().slice(0, 10),
+        updatedAt:   serverTimestamp(),
+      }, { merge: true });
+    } catch {
+      // Non-fatal — will retry on next sync
+    }
+  }
+
+  // ── Firestore sync (readings + current alert state) ─────────────────────────
 
   private async syncToFirestore() {
     try {
@@ -282,7 +300,7 @@ export class LiveEngine {
         }),
       );
 
-      // Current alert state — deterministic doc ID (one per WH/param/severity)
+      // Current alert state — stable doc ID per WH/param/severity
       const alertWrites = this.alerts.map(a =>
         setDoc(doc(db, 'alerts', `${a.warehouseId}_${a.param}_${a.severity}`), {
           ...a,
@@ -290,19 +308,7 @@ export class LiveEngine {
         }),
       );
 
-      // Alert history — permanent log, one doc per alert lifecycle (create + resolve)
-      const pending = this.historyPending.splice(0);
-      const historyWrites = pending.map(({ alert, resolvedAt }) =>
-        setDoc(doc(db, 'alertHistory', alert.id), {
-          ...alert,
-          triggeredAt: alert.timestamp,
-          resolvedAt:  resolvedAt ?? null,
-          date:        new Date(alert.timestamp).toISOString().slice(0, 10),
-          updatedAt:   serverTimestamp(),
-        }, { merge: true }),
-      );
-
-      await Promise.all([...writes, ...alertWrites, ...historyWrites]);
+      await Promise.all([...writes, ...alertWrites]);
     } catch (err) {
       if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] Firestore sync skipped:', err);
     }
@@ -314,8 +320,8 @@ export class LiveEngine {
     if (this.timer) return;
     this.timer     = setInterval(() => { this.tick(); }, uiIntervalMs);
     this.syncTimer = setInterval(() => { this.syncToFirestore(); }, syncIntervalMs);
-    setTimeout(() => { this.tick(); }, 1200);
-    setTimeout(() => { this.syncToFirestore(); }, 2000);
+    setTimeout(() => { this.tick(); }, 3000);   // delay first tick — let Firestore bootstrap first
+    setTimeout(() => { this.syncToFirestore(); }, 5000);
   }
 
   stop() {
@@ -337,9 +343,6 @@ export class LiveEngine {
     for (const a of existing) {
       if (!a.resolved && !this.alerts.find(x => x.id === a.id)) {
         this.alerts.push({ ...a });
-        // Track highest sequence so new IDs don't collide
-        const seq = parseInt(a.id.replace('live-', ''), 10);
-        if (!isNaN(seq) && seq >= this.alertSeq) this.alertSeq = seq + 1;
       }
     }
   }

@@ -7,7 +7,7 @@ import {
 import { liveEngine, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
 import { subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
-import { seedFirestoreIfEmpty } from '@/lib/firestoreSeeder';
+import { seedFirestoreIfEmpty, cleanupOldAlerts } from '@/lib/firestoreSeeder';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,6 +39,8 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
     // Seed Firestore on first login (no-op if already seeded)
     seedFirestoreIfEmpty().catch(() => {});
+    // Delete alertHistory + resolved alerts older than 7 days
+    cleanupOldAlerts().catch(() => {});
 
     // Track whether we have pre-loaded Firestore alerts into the engine
     let alertsBootstrapped = false;
@@ -50,10 +52,11 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     const unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
       setReadings({ ...newReadings });
       setLiveAlerts(prev => {
-        // Once bootstrapped, use engine state (it now knows about existing alerts)
-        if (alertsBootstrapped) return [...newAlerts];
-        // Before bootstrap: keep Firestore alerts if engine has none yet
-        return newAlerts.length > 0 ? [...newAlerts] : prev;
+        // Before Firestore has responded, NEVER let the engine overwrite UI alerts.
+        // Engine tick 1 is skipped, but ticks 2-5 could still arrive before Firestore
+        // if network is slow — keep prev (Firestore state) until bootstrap is confirmed.
+        if (!alertsBootstrapped) return prev;
+        return [...newAlerts];
       });
       setTick(newTick);
       setLiveOverride(newReadings);
