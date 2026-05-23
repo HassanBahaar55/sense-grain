@@ -170,10 +170,12 @@ function Spinner() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, approvalStatus, rejectionReason, isAdmin } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
-  }, [user, loading, router]);
+    if (!loading && user && isAdmin && pathname !== '/admin') router.replace('/admin');
+  }, [user, loading, isAdmin, pathname, router]);
 
   // Show spinner while auth+approval loads
   if (loading || !user || approvalStatus === null) return <Spinner />;

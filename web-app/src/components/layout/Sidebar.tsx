@@ -189,50 +189,9 @@ export function Sidebar() {
 
         {/* ── Nav ── */}
         <nav className="flex-1 overflow-y-auto py-5 px-3 flex flex-col gap-0">
-          <div>
-            <p className="text-[9px] font-bold text-white/25 tracking-widest uppercase px-3 mb-3">
-              Navigation
-            </p>
-            <ul className="space-y-px">
-              {navItems.map((item) => {
-                const isActive = pathname === item.href;
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      onClick={close}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 group relative overflow-hidden',
-                        isActive
-                          ? 'bg-[#1f5135] text-white shadow-sm shadow-green-900/30'
-                          : 'text-white/50 hover:text-white hover:bg-white/[0.07]',
-                      )}
-                    >
-                      {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-green-300 rounded-r-full" />
-                      )}
-                      <span className={cn(
-                        'flex-shrink-0 transition-colors duration-200',
-                        isActive ? 'text-white' : 'text-white/35 group-hover:text-white/70',
-                      )}>
-                        {item.icon(isActive)}
-                      </span>
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.label === 'Alerts' && activeAlertCount > 0 && (
-                        <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center shadow-sm">
-                          {activeAlertCount > 99 ? '99+' : activeAlertCount}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* ── Admin link (super_admin only) ── */}
-          {isAdmin && (
-            <div className="mt-4">
+          {isAdmin ? (
+            /* Admin sees only the Admin Panel link */
+            <div>
               <p className="text-[9px] font-bold text-white/25 tracking-widest uppercase px-3 mb-3">
                 Administration
               </p>
@@ -262,6 +221,48 @@ export function Sidebar() {
                   SUPER
                 </span>
               </Link>
+            </div>
+          ) : (
+            /* Regular users see full navigation */
+            <div>
+              <p className="text-[9px] font-bold text-white/25 tracking-widest uppercase px-3 mb-3">
+                Navigation
+              </p>
+              <ul className="space-y-px">
+                {navItems.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        onClick={close}
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 group relative overflow-hidden',
+                          isActive
+                            ? 'bg-[#1f5135] text-white shadow-sm shadow-green-900/30'
+                            : 'text-white/50 hover:text-white hover:bg-white/[0.07]',
+                        )}
+                      >
+                        {isActive && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-green-300 rounded-r-full" />
+                        )}
+                        <span className={cn(
+                          'flex-shrink-0 transition-colors duration-200',
+                          isActive ? 'text-white' : 'text-white/35 group-hover:text-white/70',
+                        )}>
+                          {item.icon(isActive)}
+                        </span>
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {item.label === 'Alerts' && activeAlertCount > 0 && (
+                          <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center shadow-sm">
+                            {activeAlertCount > 99 ? '99+' : activeAlertCount}
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
         </nav>
