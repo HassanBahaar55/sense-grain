@@ -22,6 +22,12 @@ const db = getFirestore(firebaseApp);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Deterministic pseudo-random integer in [min, max] based on date string + salt */
+function seededVariation(dateStr: string, salt: number, min: number, max: number): number {
+  const seed = dateStr.split('-').reduce((acc, p) => acc + parseInt(p, 10) * salt, 0);
+  return min + (Math.abs(Math.sin(seed) * 10000) % (max - min + 1) | 0);
+}
+
 function addDays(date: Date, n: number): Date {
   const d = new Date(date);
   d.setDate(d.getDate() + n);
@@ -36,10 +42,11 @@ function dateKey(d: Date): string {
 
 export async function seedFirestoreIfEmpty(): Promise<void> {
   try {
-    // Check if already seeded — avoids re-running on every login
-    const metaRef = doc(db, 'meta', 'seeded');
+    // Check version — bump SEED_VERSION to force a reseed
+    const SEED_VERSION = 2;
+    const metaRef  = doc(db, 'meta', 'seeded');
     const metaSnap = await getDoc(metaRef);
-    if (metaSnap.exists()) return;
+    if (metaSnap.exists() && (metaSnap.data()?.version ?? 0) >= SEED_VERSION) return;
 
     const today = new Date();
     const batch = writeBatch(db);
@@ -72,11 +79,11 @@ export async function seedFirestoreIfEmpty(): Promise<void> {
             return [wh.id, Math.round(tScore * 0.6 + hScore * 0.4)];
           })
         ),
-        // Alert counts (for alert trend chart)
+        // Alert counts with per-day variation so the trend chart is not flat
         alertCounts: {
-          Critical: Math.max(0, critCount * 2),
-          Warning:  Math.max(0, warnCount * 3 + critCount),
-          Info:     Math.max(0, 8 + goodCount),
+          Critical: Math.max(0, critCount * 2      + seededVariation(key, 11, 0, 4)),
+          Warning:  Math.max(0, warnCount * 3 + critCount + seededVariation(key, 7, 0, 8)),
+          Info:     Math.max(0, 6 + goodCount      + seededVariation(key, 3, 0, 6)),
         },
         seededAt: serverTimestamp(),
       });
@@ -105,7 +112,7 @@ export async function seedFirestoreIfEmpty(): Promise<void> {
     // ── 3. Mark seeding complete ─────────────────────────────────────────────
     batch.set(metaRef, {
       seededAt: serverTimestamp(),
-      version: 1,
+      version: 2,
     });
 
     await batch.commit();

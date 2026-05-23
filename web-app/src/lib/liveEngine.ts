@@ -43,15 +43,17 @@ type Listener = (
 ) => void;
 
 // ─── Base configs per warehouse ───────────────────────────────────────────────
+// Base values set well below thresholds so alerts only fire during actual spikes,
+// not continuously. Thresholds: temp 29°C medium / 32°C critical, humidity 65% / 72%.
 
 const WH_CONFIGS = [
-  { id: 'WH-A', baseTemp: 26.0, baseHum: 58, baseMoist: 11.2, baseCO2: 490, baseAQI: 35, baseCap: 72, drift: 0.0  },
-  { id: 'WH-B', baseTemp: 28.5, baseHum: 64, baseMoist: 12.5, baseCO2: 530, baseAQI: 42, baseCap: 67, drift: 0.1  },
-  { id: 'WH-C', baseTemp: 26.5, baseHum: 56, baseMoist: 10.8, baseCO2: 505, baseAQI: 38, baseCap: 81, drift: -0.05 },
-  { id: 'WH-D', baseTemp: 29.8, baseHum: 69, baseMoist: 14.1, baseCO2: 575, baseAQI: 48, baseCap: 61, drift: 0.15 },
-  { id: 'WH-E', baseTemp: 27.0, baseHum: 59, baseMoist: 11.5, baseCO2: 510, baseAQI: 36, baseCap: 70, drift: 0.02 },
-  { id: 'WH-F', baseTemp: 29.2, baseHum: 66, baseMoist: 13.3, baseCO2: 545, baseAQI: 44, baseCap: 73, drift: 0.08 },
-  { id: 'WH-G', baseTemp: 26.2, baseHum: 55, baseMoist: 11.0, baseCO2: 485, baseAQI: 32, baseCap: 52, drift: -0.02 },
+  { id: 'WH-A', baseTemp: 25.5, baseHum: 57, baseMoist: 10.8, baseCO2: 488, baseAQI: 33, baseCap: 72, drift: 0.0   },
+  { id: 'WH-B', baseTemp: 27.0, baseHum: 61, baseMoist: 11.8, baseCO2: 512, baseAQI: 40, baseCap: 67, drift: 0.07  },
+  { id: 'WH-C', baseTemp: 26.0, baseHum: 55, baseMoist: 10.5, baseCO2: 502, baseAQI: 37, baseCap: 81, drift: -0.05 },
+  { id: 'WH-D', baseTemp: 27.5, baseHum: 62, baseMoist: 12.0, baseCO2: 518, baseAQI: 43, baseCap: 61, drift: 0.10  },
+  { id: 'WH-E', baseTemp: 26.5, baseHum: 58, baseMoist: 11.2, baseCO2: 506, baseAQI: 35, baseCap: 70, drift: 0.02  },
+  { id: 'WH-F', baseTemp: 27.2, baseHum: 61, baseMoist: 11.8, baseCO2: 522, baseAQI: 41, baseCap: 73, drift: 0.05  },
+  { id: 'WH-G', baseTemp: 25.8, baseHum: 54, baseMoist: 10.8, baseCO2: 483, baseAQI: 31, baseCap: 52, drift: -0.02 },
 ];
 
 // ─── Alert thresholds ─────────────────────────────────────────────────────────
@@ -92,7 +94,11 @@ export class LiveEngine {
   private alertSeq     = 1;
   private tickCount    = 0;
   private alertCooldown: Map<string, number> = new Map();
-  private readonly COOLDOWN_MS = 8 * 60 * 1000; // 8 min cooldown after resolve
+  // 20 min cooldown — prevents spam after a sensor returns to normal and spikes again
+  private readonly COOLDOWN_MS = 20 * 60 * 1000;
+
+  // Queue of history writes to flush on next Firestore sync
+  private historyPending: { alert: LiveAlert; resolvedAt?: number }[] = [];
 
   constructor() {
     // Seed initial state from base configs
@@ -205,14 +211,14 @@ export class LiveEngine {
 
   private checkAlerts(whId: string, s: LiveSensorReading) {
     const checks: Array<{ param: string; value: number; unit: string; thr: number; sev: LiveAlert['severity']; msg: string }> = [
-      { param: 'Temperature', value: s.temperature, unit: '°C',  thr: THR.temp.high,      sev: 'critical', msg: `Temperature critical at ${s.temperature.toFixed(1)}°C` },
-      { param: 'Temperature', value: s.temperature, unit: '°C',  thr: THR.temp.medium,    sev: 'medium',   msg: `Temperature elevated at ${s.temperature.toFixed(1)}°C` },
-      { param: 'Humidity',    value: s.humidity,    unit: '%',   thr: THR.humidity.high,  sev: 'high',     msg: `Humidity exceeded ${THR.humidity.high}% at ${s.humidity}%` },
-      { param: 'Humidity',    value: s.humidity,    unit: '%',   thr: THR.humidity.medium,sev: 'medium',   msg: `Humidity warning at ${s.humidity}%` },
-      { param: 'Moisture',    value: s.moisture,    unit: '%',   thr: THR.moisture.high,  sev: 'high',     msg: `Moisture critical at ${s.moisture.toFixed(1)}%` },
-      { param: 'Moisture',    value: s.moisture,    unit: '%',   thr: THR.moisture.medium,sev: 'medium',   msg: `Moisture rising at ${s.moisture.toFixed(1)}%` },
-      { param: 'CO₂',        value: s.co2,         unit: 'ppm', thr: THR.co2.medium,     sev: 'medium',   msg: `CO₂ elevated at ${s.co2} ppm` },
-      { param: 'AQI',        value: s.aqi,         unit: '',    thr: THR.aqi.medium,     sev: 'medium',   msg: `Air quality index at ${s.aqi}` },
+      { param: 'Temperature', value: s.temperature, unit: '°C',  thr: THR.temp.high,       sev: 'critical', msg: `Temperature critical at ${s.temperature.toFixed(1)}°C` },
+      { param: 'Temperature', value: s.temperature, unit: '°C',  thr: THR.temp.medium,     sev: 'medium',   msg: `Temperature elevated at ${s.temperature.toFixed(1)}°C` },
+      { param: 'Humidity',    value: s.humidity,    unit: '%',   thr: THR.humidity.high,   sev: 'high',     msg: `Humidity exceeded ${THR.humidity.high}% at ${s.humidity}%` },
+      { param: 'Humidity',    value: s.humidity,    unit: '%',   thr: THR.humidity.medium, sev: 'medium',   msg: `Humidity warning at ${s.humidity}%` },
+      { param: 'Moisture',    value: s.moisture,    unit: '%',   thr: THR.moisture.high,   sev: 'high',     msg: `Moisture critical at ${s.moisture.toFixed(1)}%` },
+      { param: 'Moisture',    value: s.moisture,    unit: '%',   thr: THR.moisture.medium, sev: 'medium',   msg: `Moisture rising at ${s.moisture.toFixed(1)}%` },
+      { param: 'CO₂',        value: s.co2,         unit: 'ppm', thr: THR.co2.medium,      sev: 'medium',   msg: `CO₂ elevated at ${s.co2} ppm` },
+      { param: 'AQI',        value: s.aqi,         unit: '',    thr: THR.aqi.medium,      sev: 'medium',   msg: `Air quality index at ${s.aqi}` },
     ];
 
     for (const c of checks) {
@@ -222,22 +228,28 @@ export class LiveEngine {
       if (c.value > c.thr && !dup) {
         const lastResolved = this.alertCooldown.get(cooldownKey) ?? 0;
         if (Date.now() - lastResolved >= this.COOLDOWN_MS) {
-          this.alerts.push({
+          const newAlert: LiveAlert = {
             id: `live-${this.alertSeq++}`,
             warehouseId: whId, param: c.param,
             value: c.value, unit: c.unit, threshold: c.thr,
             severity: c.sev, message: c.msg,
             timestamp: Date.now(), resolved: false,
-          });
+          };
+          this.alerts.push(newAlert);
+          // Queue history write — flushed on next Firestore sync
+          this.historyPending.push({ alert: newAlert });
         }
       }
 
       // Auto-resolve if back below 95% of threshold; start cooldown
       if (c.value < c.thr * 0.95 && dup) {
+        const resolvedAt = Date.now();
         this.alerts = this.alerts.map(a =>
           a.id === dup.id ? { ...a, resolved: true } : a,
         );
-        this.alertCooldown.set(cooldownKey, Date.now());
+        this.alertCooldown.set(cooldownKey, resolvedAt);
+        // Queue history update with resolvedAt timestamp
+        this.historyPending.push({ alert: { ...dup, resolved: true }, resolvedAt });
       }
     }
 
@@ -250,12 +262,9 @@ export class LiveEngine {
   }
 
   // ── Firestore sync ──────────────────────────────────────────────────────────
-  // Writes current state to Firebase after each tick so mobile app and any
-  // other client receives the same data in real time via onSnapshot.
 
   private async syncToFirestore() {
     try {
-      // Dynamically import to keep this tree-shakeable on the server
       const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
       const firebaseApp = (await import('@/config/firebase')).default;
       const db = getFirestore(firebaseApp);
@@ -267,7 +276,7 @@ export class LiveEngine {
         }),
       );
 
-      // Sync alerts — use deterministic doc id so resolving overwrites correctly
+      // Current alert state — deterministic doc ID (one per WH/param/severity)
       const alertWrites = this.alerts.map(a =>
         setDoc(doc(db, 'alerts', `${a.warehouseId}_${a.param}_${a.severity}`), {
           ...a,
@@ -275,9 +284,20 @@ export class LiveEngine {
         }),
       );
 
-      await Promise.all([...writes, ...alertWrites]);
+      // Alert history — permanent log, one doc per alert lifecycle (create + resolve)
+      const pending = this.historyPending.splice(0);
+      const historyWrites = pending.map(({ alert, resolvedAt }) =>
+        setDoc(doc(db, 'alertHistory', alert.id), {
+          ...alert,
+          triggeredAt: alert.timestamp,
+          resolvedAt:  resolvedAt ?? null,
+          date:        new Date(alert.timestamp).toISOString().slice(0, 10),
+          updatedAt:   serverTimestamp(),
+        }, { merge: true }),
+      );
+
+      await Promise.all([...writes, ...alertWrites, ...historyWrites]);
     } catch (err) {
-      // Not authenticated yet or offline — will retry on next tick
       if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] Firestore sync skipped:', err);
     }
   }
@@ -286,14 +306,8 @@ export class LiveEngine {
 
   start(uiIntervalMs = 30000, syncIntervalMs = 60000) {
     if (this.timer) return;
-
-    // UI tick — drives local state for smooth updates
-    this.timer = setInterval(() => { this.tick(); }, uiIntervalMs);
-
-    // Firestore sync — separate, less frequent to stay within free quota
+    this.timer     = setInterval(() => { this.tick(); }, uiIntervalMs);
     this.syncTimer = setInterval(() => { this.syncToFirestore(); }, syncIntervalMs);
-
-    // First tick slightly delayed so components mount first; sync right after
     setTimeout(() => { this.tick(); }, 1200);
     setTimeout(() => { this.syncToFirestore(); }, 2000);
   }

@@ -4,7 +4,28 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { type AlertTrendPoint } from '@/lib/dataEngine';
-import { useFirestoreAlertTrend as useAlertTrendData } from '@/lib/useFirestoreData';
+import { useFirestoreAlertTrend } from '@/lib/useFirestoreData';
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function parseDayLabel(label: string): Date | null {
+  const [mon, d] = label.split(' ');
+  const mi = MONTHS.indexOf(mon);
+  if (mi === -1 || !d) return null;
+  return new Date(new Date().getFullYear(), mi, parseInt(d, 10));
+}
+
+function tickLabel(label: string, totalPoints: number): string {
+  const date = parseDayLabel(label);
+  if (!date) return label;
+  if (totalPoints <= 7) {
+    return DAYS[date.getDay()];
+  }
+  return `${d(date.getDate())} ${MONTHS[date.getMonth()]}`;
+}
+
+function d(n: number) { return n < 10 ? `0${n}` : `${n}`; }
 
 interface TooltipEntry {
   name?: string;
@@ -14,9 +35,13 @@ interface TooltipEntry {
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipEntry[]; label?: string }) {
   if (!active || !payload?.length) return null;
+  const date = label ? parseDayLabel(label) : null;
+  const dateStr = date
+    ? `${DAYS[date.getDay()]}, ${label}`
+    : (label ?? '');
   return (
-    <div className="bg-white rounded-xl shadow-lg ring-1 ring-black/[0.08] p-3 min-w-[148px]">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{label}</p>
+    <div className="bg-white rounded-xl shadow-lg ring-1 ring-black/[0.08] p-3 min-w-[160px]">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{dateStr}</p>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center justify-between gap-4 py-[2px]">
           <div className="flex items-center gap-1.5">
@@ -30,9 +55,10 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export function AlertsTrendChart({ data: propData }: { data?: AlertTrendPoint[] } = {}) {
-  const generated = useAlertTrendData();
+export function AlertsTrendChart({ data: propData, days = 7 }: { data?: AlertTrendPoint[]; days?: 7 | 30 }) {
+  const generated = useFirestoreAlertTrend(days);
   const alertTrendData = propData ?? generated;
+
   return (
     <ResponsiveContainer width="100%" height={200}>
       <AreaChart data={alertTrendData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
@@ -56,13 +82,15 @@ export function AlertsTrendChart({ data: propData }: { data?: AlertTrendPoint[] 
           tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
           tickLine={false}
           axisLine={false}
-          tickFormatter={(v: string) => v.replace('May ', '')}
+          tickFormatter={(v: string) => tickLabel(v, alertTrendData.length)}
           dy={4}
+          interval={days === 30 ? 3 : 0}
         />
         <YAxis
           tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 500 }}
           tickLine={false}
           axisLine={false}
+          allowDecimals={false}
         />
         <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#e5e7eb', strokeWidth: 1 }} />
         <Area type="monotone" dataKey="Info"     name="Info"     stroke="#3b82f6" strokeWidth={1.5} fill="url(#gInfo)" dot={false} />
