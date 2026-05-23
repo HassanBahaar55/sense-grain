@@ -9,6 +9,7 @@ import {
   useSensorPerformance,
 } from '@/lib/useFirestoreData';
 import { useLiveData } from '@/contexts/LiveDataContext';
+import { useWarehouses } from '@/lib/storageManagement';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ const SENSOR_DAYS_OPTIONS: Array<7 | 14 | 30> = [7, 14, 30];
 export default function AnalyticsPage() {
   const { kpis: rawKpis, topWarehouse, worstWarehouse } = useAnalyticsData();
   const { readings } = useLiveData();
+  const { warehouses: managedWarehouses } = useWarehouses();
 
   const [sensorDays, setSensorDays] = useState<7 | 14 | 30>(7);
   const [sensorWH,   setSensorWH]   = useState<string>('all');
@@ -142,27 +144,49 @@ export default function AnalyticsPage() {
     return k;
   }), [rawKpis, liveCapacity, liveSpoilage]);
 
-  // ── Analytics table — 100% from live readings, auto-scales ─────────────────
+  // ── Analytics table — user-created warehouses from storageWarehouses ────────
+  // Each managed warehouse has a liveEngineId that maps to warehouseReadings.
+  // If no liveEngineId or no live data → show as inactive row.
   const liveTableRows = useMemo(() => {
-    if (!liveReadings.length) return [];
-    return liveReadings
-      .map(r => {
+    // If no managed warehouses yet, fall back to raw readings
+    const source = managedWarehouses.length > 0 ? managedWarehouses : null;
+
+    if (!source) {
+      // Fallback: show whatever readings exist
+      return liveReadings
+        .map(r => {
+          const humScore = Math.round(Math.max(0, 100 - Math.max(0, Math.abs(r.humidity - 60) - 5) * 3));
+          const risk: RiskLevel = r.status === 'high' ? 'high' : r.status === 'medium' ? 'medium' : 'low';
+          return { id: r.warehouseId, name: `Warehouse ${r.warehouseId.replace('WH-', '')}`, avgTemp: r.temperature, humidityScore: humScore, spoilageProb: r.spoilageRisk, capacity: r.capacity, risk, trend: r.trend as TrendDir, sensorHealth: 100, hasLive: true };
+        })
+        .sort((a, b) => a.id.localeCompare(b.id));
+    }
+
+    return source
+      .filter(wh => wh.status === 'active')
+      .map(wh => {
+        const liveId = wh.liveEngineId ?? wh.id; // map to liveEngine WH-X id
+        const r = readings[liveId];
+        if (!r) {
+          // Managed warehouse exists but no live reading — show inactive
+          return {
+            id: wh.id, name: wh.name,
+            avgTemp: null as unknown as number, humidityScore: null as unknown as number,
+            spoilageProb: null as unknown as number, capacity: null as unknown as number,
+            risk: 'inactive' as RiskLevel, trend: null as TrendDir, sensorHealth: 0, hasLive: false,
+          };
+        }
         const humScore = Math.round(Math.max(0, 100 - Math.max(0, Math.abs(r.humidity - 60) - 5) * 3));
         const risk: RiskLevel = r.status === 'high' ? 'high' : r.status === 'medium' ? 'medium' : 'low';
         return {
-          id:               r.warehouseId,
-          name:             `Warehouse ${r.warehouseId.replace('WH-', '')}`,
-          avgTemp:          r.temperature,
-          humidityScore:    humScore,
-          spoilageProb:     r.spoilageRisk,
-          capacity:         r.capacity,
-          risk,
-          trend:            r.trend as TrendDir,
-          sensorHealth:     100, // online if we have live readings
+          id: wh.id, name: wh.name,
+          avgTemp: r.temperature, humidityScore: humScore,
+          spoilageProb: r.spoilageRisk, capacity: r.capacity,
+          risk, trend: r.trend as TrendDir, sensorHealth: 100, hasLive: true,
         };
       })
       .sort((a, b) => a.id.localeCompare(b.id));
-  }, [readings]);
+  }, [managedWarehouses, readings]);
 
   // ── Sensor performance — driven by Firestore sensorHistory ─────────────────
   const sensorPerfData = useSensorPerformance(sensorDays);
@@ -173,12 +197,10 @@ export default function AnalyticsPage() {
   const allWarehouseIds = sensorPerfData.map(s => s.warehouse);
 
   // ── Operational summary stats ───────────────────────────────────────────────
-  const activeCount  = liveTableRows.length;
+  const totalManaged = managedWarehouses.filter(w => w.status === 'active').length || liveTableRows.length;
+  const liveCount    = liveTableRows.filter(r => r.hasLive).length;
   const highRisk     = liveTableRows.filter(r => r.risk === 'high').length;
   const medRisk      = liveTableRows.filter(r => r.risk === 'medium').length;
-  const avgSpoilage  = liveTableRows.length
-    ? +(liveTableRows.reduce((s, r) => s + r.spoilageProb, 0) / liveTableRows.length).toFixed(1)
-    : 0;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
@@ -213,12 +235,11 @@ export default function AnalyticsPage() {
         </section>
 
         {/* ── Operational Summary strip ───────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { label: 'Active Warehouses', value: activeCount, unit: `/ ${activeCount}`,      color: 'text-[#1f5135]' },
-            { label: 'High Risk',         value: highRisk,    unit: 'warehouses',             color: highRisk > 0 ? 'text-red-600' : 'text-gray-700' },
-            { label: 'Medium Risk',       value: medRisk,     unit: 'warehouses',             color: medRisk > 0 ? 'text-amber-600' : 'text-gray-700' },
-            { label: 'Avg Spoilage Risk', value: avgSpoilage, unit: '%',                      color: avgSpoilage >= 15 ? 'text-red-600' : avgSpoilage >= 8 ? 'text-amber-600' : 'text-green-700' },
+            { label: 'Total Warehouses',  value: totalManaged, unit: `(${liveCount} live)`,  color: 'text-[#1f5135]' },
+            { label: 'High Risk',         value: highRisk,     unit: 'warehouses',            color: highRisk > 0 ? 'text-red-600' : 'text-gray-700' },
+            { label: 'Medium Risk',       value: medRisk,      unit: 'warehouses',            color: medRisk > 0 ? 'text-amber-600' : 'text-gray-700' },
           ].map(s => (
             <Card key={s.label} className="px-4 py-3 flex items-center gap-3">
               <div>
@@ -289,7 +310,7 @@ export default function AnalyticsPage() {
         <Card className="p-5 min-w-0 overflow-hidden">
           <SectionHeader
             title="Warehouse Analytics Summary"
-            subtitle={`Live sensor metrics — ${activeCount} active warehouse${activeCount !== 1 ? 's' : ''} · updates every 10s`}
+            subtitle={`${totalManaged} managed warehouse${totalManaged !== 1 ? 's' : ''} · ${liveCount} with live sensors · updates every 10s`}
           />
 
           {liveTableRows.length === 0 ? (
@@ -320,8 +341,10 @@ export default function AnalyticsPage() {
                 <tbody className="divide-y divide-gray-100">
                   {liveTableRows.map((row) => {
                     const rc = riskConfig[row.risk];
+                    const noData = !row.hasLive;
+                    const dash = <span className="text-gray-300 font-bold">—</span>;
                     return (
-                      <tr key={row.id} className="hover:bg-gray-50 transition-colors duration-150">
+                      <tr key={row.id} className={cn('hover:bg-gray-50 transition-colors duration-150', noData && 'opacity-60')}>
                         {/* Warehouse */}
                         <td className="px-3 py-2.5">
                           <p className="font-bold text-gray-800">{row.name}</p>
@@ -330,52 +353,61 @@ export default function AnalyticsPage() {
                         {/* Avg Temp */}
                         <td className={cn(
                           'px-3 py-2.5 font-bold tabular-nums',
+                          noData ? 'text-gray-300' :
                           row.avgTemp >= 32 ? 'text-red-600' : row.avgTemp >= 30 ? 'text-orange-600' : row.avgTemp >= 28 ? 'text-amber-600' : 'text-gray-700',
                         )}>
-                          {row.avgTemp.toFixed(1)} °C
+                          {noData ? dash : `${row.avgTemp.toFixed(1)} °C`}
                         </td>
                         {/* Humidity Score */}
                         <td className="px-3 py-2.5">
-                          <div className="flex flex-col gap-1">
-                            <span className="font-bold text-gray-700 tabular-nums">{row.humidityScore}/100</span>
-                            <div className="w-14 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className={cn(
-                                  'h-full rounded-full',
-                                  row.humidityScore >= 85 ? 'bg-green-500' : row.humidityScore >= 70 ? 'bg-[#1f5135]' : row.humidityScore >= 55 ? 'bg-amber-400' : 'bg-red-400',
-                                )}
-                                style={{ width: `${row.humidityScore}%` }}
-                              />
+                          {noData ? dash : (
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold text-gray-700 tabular-nums">{row.humidityScore}/100</span>
+                              <div className="w-14 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className={cn(
+                                    'h-full rounded-full',
+                                    row.humidityScore >= 85 ? 'bg-green-500' : row.humidityScore >= 70 ? 'bg-[#1f5135]' : row.humidityScore >= 55 ? 'bg-amber-400' : 'bg-red-400',
+                                  )}
+                                  style={{ width: `${row.humidityScore}%` }}
+                                />
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </td>
                         {/* Spoilage */}
                         <td className={cn(
                           'px-3 py-2.5 font-bold tabular-nums',
+                          noData ? 'text-gray-300' :
                           row.spoilageProb >= 15 ? 'text-red-600' : row.spoilageProb >= 8 ? 'text-amber-600' : 'text-green-700',
                         )}>
-                          {row.spoilageProb.toFixed(1)}%
+                          {noData ? dash : `${row.spoilageProb.toFixed(1)}%`}
                         </td>
                         {/* Capacity */}
                         <td className="px-3 py-2.5">
-                          <div className="flex flex-col gap-1">
-                            <span className="font-bold text-gray-700 tabular-nums">{Math.round(row.capacity)}%</span>
-                            <div className="w-14 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full bg-[#1f5135]" style={{ width: `${row.capacity}%` }} />
+                          {noData ? dash : (
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold text-gray-700 tabular-nums">{Math.round(row.capacity)}%</span>
+                              <div className="w-14 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full bg-[#1f5135]" style={{ width: `${row.capacity}%` }} />
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </td>
                         {/* Risk */}
                         <td className="px-3 py-2.5">
                           <span className={cn('text-[9px] font-bold px-2 py-0.5 rounded-full', rc.badge)}>{rc.label}</span>
                         </td>
                         {/* Sensor Health */}
-                        <td className="px-3 py-2.5 font-bold tabular-nums text-green-600">
-                          {row.sensorHealth}%
+                        <td className="px-3 py-2.5 font-bold tabular-nums">
+                          {noData
+                            ? <span className="text-gray-400 text-[9px] font-semibold">No sensor</span>
+                            : <span className="text-green-600">{row.sensorHealth}%</span>
+                          }
                         </td>
                         {/* Trend */}
                         <td className="px-3 py-2.5">
-                          <TrendIcon trend={row.trend} />
+                          {noData ? dash : <TrendIcon trend={row.trend} />}
                         </td>
                       </tr>
                     );
