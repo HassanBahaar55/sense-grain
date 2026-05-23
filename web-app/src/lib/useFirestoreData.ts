@@ -115,7 +115,7 @@ interface SensorHistoryDoc {
   alertCounts: { Critical: number; Warning: number; Info: number };
 }
 
-function useSensorHistory(days: number): SensorHistoryDoc[] {
+export function useSensorHistory(days: number): SensorHistoryDoc[] {
   const [history, setHistory] = useState<SensorHistoryDoc[]>([]);
 
   useEffect(() => {
@@ -525,7 +525,8 @@ export function useFirestorePredictions(): PredictionsData {
 
     function mkSpark(base: number, step: number, count = 7): number[] {
       const arr = [+base.toFixed(2)];
-      for (let i = 1; i < count; i++) arr.push(+(arr[arr.length - 1] + step * (0.5 + Math.random() * 0.5)).toFixed(2));
+      // Deterministic — no Math.random() so sparklines don't reshuffle every tick
+      for (let i = 1; i < count; i++) arr.push(+(arr[arr.length - 1] + step).toFixed(2));
       return arr;
     }
 
