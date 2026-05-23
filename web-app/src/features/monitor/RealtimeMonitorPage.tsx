@@ -15,6 +15,7 @@ import {
   type ZoneReading,
   type SensorPoint,
 } from './mockData';
+import { useWarehouses, type ManagedWarehouse } from '@/lib/storageManagement';
 import { cn } from '@/lib/utils';
 
 // ─── Safe thresholds (always in °C internally) ────────────────────────────────
@@ -151,12 +152,20 @@ function LiveClock() {
 // ─── Warehouse dropdown ────────────────────────────────────────────────────────
 
 function WarehouseDropdown({
-  selected, onSelect,
-}: { selected: string; onSelect: (id: string) => void }) {
+  selected, onSelect, firestoreWarehouses,
+}: {
+  selected: string;
+  onSelect: (id: string) => void;
+  firestoreWarehouses: ManagedWarehouse[];
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const wh = monitorWarehouses.find((w) => w.id === selected)!;
-  const cfg = whCfg[wh.status];
+
+  const mockWh = monitorWarehouses.find((w) => w.id === selected);
+  const fsWh   = firestoreWarehouses.find((w) => w.id === selected);
+  const displayName = mockWh?.name ?? fsWh?.name ?? selected;
+  const displayStatus: WarehouseOnlineStatus = mockWh?.status ?? (fsWh?.status === 'active' ? 'online' : 'offline');
+  const cfg = whCfg[displayStatus];
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -172,16 +181,46 @@ function WarehouseDropdown({
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 h-8 pl-3 pr-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-[12px] font-semibold text-gray-800 transition-all duration-150 select-none min-w-[160px]"
       >
-        <span className={cn('w-2 h-2 rounded-full flex-shrink-0', cfg.dot, wh.status === 'alert' && 'animate-pulse')} />
-        <span className="flex-1 text-left">{wh.name}</span>
-        <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{wh.id}</span>
+        <span className={cn('w-2 h-2 rounded-full flex-shrink-0', cfg.dot, displayStatus === 'alert' && 'animate-pulse')} />
+        <span className="flex-1 text-left truncate max-w-[140px]">{displayName}</span>
         <svg className={cn('w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150', open && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 bg-white rounded-xl ring-1 ring-black/[0.08] shadow-xl z-30 min-w-[220px] p-1.5 space-y-0.5">
+        <div className="absolute top-full left-0 mt-1.5 bg-white rounded-xl ring-1 ring-black/[0.08] shadow-xl z-30 min-w-[240px] p-1.5">
+          {/* User-created Firestore warehouses */}
+          {firestoreWarehouses.length > 0 && (
+            <>
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-3 py-1.5">Your Warehouses</p>
+              {firestoreWarehouses.map((w) => {
+                const isSel = w.id === selected;
+                const isActive = w.status === 'active';
+                const hasLive  = !!w.liveEngineId;
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => { onSelect(w.id); setOpen(false); }}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-semibold transition-colors text-left',
+                      isSel ? 'bg-[#1f5135]/[0.08] text-[#1f5135]' : 'text-gray-700 hover:bg-gray-50',
+                    )}
+                  >
+                    <span className={cn('w-2 h-2 rounded-full flex-shrink-0', isActive && hasLive ? 'bg-green-400' : 'bg-gray-300')} />
+                    <span className="flex-1 truncate">{w.name}</span>
+                    <span className={cn('text-[9.5px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0', hasLive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400')}>
+                      {hasLive ? 'Connected' : 'No data'}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="my-1 border-t border-gray-100" />
+            </>
+          )}
+
+          {/* Simulated / demo warehouses */}
+          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-3 py-1.5">Simulated</p>
           {monitorWarehouses.map((w) => {
             const c = whCfg[w.status];
             const isOff = w.status === 'offline';
@@ -199,8 +238,7 @@ function WarehouseDropdown({
                 )}
               >
                 <span className={cn('w-2 h-2 rounded-full flex-shrink-0', c.dot)} />
-                <span className="flex-1">{w.name}</span>
-                <span className="text-[9px] text-gray-400 font-medium">{w.id}</span>
+                <span className="flex-1 truncate">{w.name}</span>
                 <span className={cn('text-[9.5px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0', c.badge)}>
                   {c.label}
                 </span>
@@ -219,15 +257,17 @@ function MonitorBar({
   selected, onSelect,
   viewMode, onViewMode,
   timeRange, onTimeRange,
+  firestoreWarehouses,
 }: {
   selected: string; onSelect: (id: string) => void;
   viewMode: ViewMode; onViewMode: (m: ViewMode) => void;
   timeRange: string; onTimeRange: (t: string) => void;
+  firestoreWarehouses: ManagedWarehouse[];
 }) {
   return (
     <div className="bg-white border-b border-gray-100 px-5 py-2.5 flex items-center gap-3 flex-wrap">
       {/* Warehouse dropdown */}
-      <WarehouseDropdown selected={selected} onSelect={onSelect} />
+      <WarehouseDropdown selected={selected} onSelect={onSelect} firestoreWarehouses={firestoreWarehouses} />
 
       <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
@@ -439,9 +479,17 @@ export default function RealtimeMonitorPage() {
   const [timeRange,  setTimeRange]   = useState('1h');
   const [viewMode,   setViewMode]    = useState<ViewMode>('status');
   const tempUnit = useTempUnit();
+  const { warehouses: firestoreWarehouses } = useWarehouses();
 
-  const wh          = monitorWarehouses.find((w) => w.id === selectedWH);
-  const zones        = zoneData[selectedWH] ?? [];
+  // Determine if the selected ID is a user-created Firestore warehouse
+  const selectedFsWh   = firestoreWarehouses.find((w) => w.id === selectedWH);
+  // If Firestore warehouse has a liveEngineId, use that mock data; otherwise empty
+  const effectiveMockId = selectedFsWh ? (selectedFsWh.liveEngineId ?? '') : selectedWH;
+  const isFsWithNoData  = !!selectedFsWh && !selectedFsWh.liveEngineId;
+
+  const wh          = monitorWarehouses.find((w) => w.id === effectiveMockId);
+  const displayName = selectedFsWh?.name ?? wh?.name ?? selectedWH;
+  const zones        = isFsWithNoData ? [] : (zoneData[effectiveMockId] ?? []);
   const active       = zones.filter((z) => z.status !== 'offline');
   const avgTemp      = avg(zones, 'temp');
   const avgHumidity  = avg(zones, 'humidity');
@@ -454,13 +502,17 @@ export default function RealtimeMonitorPage() {
     <div className="flex flex-col flex-1 min-h-0">
       <DashboardHeader
         title="Realtime Monitor"
-        subtitle={`${wh?.name ?? selectedWH} · ${active.length} of ${zones.length} sensors active`}
+        subtitle={isFsWithNoData
+          ? `${displayName} · No sensor data — connect a Live Engine ID in Settings`
+          : `${displayName} · ${active.length} of ${zones.length} sensors active`
+        }
       />
 
       <MonitorBar
         selected={selectedWH} onSelect={setSelectedWH}
         viewMode={viewMode}   onViewMode={setViewMode}
         timeRange={timeRange}  onTimeRange={setTimeRange}
+        firestoreWarehouses={firestoreWarehouses}
       />
 
       <main className="flex-1 p-5 space-y-4 overflow-auto">
@@ -527,6 +579,19 @@ export default function RealtimeMonitorPage() {
         </section>
 
         {/* ── Zone map + Sensor readings ────────────────────────────────────── */}
+        {isFsWithNoData ? (
+          <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-10 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-1">
+              <svg className="w-6 h-6 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </div>
+            <h3 className="text-[15px] font-bold text-gray-700">{displayName}</h3>
+            <p className="text-[12px] text-gray-400 max-w-xs">
+              This warehouse has no live sensor connection yet. Go to <strong>Settings → Infrastructure</strong>, edit this warehouse, and set a Live Engine ID (e.g. WH-A) to start receiving sensor readings.
+            </p>
+          </section>
+        ) : (
         <section className="grid grid-cols-1 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px] gap-4 items-start">
 
           {/* Zone map card */}
@@ -534,7 +599,7 @@ export default function RealtimeMonitorPage() {
             {/* Header */}
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{wh?.name} — Zone Map</h2>
+                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{displayName} — Zone Map</h2>
                 <p className="text-[11px] text-gray-400 mt-0.5">Each colored circle = one sensor · tap a row in the table for exact values</p>
               </div>
               <span className={cn(
@@ -546,10 +611,11 @@ export default function RealtimeMonitorPage() {
               )}>
                 {whCfg[wh?.status ?? 'online'].label}
               </span>
+
             </div>
 
             {/* Map */}
-            <FloorPlan warehouseId={selectedWH} viewMode={viewMode} />
+            <FloorPlan warehouseId={effectiveMockId} viewMode={viewMode} />
 
             {/* Color legend */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -570,7 +636,7 @@ export default function RealtimeMonitorPage() {
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">Sensor Readings</h2>
-                  <p className="text-[11px] text-gray-400 mt-0.5">{wh?.name} · {active.length} of {zones.length} sensors online</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{displayName} · {active.length} of {zones.length} sensors online</p>
                 </div>
                 {wh?.lastUpdate && (
                   <span className="text-[10px] text-gray-400 font-medium flex-shrink-0">
@@ -609,6 +675,7 @@ export default function RealtimeMonitorPage() {
             </div>
           </div>
         </section>
+        )} {/* end isFsWithNoData conditional */}
 
         {/* ── Parameter Trends ─────────────────────────────────────────────── */}
         <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5">

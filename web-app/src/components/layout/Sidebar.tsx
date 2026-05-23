@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { useUser } from '@/contexts/UserContext';
 import { ROLE_LABELS, ROLE_COLORS } from '@/lib/mockUsers';
+import { useLiveData } from '@/contexts/LiveDataContext';
 
 function PlantIcon() {
   return (
@@ -53,7 +54,6 @@ const navItems = [
   {
     label: 'Alerts',
     href: '/alerts',
-    badge: 3,
     icon: () => (
       <svg className="w-[17px] h-[17px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -193,6 +193,8 @@ export function Sidebar() {
   const pathname = usePathname();
   const { isOpen, close } = useSidebar();
   const { isAdmin } = useUser();
+  const { liveAlerts } = useLiveData();
+  const activeAlertCount = liveAlerts.filter(a => !a.resolved).length;
 
   return (
     <>
@@ -258,9 +260,9 @@ export function Sidebar() {
                         {item.icon(isActive)}
                       </span>
                       <span className="flex-1 truncate">{item.label}</span>
-                      {item.badge && (
+                      {item.label === 'Alerts' && activeAlertCount > 0 && (
                         <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center shadow-sm">
-                          {item.badge}
+                          {activeAlertCount > 99 ? '99+' : activeAlertCount}
                         </span>
                       )}
                     </Link>
