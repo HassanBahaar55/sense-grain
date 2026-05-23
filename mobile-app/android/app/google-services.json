@@ -12,7 +12,20 @@
           "package_name": "com.sensegrain.mobile"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "781527725205-k4gs48gftcbgbhcq218ahpu7d6gosili.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sensegrain.mobile",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "781527725205-nm87spg363ss4thi65vh0rvboogpi8tn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAk1_ZESicsR2Tgemul01xks1XbWJJD_Vw"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "781527725205-nm87spg363ss4thi65vh0rvboogpi8tn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
