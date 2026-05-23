@@ -401,85 +401,31 @@ interface FilterValues {
   severity: string; type: string; status: string;
 }
 
-function FilterPanel({
-  values, onChange, onClear, activeCount, matchCount,
+function FilterSelect({
+  label, value, options, onChange, active,
 }: {
-  values: FilterValues;
-  onChange: (key: keyof FilterValues, val: string) => void;
-  onClear: () => void;
-  activeCount: number;
-  matchCount: number;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+  active: boolean;
 }) {
-  const pillBase = 'h-7 px-3 rounded-lg text-[11px] font-semibold transition-all cursor-pointer border';
-  const pillOff  = 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-700';
-  const pillOn   = 'border-[#1f5135]/30 bg-[#1f5135] text-white shadow-sm';
-
-  const rows: { key: keyof FilterValues; label: string; options: { value: string; label: string }[] }[] = [
-    {
-      key: 'severity', label: 'Severity',
-      options: [
-        { value: 'all', label: 'All' },
-        { value: 'critical', label: '🔴 Critical' },
-        { value: 'high',     label: '🟠 High' },
-        { value: 'medium',   label: '🟡 Medium' },
-        { value: 'low',      label: '🔵 Low' },
-        { value: 'info',     label: '⚪ Info' },
-      ],
-    },
-    {
-      key: 'type', label: 'Type',
-      options: [
-        { value: 'all',         label: 'All' },
-        { value: 'temperature', label: 'Temperature' },
-        { value: 'humidity',    label: 'Humidity' },
-        { value: 'moisture',    label: 'Moisture' },
-        { value: 'co2',         label: 'CO₂' },
-        { value: 'aqi',         label: 'AQI' },
-        { value: 'system',      label: 'System' },
-      ],
-    },
-    {
-      key: 'status', label: 'Status',
-      options: [
-        { value: 'all',          label: 'All' },
-        { value: 'active',       label: 'Active' },
-        { value: 'acknowledged', label: 'Acknowledged' },
-        { value: 'resolved',     label: 'Resolved' },
-        { value: 'muted',        label: 'Muted' },
-      ],
-    },
-  ];
-
   return (
-    <div className="border-t border-gray-100 pt-3 mt-3 space-y-3">
-      {rows.map(({ key, label, options }) => (
-        <div key={key} className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest w-14 flex-shrink-0">{label}</span>
-          {options.map(({ value, label: optLabel }) => (
-            <button
-              key={value}
-              onClick={() => onChange(key, value)}
-              className={cn(pillBase, values[key] === value ? pillOn : pillOff)}
-            >
-              {optLabel}
-            </button>
-          ))}
-        </div>
-      ))}
-      <div className="flex items-center justify-between pt-1">
-        <span className="text-[11px] text-gray-400">
-          <span className="font-bold text-gray-700">{matchCount}</span> alerts match current filters
-        </span>
-        {activeCount > 0 && (
-          <button
-            onClick={onClear}
-            className="flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors"
-          >
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            Clear all filters
-          </button>
+    <div className="relative flex items-center">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={cn(
+          'h-9 pl-3 pr-7 rounded-xl border text-[11px] font-semibold appearance-none cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20',
+          active
+            ? 'border-[#1f5135]/40 bg-[#1f5135]/[0.06] text-[#1f5135]'
+            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100',
         )}
-      </div>
+      >
+        <option value="all">{label}: All</option>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <svg className="pointer-events-none absolute right-2 w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
     </div>
   );
 }
@@ -727,7 +673,6 @@ export default function AlertsPage() {
   // Filter state
   const [search, setSearch]   = useState('');
   const [filters, setFilters] = useState<{ severity: string; type: string; status: string }>({ severity: 'all', type: 'all', status: 'all' });
-  const [showFilters, setShowFilters] = useState(false);
   const [page, setPage]       = useState(1);
   const [chartDays, setChartDays] = useState<7 | 30>(7);
 
@@ -774,72 +719,97 @@ export default function AlertsPage() {
         </section>
 
         {/* ── Search + Filter bar ─────────────────────────────────────────────── */}
-        <Card className="px-5 py-4">
-          <div className="flex flex-wrap items-center gap-3">
+        <Card className="px-5 py-3.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Search */}
-            <div className="relative flex-1 min-w-[200px]">
+            <div className="relative flex-1 min-w-[180px]">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input
                 type="text"
-                placeholder="Search by alert name, warehouse (WH-A…), or zone…"
+                placeholder="Search alerts, warehouse, zone…"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="w-full h-9 pl-9 pr-3 rounded-xl border border-gray-200 bg-gray-50 text-[11px] font-medium text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 focus:border-[#1f5135]/40 transition-colors"
               />
             </div>
 
-            {/* Filters toggle */}
-            <button
-              onClick={() => setShowFilters(v => !v)}
-              className={cn(
-                'flex items-center gap-2 h-9 px-4 rounded-xl border text-[12px] font-semibold transition-all',
-                showFilters || activeFilterCount > 0
-                  ? 'border-[#1f5135]/30 bg-[#1f5135]/[0.06] text-[#1f5135]'
-                  : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100',
-              )}
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="11" y1="18" x2="13" y2="18" /></svg>
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-[#1f5135] text-white text-[9px] font-bold flex items-center justify-center">{activeFilterCount}</span>
-              )}
-            </button>
+            {/* Divider */}
+            <div className="w-px h-5 bg-gray-200 hidden sm:block" />
+
+            {/* Filter dropdowns */}
+            <FilterSelect
+              label="Severity" value={filters.severity} active={filters.severity !== 'all'}
+              onChange={v => handleFilterChange('severity', v)}
+              options={[
+                { value: 'critical', label: 'Critical' },
+                { value: 'high',     label: 'High'     },
+                { value: 'medium',   label: 'Medium'   },
+                { value: 'low',      label: 'Low'      },
+                { value: 'info',     label: 'Info'     },
+              ]}
+            />
+            <FilterSelect
+              label="Type" value={filters.type} active={filters.type !== 'all'}
+              onChange={v => handleFilterChange('type', v)}
+              options={[
+                { value: 'temperature', label: 'Temperature' },
+                { value: 'humidity',    label: 'Humidity'    },
+                { value: 'moisture',    label: 'Moisture'    },
+                { value: 'co2',         label: 'CO₂'         },
+                { value: 'aqi',         label: 'AQI'         },
+                { value: 'system',      label: 'System'      },
+              ]}
+            />
+            <FilterSelect
+              label="Status" value={filters.status} active={filters.status !== 'all'}
+              onChange={v => handleFilterChange('status', v)}
+              options={[
+                { value: 'active',       label: 'Active'       },
+                { value: 'acknowledged', label: 'Acknowledged' },
+                { value: 'resolved',     label: 'Resolved'     },
+                { value: 'muted',        label: 'Muted'        },
+              ]}
+            />
+
+            {/* Clear filters */}
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-xl text-[11px] font-semibold text-gray-500 hover:text-red-500 hover:bg-red-50 transition-all border border-gray-200"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                Clear
+              </button>
+            )}
+
+            {/* Divider */}
+            <div className="w-px h-5 bg-gray-200 hidden sm:block" />
 
             {/* Export */}
             <button
               onClick={handleExport}
               title={exportSuccess ? 'Downloaded!' : 'Export as CSV'}
               className={cn(
-                'flex items-center gap-2 h-9 px-4 rounded-xl text-[12px] font-semibold transition-all',
-                exportSuccess ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200',
+                'flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[11px] font-semibold transition-all border',
+                exportSuccess ? 'bg-green-500 text-white border-green-500' : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border-gray-200',
               )}
             >
               {exportSuccess
-                ? <><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Saved!</>
-                : <><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>Export CSV</>
+                ? <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                : <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
               }
+              {exportSuccess ? 'Saved!' : 'Export'}
             </button>
 
             {/* Settings */}
             <button
               onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2 h-9 px-4 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 text-[12px] font-semibold transition-colors"
+              className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 text-[11px] font-semibold transition-colors"
             >
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
               Settings
             </button>
           </div>
-
-          {/* Collapsible filter panel */}
-          {showFilters && (
-            <FilterPanel
-              values={filters}
-              onChange={handleFilterChange}
-              onClear={clearFilters}
-              activeCount={activeFilterCount}
-              matchCount={matchCount}
-            />
-          )}
         </Card>
 
         {/* ── Table + Right Panel ─────────────────────────────────────────────── */}
