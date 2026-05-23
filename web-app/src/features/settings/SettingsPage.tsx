@@ -3,6 +3,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { cn } from '@/lib/utils';
+import {
+  useWarehouses, useZones, useSensorsForWarehouse,
+  addWarehouse, updateWarehouse, deleteWarehouse,
+  addZone, updateZone, deleteZone,
+  addSensor, updateSensor, deleteSensor,
+  type ManagedWarehouse, type ManagedZone, type ManagedSensor,
+  type ManagedStatus, type SensorType, type SensorStatus,
+} from '@/lib/storageManagement';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const PREF_KEY     = 'sg-preferences';
@@ -20,7 +28,7 @@ function lsSet(key: string, value: unknown) {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = 'general' | 'notifications' | 'sensors' | 'security' | 'appearance';
+type Tab = 'general' | 'notifications' | 'sensors' | 'security' | 'appearance' | 'infrastructure';
 type ThemeChoice = 'light' | 'dark' | 'system';
 
 interface Profile { name: string; email: string; department: string; initials: string; }
@@ -1116,14 +1124,745 @@ function AppearanceTab({ theme, setTheme }: { theme: ThemeChoice; setTheme: (t: 
   );
 }
 
+// ─── Infrastructure Tab ───────────────────────────────────────────────────────
+
+const SENSOR_TYPE_LABELS: Record<SensorType, string> = {
+  temperature: 'Temperature', humidity: 'Humidity', moisture: 'Moisture',
+  co2: 'CO₂', aqi: 'AQI', multi: 'Multi-param',
+};
+const SENSOR_STATUS_CFG: Record<SensorStatus, { dot: string; label: string; text: string }> = {
+  active:   { dot: 'bg-green-500', label: 'Active',  text: 'text-green-600' },
+  inactive: { dot: 'bg-gray-300',  label: 'Offline', text: 'text-gray-400'  },
+  faulty:   { dot: 'bg-red-500',   label: 'Faulty',  text: 'text-red-500'   },
+};
+
+const INPUT_CLS  = 'w-full px-3 py-2 text-[12px] bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 focus:border-[#1f5135] transition-colors placeholder:text-gray-400';
+const SELECT_CLS = cn(INPUT_CLS, 'cursor-pointer');
+
+// ── Infra modal shell ──
+function InfraModal({ title, subtitle, onClose, children, footer, wide = false }: {
+  title: string; subtitle?: string; onClose: () => void;
+  children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
+}) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className={cn('w-full bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] overflow-hidden flex flex-col max-h-[90vh]', wide ? 'max-w-xl' : 'max-w-md')}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h3 className="text-[14px] font-bold text-gray-900">{title}</h3>
+            {subtitle && <p className="text-[11px] text-gray-400 mt-0.5">{subtitle}</p>}
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors ml-3">
+            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">{children}</div>
+        {footer && <div className="px-5 pb-5 pt-3 border-t border-gray-100 flex-shrink-0">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+function InfraField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function InfraFooter({ onClose, onSave, saving, label }: {
+  onClose: () => void; onSave: () => void; saving: boolean; label: string;
+}) {
+  return (
+    <div className="flex gap-2">
+      <button onClick={onClose} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 active:scale-[0.97] transition-all">Cancel</button>
+      <button onClick={onSave} disabled={saving} className="flex-1 h-9 rounded-xl bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] disabled:opacity-50 active:scale-[0.97] transition-all shadow-sm">
+        {saving ? 'Saving…' : label}
+      </button>
+    </div>
+  );
+}
+
+// ── Add Warehouse Wizard ──────────────────────────────────────────────────────
+// Step 1: Warehouse details
+// Step 2: Define zones (names, how many)
+// Step 3: Add sensors per zone + review
+
+type WizardStep = 1 | 2 | 3;
+interface WizardZone { name: string; }
+interface WizardSensor { type: SensorType; name: string; }
+
+const DEFAULT_SENSORS_PRESET: WizardSensor[] = [
+  { type: 'temperature', name: 'Temperature Sensor' },
+  { type: 'humidity',    name: 'Humidity Sensor'    },
+  { type: 'moisture',    name: 'Moisture Sensor'    },
+];
+
+function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
+  const [step, setStep]     = useState<WizardStep>(1);
+  const [saving, setSaving] = useState(false);
+
+  // Step 1 fields
+  const [whName,     setWhName]     = useState('');
+  const [whCap,      setWhCap]      = useState('1000');
+  const [whLoc,      setWhLoc]      = useState('');
+  const [whStatus,   setWhStatus]   = useState<ManagedStatus>('active');
+  const [whLiveId,   setWhLiveId]   = useState('');
+
+  // Step 2 fields — zones
+  const [zones, setZones] = useState<WizardZone[]>([{ name: 'Zone 1' }, { name: 'Zone 2' }, { name: 'Zone 3' }]);
+
+  // Step 3 — sensors option
+  const [defaultSensors, setDefaultSensors] = useState(true);
+
+  const addZoneEntry  = () => setZones(z => [...z, { name: `Zone ${z.length + 1}` }]);
+  const removeZone    = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
+  const updateZoneName = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { name: v } : z2));
+
+  const canGoStep2 = whName.trim().length > 0;
+  const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0);
+
+  async function create() {
+    setSaving(true);
+    try {
+      const now = Date.now();
+      // 1. Create warehouse
+      const whRef = await addWarehouse({
+        name: whName.trim(),
+        capacity: Number(whCap) || 1000,
+        location: whLoc.trim(),
+        status: whStatus,
+        liveEngineId: whLiveId.trim() || undefined,
+      });
+      const whId = whRef.id;
+
+      // 2. Create zones + sensors
+      let ts = now + 1;
+      for (const z of zones) {
+        if (!z.name.trim()) continue;
+        const zRef = await addZone({ warehouseId: whId, name: z.name.trim(), status: whStatus });
+        ts++;
+        if (defaultSensors && whStatus === 'active') {
+          for (const s of DEFAULT_SENSORS_PRESET) {
+            await addSensor({ zoneId: zRef.id, warehouseId: whId, name: s.name, type: s.type, status: 'active' });
+            ts++;
+          }
+        }
+      }
+      onClose();
+    } catch (err) {
+      console.error('[AddWarehouseWizard]', err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const stepLabels = ['Warehouse Details', 'Define Zones', 'Sensors & Review'];
+
+  return (
+    <InfraModal
+      title="Add Warehouse"
+      subtitle={`Step ${step} of 3 — ${stepLabels[step - 1]}`}
+      onClose={onClose}
+      wide
+      footer={
+        <div className="flex gap-2">
+          {step > 1 && (
+            <button onClick={() => setStep(s => (s - 1) as WizardStep)} className="h-9 px-4 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 transition-all">
+              ← Back
+            </button>
+          )}
+          <button onClick={onClose} className="h-9 px-4 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-500 hover:bg-gray-50 transition-all">Cancel</button>
+          {step < 3 ? (
+            <button
+              onClick={() => setStep(s => (s + 1) as WizardStep)}
+              disabled={step === 1 ? !canGoStep2 : !canGoStep3}
+              className="flex-1 h-9 rounded-xl bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] disabled:opacity-40 active:scale-[0.97] transition-all shadow-sm"
+            >
+              Next →
+            </button>
+          ) : (
+            <button
+              onClick={create}
+              disabled={saving}
+              className="flex-1 h-9 rounded-xl bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] disabled:opacity-50 active:scale-[0.97] transition-all shadow-sm"
+            >
+              {saving ? 'Creating…' : `Create ${zones.length > 0 ? `(${zones.length} zones)` : ''}`}
+            </button>
+          )}
+        </div>
+      }
+    >
+      {/* Progress bar */}
+      <div className="flex gap-1 -mt-1">
+        {[1, 2, 3].map(s => (
+          <div key={s} className={cn('h-1 flex-1 rounded-full transition-colors', s <= step ? 'bg-[#1f5135]' : 'bg-gray-200')} />
+        ))}
+      </div>
+
+      {/* Step 1 */}
+      {step === 1 && (
+        <div className="space-y-4">
+          <InfraField label="Warehouse Name *">
+            <input className={INPUT_CLS} value={whName} onChange={e => setWhName(e.target.value)} placeholder="e.g. Warehouse A" autoFocus />
+          </InfraField>
+          <div className="grid grid-cols-2 gap-3">
+            <InfraField label="Capacity (Tons)">
+              <input className={INPUT_CLS} type="number" min="0" value={whCap} onChange={e => setWhCap(e.target.value)} />
+            </InfraField>
+            <InfraField label="Status">
+              <select className={SELECT_CLS} value={whStatus} onChange={e => setWhStatus(e.target.value as ManagedStatus)}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </InfraField>
+          </div>
+          <InfraField label="Location">
+            <input className={INPUT_CLS} value={whLoc} onChange={e => setWhLoc(e.target.value)} placeholder="e.g. Block A, North Wing" />
+          </InfraField>
+          <InfraField label="Live Engine ID (optional)">
+            <input className={INPUT_CLS} value={whLiveId} onChange={e => setWhLiveId(e.target.value)} placeholder="e.g. WH-I (for live readings)" />
+            <p className="text-[10px] text-gray-400 mt-1">Maps this warehouse to a live sensor feed (WH-A … WH-G are pre-assigned)</p>
+          </InfraField>
+        </div>
+      )}
+
+      {/* Step 2 */}
+      {step === 2 && (
+        <div className="space-y-3">
+          <p className="text-[12px] text-gray-500 -mt-1">Name each zone. You can edit or add more zones later from Settings.</p>
+          {/* Quick preset */}
+          <div className="flex gap-2 flex-wrap">
+            {[3, 5, 7].map(n => (
+              <button
+                key={n}
+                onClick={() => setZones(Array.from({ length: n }, (_, i) => ({ name: `Zone ${i + 1}` })))}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-[#1f5135]/30 text-[#1f5135] hover:bg-green-50 transition-colors"
+              >
+                {n} zones
+              </button>
+            ))}
+            <button
+              onClick={() => setZones([...Array.from({ length: 4 }, (_, i) => ({ name: `Zone ${i + 1}` })), { name: 'Ambient' }])}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-[#1f5135]/30 text-[#1f5135] hover:bg-green-50 transition-colors"
+            >
+              4 + Ambient
+            </button>
+          </div>
+
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            {zones.map((z, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-gray-400 w-5 flex-shrink-0 text-right">{i + 1}.</span>
+                <input
+                  className={cn(INPUT_CLS, 'flex-1')}
+                  value={z.name}
+                  onChange={e => updateZoneName(i, e.target.value)}
+                  placeholder={`Zone name ${i + 1}`}
+                />
+                <button
+                  onClick={() => removeZone(i)}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0"
+                >
+                  <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={addZoneEntry}
+            className="w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-[#1f5135] hover:bg-green-50 py-2 rounded-xl border-2 border-dashed border-[#1f5135]/30 hover:border-[#1f5135]/50 transition-all"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add another zone
+          </button>
+        </div>
+      )}
+
+      {/* Step 3 — sensors + review */}
+      {step === 3 && (
+        <div className="space-y-4">
+          {/* Default sensor toggle */}
+          {whStatus === 'active' && (
+            <div
+              className={cn(
+                'flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all',
+                defaultSensors ? 'border-[#1f5135] bg-green-50' : 'border-gray-200 bg-gray-50',
+              )}
+              onClick={() => setDefaultSensors(v => !v)}
+            >
+              <div className={cn(
+                'w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all',
+                defaultSensors ? 'border-[#1f5135] bg-[#1f5135]' : 'border-gray-300',
+              )}>
+                {defaultSensors && (
+                  <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                )}
+              </div>
+              <div>
+                <p className="text-[12px] font-bold text-gray-800">Add default sensors to all zones</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">Temperature, Humidity, Moisture — 3 sensors × {zones.length} zones = {zones.length * 3} sensors total</p>
+              </div>
+            </div>
+          )}
+
+          {/* Review summary */}
+          <div className="bg-gray-50 rounded-xl p-4 space-y-3 text-[12px]">
+            <p className="font-bold text-gray-700 text-[13px]">Review</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <span className="text-gray-400">Warehouse</span>
+              <span className="font-semibold text-gray-800 truncate">{whName}</span>
+              <span className="text-gray-400">Capacity</span>
+              <span className="font-semibold text-gray-800">{Number(whCap).toLocaleString()} Tons</span>
+              {whLoc && <><span className="text-gray-400">Location</span><span className="font-semibold text-gray-800">{whLoc}</span></>}
+              {whLiveId && <><span className="text-gray-400">Live ID</span><span className="font-semibold text-gray-800">{whLiveId}</span></>}
+              <span className="text-gray-400">Status</span>
+              <span className={cn('font-semibold', whStatus === 'active' ? 'text-green-600' : 'text-gray-400')}>{whStatus}</span>
+              <span className="text-gray-400">Zones</span>
+              <span className="font-semibold text-gray-800">{zones.length} ({zones.map(z => z.name).join(', ')})</span>
+              <span className="text-gray-400">Sensors</span>
+              <span className="font-semibold text-gray-800">
+                {defaultSensors && whStatus === 'active'
+                  ? `${zones.length * 3} (temp, humidity, moisture per zone)`
+                  : 'None — add manually later'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
+            <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <p className="text-[10.5px] text-blue-700 font-medium leading-snug">
+              All data syncs instantly to Firestore — mobile apps will see the new warehouse, zones, and sensors in real time.
+            </p>
+          </div>
+        </div>
+      )}
+    </InfraModal>
+  );
+}
+
+// ── Edit Warehouse Modal ────────────────────────────────────────────────────
+
+function EditWarehouseModal({ wh, onClose }: { wh: ManagedWarehouse; onClose: () => void }) {
+  const [name,   setName]   = useState(wh.name);
+  const [cap,    setCap]    = useState(String(wh.capacity));
+  const [loc,    setLoc]    = useState(wh.location);
+  const [status, setStatus] = useState<ManagedStatus>(wh.status);
+  const [liveId, setLiveId] = useState(wh.liveEngineId ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await updateWarehouse(wh.id, { name: name.trim(), capacity: Number(cap) || 1000, location: loc.trim(), status, liveEngineId: liveId.trim() || undefined });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <InfraModal title="Edit Warehouse" onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label="Save Changes" />}>
+      <InfraField label="Name *"><input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} /></InfraField>
+      <div className="grid grid-cols-2 gap-3">
+        <InfraField label="Capacity (Tons)"><input className={INPUT_CLS} type="number" min="0" value={cap} onChange={e => setCap(e.target.value)} /></InfraField>
+        <InfraField label="Status">
+          <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as ManagedStatus)}>
+            <option value="active">Active</option><option value="inactive">Inactive</option>
+          </select>
+        </InfraField>
+      </div>
+      <InfraField label="Location"><input className={INPUT_CLS} value={loc} onChange={e => setLoc(e.target.value)} /></InfraField>
+      <InfraField label="Live Engine ID"><input className={INPUT_CLS} value={liveId} onChange={e => setLiveId(e.target.value)} placeholder="e.g. WH-A" /></InfraField>
+    </InfraModal>
+  );
+}
+
+// ── Zone modal ──────────────────────────────────────────────────────────────
+
+function ZoneFormModal({ zone, warehouseId, onClose }: { zone?: ManagedZone; warehouseId: string; onClose: () => void }) {
+  const [name,   setName]   = useState(zone?.name   ?? '');
+  const [status, setStatus] = useState<ManagedStatus>(zone?.status ?? 'active');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    if (zone) await updateZone(zone.id, { name: name.trim(), status });
+    else      await addZone({ warehouseId, name: name.trim(), status });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <InfraModal title={zone ? 'Edit Zone' : 'Add Zone'} onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label={zone ? 'Save' : 'Add Zone'} />}>
+      <InfraField label="Zone Name *"><input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Zone 1, Ambient" autoFocus /></InfraField>
+      <InfraField label="Status">
+        <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as ManagedStatus)}>
+          <option value="active">Active</option><option value="inactive">Inactive</option>
+        </select>
+      </InfraField>
+    </InfraModal>
+  );
+}
+
+// ── Sensor modal ────────────────────────────────────────────────────────────
+
+function SensorFormModal({ sensor, zoneId, warehouseId, onClose }: {
+  sensor?: ManagedSensor; zoneId: string; warehouseId: string; onClose: () => void;
+}) {
+  const [name,   setName]   = useState(sensor?.name   ?? '');
+  const [type,   setType]   = useState<SensorType>(sensor?.type   ?? 'temperature');
+  const [status, setStatus] = useState<SensorStatus>(sensor?.status ?? 'active');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    if (sensor) await updateSensor(sensor.id, { name: name.trim(), type, status });
+    else        await addSensor({ zoneId, warehouseId, name: name.trim(), type, status });
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <InfraModal title={sensor ? 'Edit Sensor' : 'Add Sensor'} onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label={sensor ? 'Save' : 'Add Sensor'} />}>
+      <InfraField label="Sensor Name *"><input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Temperature Sensor 1" autoFocus /></InfraField>
+      <InfraField label="Type">
+        <select className={SELECT_CLS} value={type} onChange={e => setType(e.target.value as SensorType)}>
+          {(Object.keys(SENSOR_TYPE_LABELS) as SensorType[]).map(t => (
+            <option key={t} value={t}>{SENSOR_TYPE_LABELS[t]}</option>
+          ))}
+        </select>
+      </InfraField>
+      <InfraField label="Status">
+        <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as SensorStatus)}>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="faulty">Faulty</option>
+        </select>
+      </InfraField>
+    </InfraModal>
+  );
+}
+
+// ── Delete confirm ──────────────────────────────────────────────────────────
+
+function InfraDeleteConfirm({ title, desc, onConfirm, onClose }: {
+  title: string; desc: string; onConfirm: () => Promise<void>; onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handle = async () => {
+    setBusy(true);
+    await onConfirm();
+    setDone(true);
+    setTimeout(onClose, 900);
+  };
+
+  return (
+    <InfraModal title={title} onClose={onClose} footer={
+      <div className="flex gap-2">
+        <button onClick={onClose} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 transition-all">Cancel</button>
+        <button onClick={handle} disabled={busy} className="flex-1 h-9 rounded-xl bg-red-500 text-white text-[12px] font-semibold hover:bg-red-600 disabled:opacity-50 transition-all">
+          {busy ? 'Deleting…' : 'Delete'}
+        </button>
+      </div>
+    }>
+      {done ? (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="w-10 h-10 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center">
+            <svg className="w-5 h-5 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <p className="text-[12px] font-semibold text-gray-600">Deleted successfully</p>
+        </div>
+      ) : (
+        <p className="text-[12.5px] text-gray-500 leading-relaxed">{desc} <strong className="text-gray-700">This cannot be undone.</strong></p>
+      )}
+    </InfraModal>
+  );
+}
+
+// ── Zone row with sensors ────────────────────────────────────────────────────
+
+function ZoneRow({ zone, warehouseId }: { zone: ManagedZone; warehouseId: string }) {
+  const sensors = useSensorsForWarehouse(warehouseId);
+  const zoneSensors = sensors.filter(s => s.zoneId === zone.id);
+  const [expanded, setExpanded] = useState(false);
+  const [modal, setModal] = useState<
+    | { type: 'editZone' }
+    | { type: 'deleteZone' }
+    | { type: 'addSensor' }
+    | { type: 'editSensor'; sensor: ManagedSensor }
+    | { type: 'deleteSensor'; sensor: ManagedSensor }
+    | null
+  >(null);
+
+  return (
+    <>
+      {modal?.type === 'editZone'   && <ZoneFormModal zone={zone} warehouseId={warehouseId} onClose={() => setModal(null)} />}
+      {modal?.type === 'deleteZone' && (
+        <InfraDeleteConfirm
+          title={`Delete ${zone.name}?`}
+          desc={`All ${zoneSensors.length} sensor(s) in this zone will also be permanently removed.`}
+          onConfirm={() => deleteZone(zone.id)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'addSensor'  && <SensorFormModal zoneId={zone.id} warehouseId={warehouseId} onClose={() => setModal(null)} />}
+      {modal?.type === 'editSensor' && (
+        <SensorFormModal sensor={modal.sensor} zoneId={zone.id} warehouseId={warehouseId} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === 'deleteSensor' && (
+        <InfraDeleteConfirm
+          title={`Remove ${modal.sensor.name}?`}
+          desc="The sensor and its readings link will be permanently deleted."
+          onConfirm={() => deleteSensor(modal.sensor.id)}
+          onClose={() => setModal(null)}
+        />
+      )}
+
+      <div className="border border-gray-100 rounded-xl overflow-hidden">
+        {/* Zone header row */}
+        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-gray-50/80 hover:bg-gray-100/60 transition-colors">
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-2 flex-1 text-left min-w-0"
+          >
+            <svg className={cn('w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform', expanded && 'rotate-90')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            <span className="text-[12px] font-semibold text-gray-800 truncate">{zone.name}</span>
+            <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0',
+              zone.status === 'active' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-gray-100 text-gray-400 ring-1 ring-gray-200',
+            )}>{zone.status}</span>
+            <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0 pr-2">{zoneSensors.length} sensors</span>
+          </button>
+          <button
+            onClick={() => setModal({ type: 'addSensor' })}
+            className="w-6 h-6 rounded-lg bg-[#1f5135] flex items-center justify-center hover:bg-[#174028] transition-colors flex-shrink-0"
+            title="Add sensor"
+          >
+            <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button
+            onClick={() => setModal({ type: 'editZone' })}
+            className="w-6 h-6 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-colors flex-shrink-0"
+            title="Edit zone"
+          >
+            <svg className="w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button
+            onClick={() => setModal({ type: 'deleteZone' })}
+            className="w-6 h-6 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
+            title="Delete zone"
+          >
+            <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+          </button>
+        </div>
+
+        {/* Sensors list */}
+        {expanded && (
+          <div className="divide-y divide-gray-50">
+            {zoneSensors.length === 0 ? (
+              <div className="px-4 py-3 text-center">
+                <p className="text-[11px] text-gray-400">No sensors yet</p>
+                <button onClick={() => setModal({ type: 'addSensor' })} className="text-[11px] font-semibold text-[#1f5135] hover:underline mt-1">+ Add sensor</button>
+              </div>
+            ) : (
+              zoneSensors.map(s => {
+                const cfg = SENSOR_STATUS_CFG[s.status];
+                return (
+                  <div key={s.id} className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-gray-50 group">
+                    <span className={cn('w-2 h-2 rounded-full flex-shrink-0', cfg.dot)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold text-gray-800 truncate">{s.name}</p>
+                      <p className="text-[10px] text-gray-400">{SENSOR_TYPE_LABELS[s.type]} · <span className={cfg.text}>{cfg.label}</span></p>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setModal({ type: 'editSensor', sensor: s })} className="w-6 h-6 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-colors" title="Edit">
+                        <svg className="w-3 h-3 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button onClick={() => setModal({ type: 'deleteSensor', sensor: s })} className="w-6 h-6 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors" title="Remove">
+                        <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Warehouse accordion card ─────────────────────────────────────────────────
+
+function WarehouseCard({ wh }: { wh: ManagedWarehouse }) {
+  const [expanded, setExpanded] = useState(false);
+  const { zones } = useZones(expanded ? wh.id : null);
+  const [modal, setModal] = useState<
+    | { type: 'edit' }
+    | { type: 'delete' }
+    | { type: 'addZone' }
+    | null
+  >(null);
+
+  return (
+    <>
+      {modal?.type === 'edit'    && <EditWarehouseModal wh={wh} onClose={() => setModal(null)} />}
+      {modal?.type === 'delete'  && (
+        <InfraDeleteConfirm
+          title={`Delete ${wh.name}?`}
+          desc="All zones and sensors inside will be permanently removed."
+          onConfirm={() => deleteWarehouse(wh.id)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'addZone' && <ZoneFormModal warehouseId={wh.id} onClose={() => setModal(null)} />}
+
+      <div className="bg-white rounded-2xl ring-1 ring-black/[0.05] shadow-sm overflow-hidden">
+        {/* Warehouse header */}
+        <div className="flex items-center gap-3 px-4 py-3.5">
+          <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-3 flex-1 text-left min-w-0">
+            <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors',
+              wh.status === 'active' ? 'bg-[#1f5135]/10' : 'bg-gray-100',
+            )}>
+              <svg className={cn('w-4 h-4', wh.status === 'active' ? 'text-[#1f5135]' : 'text-gray-400')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[13px] font-bold text-gray-900 truncate">{wh.name}</span>
+                {wh.liveEngineId && <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{wh.liveEngineId}</span>}
+                <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full',
+                  wh.status === 'active' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-gray-100 text-gray-400 ring-1 ring-gray-200',
+                )}>{wh.status}</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-0.5">{wh.location || 'No location'} · {wh.capacity.toLocaleString()} tons</p>
+            </div>
+            <svg className={cn('w-4 h-4 text-gray-400 flex-shrink-0 transition-transform', expanded && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button onClick={() => setModal({ type: 'edit' })} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors" title="Edit warehouse">
+              <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button onClick={() => setModal({ type: 'delete' })} className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors" title="Delete warehouse">
+              <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Zones section */}
+        {expanded && (
+          <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-2 bg-gray-50/40">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Zones</span>
+              <button
+                onClick={() => setModal({ type: 'addZone' })}
+                className="flex items-center gap-1 h-6 px-2.5 rounded-lg bg-[#1f5135] text-white text-[10px] font-bold hover:bg-[#174028] transition-colors"
+              >
+                <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Zone
+              </button>
+            </div>
+            {zones.length === 0 ? (
+              <p className="text-[11px] text-gray-400 text-center py-4">No zones yet — add your first zone</p>
+            ) : (
+              <div className="space-y-1.5">
+                {zones.map(z => (
+                  <ZoneRow key={z.id} zone={z} warehouseId={wh.id} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Infrastructure Tab ──────────────────────────────────────────────────────
+
+function InfrastructureTab() {
+  const { warehouses, loading } = useWarehouses();
+  const [wizardOpen, setWizardOpen] = useState(false);
+
+  return (
+    <>
+      {wizardOpen && <AddWarehouseWizard onClose={() => setWizardOpen(false)} />}
+
+      <div className="space-y-5">
+        {/* Sync banner */}
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
+          <svg className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <p className="text-[11.5px] text-blue-700 font-medium leading-snug">
+            All changes sync automatically to Firestore — mobile apps and other devices see updates in real time.
+          </p>
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-[15px] font-bold text-gray-900">Storage Infrastructure</h2>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {loading ? 'Loading…' : `${warehouses.length} warehouse${warehouses.length !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <button
+            onClick={() => setWizardOpen(true)}
+            className="flex items-center gap-1.5 h-9 px-4 rounded-xl bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] active:scale-[0.97] transition-all shadow-sm"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Warehouse
+          </button>
+        </div>
+
+        {/* Warehouse list */}
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-6 h-6 border-2 border-[#1f5135]/30 border-t-[#1f5135] rounded-full animate-spin" />
+          </div>
+        ) : warehouses.length === 0 ? (
+          <div className="bg-white rounded-2xl ring-1 ring-black/[0.05] shadow-sm p-12 text-center">
+            <svg className="w-12 h-12 mx-auto mb-4 text-gray-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            <p className="text-[14px] font-semibold text-gray-400 mb-4">No warehouses yet</p>
+            <button onClick={() => setWizardOpen(true)} className="px-5 py-2.5 rounded-xl bg-[#1f5135] text-white text-[12px] font-bold hover:bg-[#174028] transition-colors">
+              Add your first warehouse
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {warehouses.map(wh => (
+              <WarehouseCard key={wh.id} wh={wh} />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'general',       label: 'General'       },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'sensors',       label: 'Sensors'       },
-  { id: 'security',      label: 'Security'      },
-  { id: 'appearance',    label: 'Appearance'    },
+  { id: 'general',        label: 'General'        },
+  { id: 'notifications',  label: 'Notifications'  },
+  { id: 'sensors',        label: 'Sensors'        },
+  { id: 'security',       label: 'Security'       },
+  { id: 'appearance',     label: 'Appearance'     },
+  { id: 'infrastructure', label: 'Infrastructure' },
 ];
 
 export default function SettingsPage() {
@@ -1175,11 +1914,12 @@ export default function SettingsPage() {
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50">
         <div className="p-5 sm:p-6 min-w-0">
-          {tab === 'general'       && <GeneralTab />}
-          {tab === 'notifications' && <NotificationsTab />}
-          {tab === 'sensors'       && <SensorsTab />}
-          {tab === 'security'      && <SecurityTab />}
-          {tab === 'appearance'    && <AppearanceTab theme={theme} setTheme={handleThemeChange} />}
+          {tab === 'general'        && <GeneralTab />}
+          {tab === 'notifications'  && <NotificationsTab />}
+          {tab === 'sensors'        && <SensorsTab />}
+          {tab === 'security'       && <SecurityTab />}
+          {tab === 'appearance'     && <AppearanceTab theme={theme} setTheme={handleThemeChange} />}
+          {tab === 'infrastructure' && <InfrastructureTab />}
         </div>
       </main>
     </div>
