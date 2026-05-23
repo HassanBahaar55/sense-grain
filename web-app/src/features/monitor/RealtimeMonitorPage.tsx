@@ -17,13 +17,39 @@ import {
 } from './mockData';
 import { cn } from '@/lib/utils';
 
-// ─── Safe thresholds ──────────────────────────────────────────────────────────
+// ─── Safe thresholds (always in °C internally) ────────────────────────────────
 
 const T = {
   temp:     { safe: 27, warn: 30 },
   humidity: { safe: 62, warn: 70 },
   moisture: { safe: 13, warn: 14 },
 };
+
+// ─── Temperature unit hook ────────────────────────────────────────────────────
+
+function useTempUnit() {
+  const [unit, setUnit] = useState<'°C' | '°F' | 'K'>('°C');
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sg-preferences');
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (p.tempUnit === '°F' || p.tempUnit === 'K') setUnit(p.tempUnit);
+      }
+    } catch {}
+  }, []);
+  return unit;
+}
+
+function convertTemp(c: number, unit: '°C' | '°F' | 'K'): string {
+  if (unit === '°F') return `${((c * 9 / 5) + 32).toFixed(1)}°F`;
+  if (unit === 'K')  return `${(c + 273.15).toFixed(1)} K`;
+  return `${c}°C`;
+}
+
+function tempThreshold(c: number, unit: '°C' | '°F' | 'K'): string {
+  return `< ${convertTemp(c, unit)}`;
+}
 
 // ─── Configs ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +62,7 @@ const whCfg: Record<WarehouseOnlineStatus, { dot: string; label: string; badge: 
 
 const statusCfg: Record<ZoneStatus, { dot: string; badge: string; label: string; rowBg: string }> = {
   good:     { dot: 'bg-green-400', badge: 'bg-green-50 text-green-700 ring-1 ring-green-200',   label: 'Good',     rowBg: '' },
-  normal:   { dot: 'bg-blue-400',  badge: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',       label: 'Normal',   rowBg: '' },
+  normal:   { dot: 'bg-blue-400',  badge: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',       label: 'Elevated', rowBg: '' },
   warning:  { dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',   label: 'Warning',  rowBg: 'bg-amber-50/30' },
   critical: { dot: 'bg-red-500',   badge: 'bg-red-50 text-red-600 ring-1 ring-red-200',         label: 'Critical', rowBg: 'bg-red-50/30' },
   offline:  { dot: 'bg-gray-300',  badge: 'bg-gray-100 text-gray-400 ring-1 ring-gray-200',     label: 'Offline',  rowBg: '' },
@@ -46,28 +72,28 @@ const statusCfg: Record<ZoneStatus, { dot: string; badge: string; label: string;
 
 type ViewMode = 'status' | 'temp' | 'humidity';
 
-const viewModes: { mode: ViewMode; label: string; desc: string }[] = [
-  { mode: 'status',   label: 'Status',   desc: 'Combined health: green = all readings safe · blue = slight elevation · yellow = approaching limit · red = action needed' },
-  { mode: 'temp',     label: 'Temp',     desc: `Temperature view: green < ${T.temp.safe}°C · yellow ${T.temp.safe}–${T.temp.warn}°C · red ≥ ${T.temp.warn}°C` },
-  { mode: 'humidity', label: 'Humidity', desc: `Humidity view: green < ${T.humidity.safe}% · yellow ${T.humidity.safe}–${T.humidity.warn}% · red ≥ ${T.humidity.warn}%` },
+const viewModes: { mode: ViewMode; label: string }[] = [
+  { mode: 'status',   label: 'Status'   },
+  { mode: 'temp',     label: 'Temp'     },
+  { mode: 'humidity', label: 'Humidity' },
 ];
 
 const viewLegend: Record<ViewMode, Array<{ color: string; text: string }>> = {
   status: [
-    { color: '#22c55e', text: 'Good' },
-    { color: '#3b82f6', text: 'Normal' },
-    { color: '#f59e0b', text: 'Warning' },
-    { color: '#ef4444', text: 'Critical' },
+    { color: '#22c55e', text: 'Good — all safe' },
+    { color: '#3b82f6', text: 'Elevated — slightly above safe' },
+    { color: '#f59e0b', text: 'Warning — approaching limit' },
+    { color: '#ef4444', text: 'Critical — needs attention' },
   ],
   temp: [
-    { color: '#22c55e', text: `< ${T.temp.safe}°C` },
-    { color: '#f59e0b', text: `${T.temp.safe}–${T.temp.warn}°C` },
-    { color: '#ef4444', text: `≥ ${T.temp.warn}°C` },
+    { color: '#22c55e', text: `Safe (< ${T.temp.safe}°C)` },
+    { color: '#f59e0b', text: `Elevated (${T.temp.safe}–${T.temp.warn}°C)` },
+    { color: '#ef4444', text: `Critical (≥ ${T.temp.warn}°C)` },
   ],
   humidity: [
-    { color: '#22c55e', text: `< ${T.humidity.safe}%` },
-    { color: '#f59e0b', text: `${T.humidity.safe}–${T.humidity.warn}%` },
-    { color: '#ef4444', text: `≥ ${T.humidity.warn}%` },
+    { color: '#22c55e', text: `Safe (< ${T.humidity.safe}%)` },
+    { color: '#f59e0b', text: `Elevated (${T.humidity.safe}–${T.humidity.warn}%)` },
+    { color: '#ef4444', text: `Critical (≥ ${T.humidity.warn}%)` },
   ],
 };
 
@@ -147,7 +173,8 @@ function WarehouseDropdown({
         className="flex items-center gap-2 h-8 pl-3 pr-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-[12px] font-semibold text-gray-800 transition-all duration-150 select-none min-w-[160px]"
       >
         <span className={cn('w-2 h-2 rounded-full flex-shrink-0', cfg.dot, wh.status === 'alert' && 'animate-pulse')} />
-        <span className="flex-1 text-left">{wh.id} — {wh.name}</span>
+        <span className="flex-1 text-left">{wh.name}</span>
+        <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{wh.id}</span>
         <svg className={cn('w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150', open && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -172,8 +199,8 @@ function WarehouseDropdown({
                 )}
               >
                 <span className={cn('w-2 h-2 rounded-full flex-shrink-0', c.dot)} />
-                <span className="font-bold">{w.id}</span>
-                <span className="text-gray-400 font-medium flex-1">{w.name}</span>
+                <span className="flex-1">{w.name}</span>
+                <span className="text-[9px] text-gray-400 font-medium">{w.id}</span>
                 <span className={cn('text-[9.5px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0', c.badge)}>
                   {c.label}
                 </span>
@@ -206,7 +233,7 @@ function MonitorBar({
 
       {/* Color view toggle */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">Color view:</span>
+        <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">Map color:</span>
         <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
           {viewModes.map(({ mode, label }) => (
             <button
@@ -319,8 +346,6 @@ function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: V
         {!isOffline && sensors.map((s, i) => {
           const c = getSensorColors(s, viewMode);
           const needsPulse = s.status === 'critical' || s.status === 'warning';
-          const primary   = viewMode === 'humidity' ? `${s.humidity}%` : `${s.temp}°`;
-          const secondary = viewMode === 'humidity' ? `${s.temp}°C` : `${s.humidity}%H`;
           return (
             <g key={i}>
               {needsPulse && (
@@ -329,10 +354,9 @@ function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: V
                   <animate attributeName="opacity" values="0.25;0;0.25" dur="2.5s" repeatCount="indefinite" />
                 </circle>
               )}
-              <circle cx={s.cx} cy={s.cy} r="18" fill="white" stroke={c.stroke} strokeWidth="2.5" filter="url(#ms)" />
-              <text x={s.cx} y={s.cy - 2} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fill={c.text} fontWeight="800">{primary}</text>
-              <text x={s.cx} y={s.cy + 8} textAnchor="middle" dominantBaseline="middle" fontSize="7.5" fill="#9ca3af" fontWeight="600">{secondary}</text>
-              <text x={s.cx} y={s.cy + 28} textAnchor="middle" fontSize="7.5" fill="#6b7280" fontWeight="700">{s.id}</text>
+              <circle cx={s.cx} cy={s.cy} r="14" fill="white" stroke={c.stroke} strokeWidth="2.5" filter="url(#ms)" />
+              <text x={s.cx} y={s.cy + 1} textAnchor="middle" dominantBaseline="middle" fontSize="8" fill={c.text} fontWeight="800">{s.id}</text>
+              <text x={s.cx} y={s.cy + 24} textAnchor="middle" fontSize="7" fill="#6b7280" fontWeight="600">{s.bay}</text>
             </g>
           );
         })}
@@ -358,7 +382,7 @@ function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: V
 
 // ─── Sensor readings table ────────────────────────────────────────────────────
 
-function SensorTable({ zones }: { zones: ZoneReading[] }) {
+function SensorTable({ zones, tempUnit }: { zones: ZoneReading[]; tempUnit: '°C' | '°F' | 'K' }) {
   if (!zones.length) return (
     <p className="text-[12px] text-gray-400 py-6 text-center">No sensors configured.</p>
   );
@@ -366,7 +390,7 @@ function SensorTable({ zones }: { zones: ZoneReading[] }) {
   return (
     <div className="overflow-hidden rounded-xl ring-1 ring-gray-100">
       {/* Header */}
-      <div className="grid grid-cols-[28px_minmax(0,1fr)_50px_50px_50px_58px] gap-x-2 px-3.5 py-2.5 bg-gray-50 border-b border-gray-100">
+      <div className="grid grid-cols-[28px_minmax(0,1fr)_60px_50px_56px_58px] gap-x-2 px-3.5 py-2.5 bg-gray-50 border-b border-gray-100">
         {['', 'Zone', 'Temp', 'Hum', 'Moist', 'Status'].map((h) => (
           <span key={h} className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wide">{h}</span>
         ))}
@@ -378,37 +402,26 @@ function SensorTable({ zones }: { zones: ZoneReading[] }) {
           <div
             key={zone.id}
             className={cn(
-              'grid grid-cols-[28px_minmax(0,1fr)_50px_50px_50px_58px] gap-x-2 items-center px-3.5 py-2.5',
+              'grid grid-cols-[28px_minmax(0,1fr)_60px_50px_56px_58px] gap-x-2 items-center px-3.5 py-2.5',
               i < zones.length - 1 && 'border-b border-gray-50',
               cfg.rowBg,
             )}
           >
-            {/* Status dot */}
             <span className={cn('w-2 h-2 rounded-full mx-auto flex-shrink-0', cfg.dot,
               zone.status === 'critical' && 'animate-pulse'
             )} />
-
-            {/* Zone name */}
             <div className="min-w-0">
               <p className="text-[12px] font-bold text-gray-800 truncate">{zone.id} <span className="font-medium text-gray-400 text-[10px]">·</span> <span className="text-[11px] font-medium text-gray-500">{zone.bay}</span></p>
             </div>
-
-            {/* Temp */}
             <span className={cn('text-[11.5px] font-bold tabular-nums', valColor(zone.temp, T.temp.safe, T.temp.warn))}>
-              {zone.temp != null ? `${zone.temp}°C` : '—'}
+              {zone.temp != null ? convertTemp(zone.temp, tempUnit) : '—'}
             </span>
-
-            {/* Humidity */}
             <span className={cn('text-[11.5px] font-bold tabular-nums', valColor(zone.humidity, T.humidity.safe, T.humidity.warn))}>
               {zone.humidity != null ? `${zone.humidity}%` : '—'}
             </span>
-
-            {/* Moisture */}
             <span className={cn('text-[11.5px] font-bold tabular-nums', valColor(zone.moisture, T.moisture.safe, T.moisture.warn))}>
               {zone.moisture != null ? `${zone.moisture}%` : '—'}
             </span>
-
-            {/* Status badge */}
             <span className={cn('text-[9.5px] font-bold px-1.5 py-[3px] rounded-full leading-none text-center', cfg.badge)}>
               {cfg.label}
             </span>
@@ -425,6 +438,7 @@ export default function RealtimeMonitorPage() {
   const [selectedWH, setSelectedWH] = useState('WH-A');
   const [timeRange,  setTimeRange]   = useState('1h');
   const [viewMode,   setViewMode]    = useState<ViewMode>('status');
+  const tempUnit = useTempUnit();
 
   const wh          = monitorWarehouses.find((w) => w.id === selectedWH);
   const zones        = zoneData[selectedWH] ?? [];
@@ -435,13 +449,12 @@ export default function RealtimeMonitorPage() {
   const critCount    = zones.filter((z) => z.status === 'critical').length;
   const warnCount    = zones.filter((z) => z.status === 'warning').length;
   const legend       = viewLegend[viewMode];
-  const currentMode  = viewModes.find((m) => m.mode === viewMode)!;
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <DashboardHeader
         title="Realtime Monitor"
-        subtitle={`${selectedWH} — ${wh?.name ?? ''} · ${active.length}/${zones.length} sensors active`}
+        subtitle={`${wh?.name ?? selectedWH} · ${active.length} of ${zones.length} sensors active`}
       />
 
       <MonitorBar
@@ -457,10 +470,10 @@ export default function RealtimeMonitorPage() {
           {[
             {
               label: 'Avg Temperature',
-              value: avgTemp !== null ? `${avgTemp.toFixed(1)}°C` : '—',
+              value: avgTemp !== null ? convertTemp(avgTemp, tempUnit) : '—',
               bar: 'bg-amber-400',
               status: avgTemp !== null && avgTemp >= T.temp.warn ? 'critical' : avgTemp !== null && avgTemp >= T.temp.safe ? 'warning' : 'good',
-              tip: `Safe < ${T.temp.safe}°C`,
+              tip: `Safe ${tempThreshold(T.temp.safe, tempUnit)}`,
             },
             {
               label: 'Avg Humidity',
@@ -514,18 +527,18 @@ export default function RealtimeMonitorPage() {
         </section>
 
         {/* ── Zone map + Sensor readings ────────────────────────────────────── */}
-        <section className="grid grid-cols-1 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px] gap-4">
+        <section className="grid grid-cols-1 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px] gap-4 items-start">
 
           {/* Zone map card */}
           <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5 flex flex-col gap-3">
             {/* Header */}
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{selectedWH} — Zone Map</h2>
-                <p className="text-[11px] text-gray-400 mt-0.5 leading-snug max-w-sm">{currentMode.desc}</p>
+                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{wh?.name} — Zone Map</h2>
+                <p className="text-[11px] text-gray-400 mt-0.5">Each colored circle = one sensor · tap a row in the table for exact values</p>
               </div>
               <span className={cn(
-                'text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5',
+                'text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0',
                 wh?.status === 'alert'   ? 'bg-red-50 text-red-700' :
                 wh?.status === 'warning' ? 'bg-amber-50 text-amber-700' :
                 wh?.status === 'offline' ? 'bg-gray-100 text-gray-400' :
@@ -540,7 +553,7 @@ export default function RealtimeMonitorPage() {
 
             {/* Color legend */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              <span className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wide">Colors:</span>
+              <span className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wide">Color key:</span>
               {legend.map((l) => (
                 <span key={l.text} className="flex items-center gap-1.5 text-[10.5px] font-semibold text-gray-500">
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
@@ -550,14 +563,14 @@ export default function RealtimeMonitorPage() {
             </div>
           </div>
 
-          {/* Sensor readings card */}
-          <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm flex flex-col">
+          {/* Sensor readings card — items-start on parent prevents stretching */}
+          <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm">
             {/* Header */}
             <div className="px-5 pt-4 pb-3 border-b border-gray-100">
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">Sensor Readings</h2>
-                  <p className="text-[11px] text-gray-400 mt-0.5">{selectedWH} · {active.length} of {zones.length} sensors online</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{wh?.name} · {active.length} of {zones.length} sensors online</p>
                 </div>
                 {wh?.lastUpdate && (
                   <span className="text-[10px] text-gray-400 font-medium flex-shrink-0">
@@ -568,26 +581,26 @@ export default function RealtimeMonitorPage() {
             </div>
 
             {/* Table */}
-            <div className="flex-1 p-4 min-h-0">
-              <SensorTable zones={zones} />
+            <div className="p-4">
+              <SensorTable zones={zones} tempUnit={tempUnit} />
             </div>
 
-            {/* Safe thresholds — compact reference strip */}
+            {/* Safe limits reference */}
             <div className="px-4 pb-4">
               <div className="rounded-xl bg-gray-50 px-3.5 py-2.5 ring-1 ring-gray-100">
-                <p className="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest mb-2">Safe limits (grain storage)</p>
+                <p className="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest mb-2">Safe limits — grain storage</p>
                 <div className="grid grid-cols-3 gap-x-2 gap-y-1.5">
                   {[
-                    { label: 'Temp',     safe: `< ${T.temp.safe}°C`,    warn: `${T.temp.safe}–${T.temp.warn}°C`, crit: `≥ ${T.temp.warn}°C` },
+                    { label: 'Temp',     safe: tempThreshold(T.temp.safe, tempUnit),         warn: `${convertTemp(T.temp.safe, tempUnit)}–${convertTemp(T.temp.warn, tempUnit)}`, crit: `≥ ${convertTemp(T.temp.warn, tempUnit)}` },
                     { label: 'Humidity', safe: `< ${T.humidity.safe}%`, warn: `${T.humidity.safe}–${T.humidity.warn}%`, crit: `≥ ${T.humidity.warn}%` },
                     { label: 'Moisture', safe: `< ${T.moisture.safe}%`, warn: `${T.moisture.safe}–${T.moisture.warn}%`, crit: `≥ ${T.moisture.warn}%` },
                   ].map((r) => (
                     <div key={r.label}>
                       <p className="text-[9px] font-bold text-gray-500 mb-1">{r.label}</p>
-                      <div className="flex flex-wrap gap-x-1 gap-y-0.5">
-                        <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.safe}</span>
-                        <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.warn}</span>
-                        <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.crit}</span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[8.5px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.safe}</span>
+                        <span className="text-[8.5px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.warn}</span>
+                        <span className="text-[8.5px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.crit}</span>
                       </div>
                     </div>
                   ))}
@@ -603,33 +616,35 @@ export default function RealtimeMonitorPage() {
             <div>
               <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">Parameter Trends</h2>
               <p className="text-[11px] text-gray-400 mt-0.5">
-                Each line shows the reading as % of its maximum safe threshold · last {timeRange} · {selectedWH}
+                How close each reading is to its safe limit — 100% means the limit is reached · hover a line for the exact value · last {timeRange}
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10.5px] font-semibold text-gray-400 flex-shrink-0">
               <span className="flex items-center gap-1.5">
                 <span className="w-5 h-2 rounded-sm bg-amber-100 inline-block border border-amber-200" />
-                75–90% Caution
+                75–90% — approaching limit
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-5 h-2 rounded-sm bg-red-100 inline-block border border-red-200" />
-                90%+ Critical
+                90%+ — exceeds safe range
               </span>
             </div>
           </div>
 
           <ParameterTrendsChart />
 
-          {/* Legend + current values */}
+          {/* Series legend — just color + label + current value, no confusing "/ max" */}
           <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 pt-3 border-t border-gray-100">
             {trendSeries.map((s) => {
               const metric = realtimeMetrics.find((m) => m.id === s.key);
+              const displayValue = (s.key === 'temp' && metric)
+                ? convertTemp(parseFloat(metric.value), tempUnit)
+                : metric ? `${metric.value}${s.unit}` : '—';
               return (
                 <div key={s.key} className="flex items-center gap-2">
                   <span className="w-5 h-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
                   <span className="text-[11px] font-semibold text-gray-500">{s.label}</span>
-                  <span className="text-[11px] font-bold text-gray-800 tabular-nums">{metric?.value}{s.unit}</span>
-                  <span className="text-[10px] text-gray-400">/ {s.threshold}{s.unit} max</span>
+                  <span className="text-[11px] font-bold text-gray-800 tabular-nums">{displayValue}</span>
                 </div>
               );
             })}

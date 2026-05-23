@@ -44,14 +44,14 @@ export interface ActivityEvent {
 // ─── Warehouses ───────────────────────────────────────────────────────────────
 
 export const monitorWarehouses: MonitorWarehouse[] = [
-  { id: 'WH-A', name: 'Alpha',   status: 'online',  temp: 27.2, humidity: 58, zoneCount: 4, lastUpdate: '30s ago' },
-  { id: 'WH-B', name: 'Bravo',   status: 'warning', temp: 29.4, humidity: 65, zoneCount: 4, lastUpdate: '45s ago' },
-  { id: 'WH-C', name: 'Charlie', status: 'online',  temp: 26.8, humidity: 57, zoneCount: 3, lastUpdate: '28s ago' },
-  { id: 'WH-D', name: 'Delta',   status: 'alert',   temp: 32.1, humidity: 74, zoneCount: 4, lastUpdate: '12s ago' },
-  { id: 'WH-E', name: 'Echo',    status: 'online',  temp: 27.5, humidity: 60, zoneCount: 3, lastUpdate: '55s ago' },
-  { id: 'WH-F', name: 'Foxtrot', status: 'warning', temp: 30.2, humidity: 68, zoneCount: 4, lastUpdate: '1m ago'  },
-  { id: 'WH-G', name: 'Golf',    status: 'online',  temp: 26.5, humidity: 55, zoneCount: 3, lastUpdate: '41s ago' },
-  { id: 'WH-H', name: 'Hotel',   status: 'offline', temp: null, humidity: null, zoneCount: 2, lastUpdate: '12m ago' },
+  { id: 'WH-A', name: 'Warehouse A', status: 'online',  temp: 27.2, humidity: 58, zoneCount: 4, lastUpdate: '30s ago' },
+  { id: 'WH-B', name: 'Warehouse B', status: 'warning', temp: 29.4, humidity: 65, zoneCount: 4, lastUpdate: '45s ago' },
+  { id: 'WH-C', name: 'Warehouse C', status: 'online',  temp: 26.8, humidity: 57, zoneCount: 3, lastUpdate: '28s ago' },
+  { id: 'WH-D', name: 'Warehouse D', status: 'alert',   temp: 32.1, humidity: 74, zoneCount: 4, lastUpdate: '12s ago' },
+  { id: 'WH-E', name: 'Warehouse E', status: 'online',  temp: 27.5, humidity: 60, zoneCount: 3, lastUpdate: '55s ago' },
+  { id: 'WH-F', name: 'Warehouse F', status: 'warning', temp: 30.2, humidity: 68, zoneCount: 4, lastUpdate: '1m ago'  },
+  { id: 'WH-G', name: 'Warehouse G', status: 'online',  temp: 26.5, humidity: 55, zoneCount: 3, lastUpdate: '41s ago' },
+  { id: 'WH-H', name: 'Warehouse H', status: 'offline', temp: null, humidity: null, zoneCount: 2, lastUpdate: '12m ago' },
 ];
 
 // ─── Zone data per warehouse ──────────────────────────────────────────────────
