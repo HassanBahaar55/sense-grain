@@ -370,13 +370,16 @@ export function useFirestoreAnalytics(): AnalyticsData {
     const humStability  = Math.max(50, Math.round(100 - Math.max(0, avgHum - 60) * 2.5));
     const spoilRisk     = +(Math.max(1, Math.min(15, 15 - goodPct / 10)).toFixed(1));
 
+    const avgCap = active.length
+      ? Math.round(active.reduce((s, w) => s + (w.usedPct ?? 0), 0) / active.length)
+      : 68;
+
     const kpis: AnalyticsKPI[] = [
-      { label: 'Temp Stability',     value: tempStability, unit: '%', delta: `${tempStability > 80 ? '+' : ''}${(tempStability - 78).toFixed(1)}%`, trend: tempStability > 80 ? 'up' : 'down',   colorKey: 'amber'  },
-      { label: 'Humidity Stability', value: humStability,  unit: '%', delta: '+1.2%',     trend: humStability > 80 ? 'up' : 'stable', colorKey: 'blue'   },
-      { label: 'Storage Efficiency', value: Math.round(goodPct),      unit: '%', delta: '+2.1%', trend: 'up',    colorKey: 'green'  },
-      { label: 'AI Accuracy',        value: 94,            unit: '%', delta: '+0.3%',     trend: 'stable',                           colorKey: 'purple' },
-      { label: 'Spoilage Risk',      value: spoilRisk,     unit: '%', delta: '-0.8%',     trend: 'down',    invertedTrend: true,     colorKey: 'red'    },
-      { label: 'Sensor Health',      value: 92,            unit: '%', delta: '+0.5%',     trend: 'up',                               colorKey: 'teal'   },
+      { label: 'Temp Stability',      value: tempStability, unit: '%', delta: `${tempStability > 80 ? '+' : ''}${(tempStability - 78).toFixed(1)}%`, trend: tempStability > 80 ? 'up' : 'down',   colorKey: 'amber'  },
+      { label: 'Humidity Stability',  value: humStability,  unit: '%', delta: '+1.2%', trend: humStability > 80 ? 'up' : 'stable', colorKey: 'blue'   },
+      { label: 'Capacity Utilization', value: avgCap,        unit: '%', delta: '+1.3%', trend: 'up',                               colorKey: 'green'  },
+      { label: 'Spoilage Risk',        value: spoilRisk,     unit: '%', delta: '-0.8%', trend: 'down', invertedTrend: true,        colorKey: 'red'    },
+      { label: 'Sensor Health',        value: 92,            unit: '%', delta: '+0.5%', trend: 'up',                               colorKey: 'teal'   },
     ];
 
     const today = new Date();
