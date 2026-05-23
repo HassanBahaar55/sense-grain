@@ -93,6 +93,8 @@ body {
 .dark .bg-blue-100   { background-color: rgba(147,197,253,0.18); }
 .dark .bg-purple-50  { background-color: rgba(216,180,254,0.10); }
 .dark .bg-purple-100 { background-color: rgba(216,180,254,0.18); }
+.dark .bg-sky-50     { background-color: rgba(186,230,253,0.09); }
+.dark .bg-sky-100    { background-color: rgba(186,230,253,0.16); }
 .dark .bg-emerald-50 { background-color: rgba(52,211,153,0.09); }
 .dark .bg-emerald-100{ background-color: rgba(52,211,153,0.16); }
 
@@ -106,6 +108,8 @@ body {
 .dark .text-green-700  { color: #4ade80; }
 .dark .text-blue-600   { color: #60a5fa; }
 .dark .text-blue-700   { color: #93c5fd; }
+.dark .text-sky-500    { color: #38bdf8; }
+.dark .text-sky-600    { color: #38bdf8; }
 .dark .text-purple-600 { color: #c084fc; }
 .dark .text-purple-700 { color: #d8b4fe; }
 .dark .text-emerald-600{ color: #34d399; }
@@ -140,6 +144,9 @@ body {
 .dark .hover\:bg-blue-50:hover    { background-color: rgba(147,197,253,0.14); }
 .dark .hover\:bg-blue-100:hover   { background-color: rgba(147,197,253,0.22); }
 .dark .hover\:bg-amber-100:hover  { background-color: rgba(251,191,36,0.22); }
+.dark .hover\:bg-purple-100:hover { background-color: rgba(216,180,254,0.22); }
+.dark .hover\:bg-sky-50:hover     { background-color: rgba(186,230,253,0.13); }
+.dark .hover\:bg-sky-100:hover    { background-color: rgba(186,230,253,0.21); }
 .dark .hover\:bg-emerald-100:hover{ background-color: rgba(52,211,153,0.17); }
 
 /* ── Hover — text ───────────────────────────────────────────────────────── */
@@ -181,21 +188,34 @@ body {
 .dark .bg-amber-50\/50   { background-color: rgba(251,191,36,0.08); }
 .dark .bg-amber-50\/40   { background-color: rgba(251,191,36,0.07); }
 .dark .bg-orange-50\/20  { background-color: rgba(255,237,213,0.06); }
+.dark .bg-red-50\/50     { background-color: rgba(252,165,165,0.10); }
 .dark .bg-red-50\/30     { background-color: rgba(252,165,165,0.06); }
 .dark .bg-red-50\/40     { background-color: rgba(252,165,165,0.08); }
 .dark .bg-green-50\/30   { background-color: rgba(74,222,128,0.06); }
+.dark .bg-green-50\/50   { background-color: rgba(74,222,128,0.09); }
 .dark .bg-blue-50\/30    { background-color: rgba(147,197,253,0.06); }
+.dark .bg-blue-50\/50    { background-color: rgba(147,197,253,0.10); }
 .dark .bg-gray-50\/40    { background-color: rgba(255,255,255,0.03); }
 .dark .bg-gray-50\/60    { background-color: rgba(255,255,255,0.03); }
+.dark .bg-gray-50\/70    { background-color: rgba(255,255,255,0.03); }
 .dark .bg-gray-50\/80    { background-color: rgba(255,255,255,0.04); }
+
+/* bg-white with opacity — without this, white/60 renders as 60% bright white in dark mode */
+.dark .bg-white\/60      { background-color: rgba(255,255,255,0.05); }
+.dark .bg-white\/70      { background-color: rgba(255,255,255,0.06); }
+.dark .bg-white\/80      { background-color: rgba(255,255,255,0.07); }
+
 .dark .hover\:bg-gray-50\/60:hover { background-color: rgba(255,255,255,0.04); }
 .dark .hover\:bg-gray-50\/80:hover { background-color: rgba(255,255,255,0.05); }
 
 /* ── Ring overrides for -100 shades ─────────────────────────────────────── */
-.dark .ring-amber-100  { --tw-ring-color: rgba(251,191,36,0.20); }
-.dark .ring-orange-200 { --tw-ring-color: rgba(251,146,60,0.25); }
-.dark .ring-green-100  { --tw-ring-color: rgba(74,222,128,0.15); }
-.dark .ring-red-100    { --tw-ring-color: rgba(252,165,165,0.18); }
+.dark .ring-amber-100       { --tw-ring-color: rgba(251,191,36,0.20); }
+.dark .ring-amber-100\/80   { --tw-ring-color: rgba(251,191,36,0.22); }
+.dark .ring-orange-200      { --tw-ring-color: rgba(251,146,60,0.25); }
+.dark .ring-green-100       { --tw-ring-color: rgba(74,222,128,0.15); }
+.dark .ring-red-100         { --tw-ring-color: rgba(252,165,165,0.18); }
+.dark .ring-red-100\/80     { --tw-ring-color: rgba(252,165,165,0.22); }
+.dark .ring-blue-100        { --tw-ring-color: rgba(147,197,253,0.18); }
 
 /* ── Selected-row tint in warehouse table ───────────────────────────────── */
 .dark .bg-\[\#1f5135\]\/\[0\.05\] { background-color: rgba(31,81,53,0.25); }
