@@ -291,11 +291,9 @@ function liveAlertToAlert(a: LiveAlert, idx: number): Alert {
   const paramType = PARAM_TYPE_MAP[a.param] ?? 'system';
   const sev: AlertSeverity = a.severity;
   const status: AlertStatus = a.resolved ? 'resolved' : 'active';
-  const mins = Math.floor((Date.now() - a.timestamp) / 60000);
-  const hh = new Date(a.timestamp).getHours();
-  const mm = new Date(a.timestamp).getMinutes();
-  const ap = hh >= 12 ? 'PM' : 'AM';
-  const displayHH = hh % 12 || 12;
+  const d = new Date(a.timestamp);
+  const time = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
   return {
     id: `A-${String(idx + 1).padStart(3, '0')}`,
@@ -306,7 +304,7 @@ function liveAlertToAlert(a: LiveAlert, idx: number): Alert {
     parameter: a.param,
     value: `${a.value} ${a.unit}`.trim(),
     threshold: `>${a.threshold} ${a.unit}`.trim(),
-    time: mins < 60 ? `${mins} min ago` : `${displayHH}:${String(mm).padStart(2,'0')} ${ap}`,
+    time,
     status,
     type: paramType,
   };

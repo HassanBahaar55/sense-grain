@@ -488,9 +488,9 @@ function AlertsTable({ alerts, search, severityF, typeF, statusF, page, setPage,
         )}
       </div>
 
-      <div className="overflow-x-auto max-w-full rounded-xl ring-1 ring-gray-200">
+      <div className="overflow-x-auto overflow-y-auto max-h-[480px] max-w-full rounded-xl ring-1 ring-gray-200">
         <table className="w-full text-[11px] whitespace-nowrap">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-gray-50 border-b border-gray-200">
               {['Severity', 'Alert', 'Warehouse / Zone', 'Parameter', 'Value', 'Threshold', 'Time', 'Status', 'Actions'].map((h) => (
                 <th key={h} className="px-3 py-2.5 text-left font-bold text-gray-500 uppercase tracking-wide text-[9px]">{h}</th>
@@ -671,9 +671,9 @@ export default function AlertsPage() {
     setExportSuccess(true); setTimeout(() => setExportSuccess(false), 2000);
   }
 
-  // Filter state
+  // Filter state — default to active only so acknowledged/resolved disappear from main view
   const [search, setSearch]   = useState('');
-  const [filters, setFilters] = useState<{ severity: string; type: string; status: string }>({ severity: 'all', type: 'all', status: 'all' });
+  const [filters, setFilters] = useState<{ severity: string; type: string; status: string }>({ severity: 'all', type: 'all', status: 'active' });
   const [page, setPage]       = useState(1);
   // "Last checked" status — updates every second based on liveEngine tick
   const { tick } = useLiveData();

@@ -8,7 +8,7 @@ import firebaseApp from '@/config/firebase';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useHeader, type AppNotification, type NotifType } from '@/contexts/HeaderContext';
+import { type AppNotification, type NotifType } from '@/contexts/HeaderContext';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -361,47 +361,6 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ title, subtitle }: DashboardHeaderProps) {
   const { toggle } = useSidebar();
-  const { user }   = useAuth();
-  const {
-    selectedDate, isLive, notifications, unreadCount,
-    setDate, toggleLive, markRead, markAllRead, clearNotification, clearAll,
-  } = useHeader();
-
-  const [dateOpen,    setDateOpen]    = useState(false);
-  const [notifOpen,   setNotifOpen]   = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-
-  const dateRef    = useRef<HTMLDivElement>(null);
-  const notifRef   = useRef<HTMLDivElement>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      if (!dateRef.current?.contains(t))    setDateOpen(false);
-      if (!notifRef.current?.contains(t))   setNotifOpen(false);
-      if (!profileRef.current?.contains(t)) setProfileOpen(false);
-    }
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
-
-  // Close on Escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { setDateOpen(false); setNotifOpen(false); setProfileOpen(false); }
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
-
-  const openDate    = useCallback(() => { setDateOpen(o => !o);    setNotifOpen(false); setProfileOpen(false); }, []);
-  const openNotif   = useCallback(() => { setNotifOpen(o => !o);   setDateOpen(false);  setProfileOpen(false); }, []);
-  const openProfile = useCallback(() => { setProfileOpen(o => !o); setDateOpen(false);  setNotifOpen(false);   }, []);
-
-  const init        = initials(user?.displayName ?? null, user?.email ?? null);
-  const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
 
   return (
     <header className="h-16 bg-white border-b border-gray-100 flex items-center px-4 sm:px-6 gap-3 sticky top-0 z-20 flex-shrink-0">
@@ -427,118 +386,6 @@ export function DashboardHeader({ title, subtitle }: DashboardHeaderProps) {
         )}
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center gap-2 sm:gap-2.5">
-
-        {/* ── DATE PICKER ── */}
-        <div ref={dateRef} className="relative hidden sm:block">
-          <button
-            onClick={openDate}
-            className={cn(
-              'flex items-center gap-2 h-8 px-3 rounded-lg border text-[12px] font-semibold transition-all duration-150 select-none',
-              dateOpen
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
-            )}
-          >
-            <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8"  y1="2" x2="8"  y2="6"/>
-              <line x1="3"  y1="10" x2="21" y2="10"/>
-            </svg>
-            <span>{fmtDate(selectedDate)}</span>
-          </button>
-          <DropdownWrap open={dateOpen} className="right-0">
-            <CalendarDropdown value={selectedDate} onChange={setDate} onClose={() => setDateOpen(false)} />
-          </DropdownWrap>
-        </div>
-
-        {/* ── LIVE TOGGLE ── */}
-        <button
-          onClick={toggleLive}
-          className={cn(
-            'hidden lg:flex items-center gap-1.5 h-8 px-3 rounded-lg border text-[11px] font-semibold transition-all duration-200 select-none',
-            isLive
-              ? 'bg-green-50 border-green-100 text-green-700 hover:bg-green-100 hover:border-green-200'
-              : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
-          )}
-          title={isLive ? 'Click to pause live updates' : 'Click to resume live updates'}
-        >
-          <span className="relative flex items-center justify-center w-1.5 h-1.5">
-            <span className={cn('w-1.5 h-1.5 rounded-full block', isLive ? 'bg-green-500' : 'bg-gray-400')} />
-            {isLive && <span className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-green-400 animate-ping opacity-70" />}
-          </span>
-          {isLive ? 'Live' : 'Paused'}
-        </button>
-
-        {/* ── NOTIFICATION BELL ── */}
-        <div ref={notifRef} className="relative">
-          <button
-            onClick={openNotif}
-            className={cn(
-              'relative w-8 h-8 flex items-center justify-center rounded-lg border transition-all duration-150',
-              notifOpen
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-600'
-                : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-700 active:scale-95'
-            )}
-            aria-label="Notifications"
-          >
-            <svg className="w-[16px] h-[16px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-              <path d="M13.73 21a2 2 0 01-3.46 0"/>
-            </svg>
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center shadow-sm ring-2 ring-white">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
-          <DropdownWrap open={notifOpen} className="right-0">
-            <NotificationPanel
-              notifications={notifications}
-              onMarkRead={markRead}
-              onMarkAllRead={markAllRead}
-              onClear={clearNotification}
-              onClearAll={clearAll}
-            />
-          </DropdownWrap>
-        </div>
-
-        {/* Divider */}
-        <div className="w-px h-5 bg-gray-200 hidden md:block" />
-
-        {/* ── USER PROFILE ── */}
-        <div ref={profileRef} className="relative">
-          <button
-            onClick={openProfile}
-            className={cn(
-              'flex items-center gap-2 h-8 pl-1 pr-2.5 rounded-lg transition-all duration-150 group',
-              profileOpen ? 'bg-gray-100' : 'hover:bg-gray-100 active:bg-gray-200 active:scale-[0.97]'
-            )}
-          >
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#1f5135] to-[#2d7a4f] flex items-center justify-center text-[11px] font-bold text-white shadow-sm flex-shrink-0">
-              {init}
-            </div>
-            <span className="hidden md:block text-[12px] font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
-              {displayName}
-            </span>
-            <svg
-              className={cn(
-                'hidden md:block w-3 h-3 text-gray-400 transition-transform duration-200',
-                profileOpen && 'rotate-180'
-              )}
-              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-            >
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
-          <DropdownWrap open={profileOpen} className="right-0">
-            <ProfileMenu onClose={() => setProfileOpen(false)} />
-          </DropdownWrap>
-        </div>
-
-      </div>
     </header>
   );
 }

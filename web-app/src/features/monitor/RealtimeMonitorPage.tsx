@@ -320,10 +320,9 @@ function WarehouseDropdown({
 // ─── Sub-header bar ───────────────────────────────────────────────────────────
 
 function MonitorBar({
-  selected, onSelect, timeRange, onTimeRange, firestoreWarehouses,
+  selected, onSelect, firestoreWarehouses,
 }: {
   selected: string; onSelect: (id: string) => void;
-  timeRange: string; onTimeRange: (t: string) => void;
   firestoreWarehouses: ManagedWarehouse[];
 }) {
   return (
@@ -331,21 +330,6 @@ function MonitorBar({
       <WarehouseDropdown selected={selected} onSelect={onSelect} firestoreWarehouses={firestoreWarehouses} />
 
       <div className="flex-1" />
-
-      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
-        {['1h', '6h', '24h'].map(t => (
-          <button
-            key={t}
-            onClick={() => onTimeRange(t)}
-            className={cn(
-              'px-2.5 py-1 rounded-md text-[11px] font-bold transition-all duration-150',
-              timeRange === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700',
-            )}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
 
       <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
@@ -439,7 +423,6 @@ function ZoneCard({ zone, tempUnit }: { zone: ZoneReading; tempUnit: '°C' | '°
 
 export default function RealtimeMonitorPage() {
   const [selectedWH, setSelectedWH] = useState('WH-A');
-  const [timeRange,  setTimeRange]  = useState('1h');
   const tempUnit = useTempUnit();
 
   const { warehouses: firestoreWarehouses } = useWarehouses();
@@ -496,7 +479,6 @@ export default function RealtimeMonitorPage() {
 
       <MonitorBar
         selected={selectedWH}  onSelect={setSelectedWH}
-        timeRange={timeRange}   onTimeRange={setTimeRange}
         firestoreWarehouses={firestoreWarehouses}
       />
 
@@ -666,7 +648,7 @@ export default function RealtimeMonitorPage() {
             <div>
               <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">Parameter Trends</h2>
               <p className="text-[11px] text-gray-400 mt-0.5">
-                How close each reading is to its safe limit — 100% means the limit is reached · hover a line for the exact value · last {timeRange}
+                How close each reading is to its safe limit — 100% means the limit is reached · hover a line for the exact value · live data
               </p>
             </div>
             <div className="flex items-center gap-3 text-[10.5px] font-semibold text-gray-400 flex-shrink-0">
