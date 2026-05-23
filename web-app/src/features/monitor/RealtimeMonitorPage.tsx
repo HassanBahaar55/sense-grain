@@ -616,12 +616,25 @@ export default function RealtimeMonitorPage() {
             </div>
           ) : (
             <>
-              {/* Zone cards — responsive grid, any number of zones */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {zones.map(zone => (
-                  <ZoneCard key={zone.id + zone.bay} zone={zone} tempUnit={tempUnit} />
-                ))}
+              {/* Zone cards — scrollable container, 4 visible at a time */}
+              <div className="relative">
+                <div className="overflow-y-auto max-h-[212px] pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {zones.map(zone => (
+                      <ZoneCard key={zone.id + zone.bay} zone={zone} tempUnit={tempUnit} />
+                    ))}
+                  </div>
+                </div>
+                {/* Fade hint when there are more zones below */}
+                {zones.length > 4 && (
+                  <div className="absolute bottom-0 left-0 right-2 h-10 bg-gradient-to-t from-white to-transparent pointer-events-none rounded-b-2xl" />
+                )}
               </div>
+              {zones.length > 4 && (
+                <p className="text-[10px] font-semibold text-gray-400 text-center mt-2">
+                  Scroll to see all {zones.length} zones
+                </p>
+              )}
 
               {/* Safe limits reference */}
               {!hasNoLink && (
