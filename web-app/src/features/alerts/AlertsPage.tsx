@@ -7,8 +7,6 @@ import { AlertsTrendChart } from '@/components/charts/AlertsTrendChart';
 import { type Alert, type AlertSeverity, type AlertStatus, type AlertParamType } from '@/lib/dataEngine';
 import { useFirestoreAlertsData as useAlertsData } from '@/lib/useFirestoreData';
 
-const heatmapDays   = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const heatmapBlocks = ['00–03', '03–06', '06–09', '09–12', '12–15', '15–18', '18–21', '21–24'];
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -27,18 +25,6 @@ const statusConfig: Record<AlertStatus, { badge: string; dot: string; label: str
   resolved:     { badge: 'bg-green-50 text-green-700', dot: 'bg-green-500',             label: 'Resolved'     },
   muted:        { badge: 'bg-gray-100 text-gray-500',  dot: 'bg-gray-400',              label: 'Muted'        },
 };
-
-function heatColor(n: number) {
-  if (n === 0) return 'bg-gray-50 border border-gray-100';
-  if (n <= 2)  return 'bg-red-100';
-  if (n <= 4)  return 'bg-red-200';
-  if (n <= 6)  return 'bg-red-300';
-  if (n <= 9)  return 'bg-red-400';
-  return 'bg-red-500';
-}
-function heatText(n: number) {
-  return n >= 5 ? 'text-white' : 'text-red-700';
-}
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -403,96 +389,6 @@ function RecentAlertsPanel({ recentAlertFeed }: { recentAlertFeed: { id: string;
   );
 }
 
-// ─── Acknowledged feed ────────────────────────────────────────────────────────
-
-function AcknowledgedPanel({ acknowledgedAlerts }: { acknowledgedAlerts: { id: string; warehouse: string; zone: string; title: string; acknowledgedBy: string; acknowledgedAt: string }[] }) {
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-[14px] font-bold text-gray-900">Acknowledged</h2>
-        <span className="text-[10px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full ring-1 ring-green-200">
-          {acknowledgedAlerts.length}
-        </span>
-      </div>
-      <div className="max-h-[260px] overflow-y-auto space-y-0 pr-0.5">
-        {acknowledgedAlerts.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-start gap-2.5 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/60 rounded-lg px-1.5 -mx-1.5 transition-colors"
-          >
-            <div className="w-5 h-5 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <svg className="w-3 h-3 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-bold text-gray-700 leading-none truncate">
-                {item.warehouse} · {item.zone}
-              </p>
-              <p className="text-[10px] text-gray-500 mt-0.5 leading-snug truncate">{item.title}</p>
-              <p className="text-[9px] text-gray-400 mt-0.5">{item.acknowledgedBy}</p>
-            </div>
-            <span className="text-[9px] font-medium text-gray-400 flex-shrink-0 tabular-nums mt-0.5 whitespace-nowrap">{item.acknowledgedAt}</span>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─── Heatmap ──────────────────────────────────────────────────────────────────
-
-function AlertHeatmap({ heatmapData }: { heatmapData: number[][] }) {
-  const maxVal = Math.max(...heatmapData.flat());
-  return (
-    <Card className="p-5">
-      <SectionLabel
-        title="Alert Distribution by Time"
-        subtitle="Alerts per 3-hour window across the week"
-      />
-      <div className="overflow-x-auto">
-        <div style={{ minWidth: 280 }}>
-          {/* Day header */}
-          <div className="grid gap-1 mb-1" style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}>
-            <div />
-            {heatmapDays.map((d) => (
-              <div key={d} className="text-center text-[9px] font-bold text-gray-500 uppercase">{d}</div>
-            ))}
-          </div>
-          {/* Rows = time blocks */}
-          {heatmapBlocks.map((block, bi) => (
-            <div key={block} className="grid gap-1 mb-1" style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}>
-              <div className="text-[9px] font-medium text-gray-400 flex items-center pr-1 leading-none">{block}</div>
-              {heatmapDays.map((_, di) => {
-                const count = heatmapData[di][bi];
-                return (
-                  <div
-                    key={di}
-                    className={cn('h-6 rounded flex items-center justify-center transition-all duration-150 hover:opacity-80', heatColor(count))}
-                    title={`${heatmapDays[di]} ${block}: ${count} alert${count !== 1 ? 's' : ''}`}
-                  >
-                    {count > 0 && (
-                      <span className={cn('text-[8px] font-bold tabular-nums', heatText(count))}>{count}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-          {/* Legend */}
-          <div className="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-gray-100">
-            <span className="text-[9px] text-gray-400 mr-1">Low</span>
-            {[0, 2, 4, 6, 10].map((v) => (
-              <div key={v} className={cn('w-4 h-3 rounded-sm', heatColor(v))} />
-            ))}
-            <span className="text-[9px] text-gray-400 ml-1">High ({maxVal})</span>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 // ─── Alerts table ─────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 10;
@@ -787,10 +683,8 @@ function AlertDetailModal({ alert, onClose, onAcknowledge, onResolve }: {
 export default function AlertsPage() {
   const alertsData = useAlertsData();
   const alerts = alertsData.alerts;
-  const alertSummary = alertsData.alertSummary;
   const alertsByType = alertsData.alertsByType;
   const recentAlertFeed = alertsData.recentFeed;
-  const heatmapData = alertsData.heatmapData;
 
   // Local state for status mutations
   const [statusOverrides, setStatusOverrides] = useState<Record<string, AlertStatus>>({});
@@ -811,21 +705,11 @@ export default function AlertsPage() {
   // Dynamic summary counts based on effective alerts
   const activeEffective = effectiveAlerts.filter(a => a.status === 'active');
   const effectiveSummary = {
-    total: alertSummary.total,
     critical: activeEffective.filter(a => a.severity === 'critical').length,
     warning: activeEffective.filter(a => ['high', 'medium'].includes(a.severity)).length,
     info: activeEffective.filter(a => ['low', 'info'].includes(a.severity)).length,
     resolved: effectiveAlerts.filter(a => a.status === 'resolved').length,
   };
-
-  // Acknowledged panel — show all acknowledged (engine + user-acknowledged)
-  const acknowledgedAlerts = effectiveAlerts
-    .filter(a => a.status === 'acknowledged')
-    .map(a => ({
-      id: a.id, warehouse: a.warehouse, zone: a.zone, title: a.title,
-      acknowledgedBy: statusOverrides[a.id] ? 'You (Admin)' : 'Admin User',
-      acknowledgedAt: statusOverrides[a.id] ? 'Just now' : a.time,
-    }));
 
   // CSV export
   function handleExport() {
@@ -875,48 +759,40 @@ export default function AlertsPage() {
       <main className="flex-1 p-6 space-y-5 overflow-y-auto overflow-x-hidden">
 
         {/* ── Summary Cards ──────────────────────────────────────────────────── */}
-        <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <SummaryCard
-            label="Total Alerts"
-            value={effectiveSummary.total}
-            sub="Last 7 days"
+            label="Active Now"
+            value={activeEffective.length}
+            sub={activeEffective.length > 0 ? 'Need attention right now' : 'No active alerts'}
             iconBg="bg-blue-50"
             iconColor="text-blue-600"
             icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}
           />
           <SummaryCard
-            label="Critical Alerts"
+            label="Critical"
             value={effectiveSummary.critical}
-            sub={effectiveSummary.critical > 0 ? 'Immediate action required' : 'No critical alerts'}
+            sub={effectiveSummary.critical > 0 ? 'Sensor exceeded safe limit' : 'No critical issues'}
             iconBg="bg-red-50"
             iconColor="text-red-500"
-            valueColor="text-red-500"
+            valueColor={effectiveSummary.critical > 0 ? 'text-red-500' : undefined}
             icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>}
           />
           <SummaryCard
-            label="Warning Alerts"
+            label="Warnings"
             value={effectiveSummary.warning}
-            sub="Medium + High severity"
+            sub="Approaching safe threshold"
             iconBg="bg-amber-50"
             iconColor="text-amber-500"
-            valueColor="text-amber-600"
+            valueColor={effectiveSummary.warning > 0 ? 'text-amber-600' : undefined}
             icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
-          />
-          <SummaryCard
-            label="Info Alerts"
-            value={effectiveSummary.info}
-            sub="Informational events"
-            iconBg="bg-purple-50"
-            iconColor="text-purple-500"
-            icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>}
           />
           <SummaryCard
             label="Resolved"
             value={effectiveSummary.resolved}
-            sub={`${effectiveSummary.resolved} total resolved`}
+            sub="Confirmed fixed and closed"
             iconBg="bg-green-50"
             iconColor="text-green-600"
-            valueColor="text-green-600"
+            valueColor={effectiveSummary.resolved > 0 ? 'text-green-600' : undefined}
             icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>}
           />
         </section>
@@ -941,7 +817,7 @@ export default function AlertsPage() {
             {/* Severity filter */}
             <div className="relative">
               <select className={selectCls} value={severityF} onChange={(e) => { setSeverityF(e.target.value); resetPage(); }}>
-                <option value="all">All Severities</option>
+                <option value="all">Severity</option>
                 <option value="critical">Critical</option>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
@@ -954,7 +830,7 @@ export default function AlertsPage() {
             {/* Type filter */}
             <div className="relative">
               <select className={selectCls} value={typeF} onChange={(e) => { setTypeF(e.target.value as AlertParamType | 'all'); resetPage(); }}>
-                <option value="all">All Types</option>
+                <option value="all">Type</option>
                 <option value="temperature">Temperature</option>
                 <option value="humidity">Humidity</option>
                 <option value="moisture">Moisture</option>
@@ -969,7 +845,7 @@ export default function AlertsPage() {
             {/* Status filter */}
             <div className="relative">
               <select className={selectCls} value={statusF} onChange={(e) => { setStatusF(e.target.value as AlertStatus | 'all'); resetPage(); }}>
-                <option value="all">All Statuses</option>
+                <option value="all">Status</option>
                 <option value="active">Active</option>
                 <option value="acknowledged">Acknowledged</option>
                 <option value="resolved">Resolved</option>
@@ -980,39 +856,34 @@ export default function AlertsPage() {
 
             {/* Spacer */}
             <div className="ml-auto flex items-center gap-2">
-              {/* Alert Settings */}
+              {/* Settings — icon only */}
               <button
                 onClick={() => setShowSettings(true)}
-                className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+                title="Alert Settings"
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-700 flex items-center justify-center transition-colors"
               >
-                <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
-                Alert Settings
               </button>
-              {/* Export */}
+              {/* Export — icon only */}
               <button
                 onClick={handleExport}
+                title={exportSuccess ? 'Downloaded!' : 'Export as CSV'}
                 className={cn(
-                  'flex items-center gap-1.5 h-8 px-3 rounded-lg text-[11px] font-semibold active:scale-95 transition-all duration-150 shadow-sm',
+                  'w-8 h-8 rounded-lg flex items-center justify-center active:scale-95 transition-all duration-150',
                   exportSuccess
                     ? 'bg-green-600 text-white'
                     : 'bg-[#1f5135] text-white hover:bg-[#174028]',
                 )}
               >
                 {exportSuccess ? (
-                  <>
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    Downloaded!
-                  </>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    Export Alerts
-                  </>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
                 )}
               </button>
             </div>
@@ -1041,39 +912,31 @@ export default function AlertsPage() {
           <div className="flex flex-col gap-4 min-w-0">
             <AlertsByTypePanel alertsByType={alertsByType} />
             <RecentAlertsPanel recentAlertFeed={recentAlertFeed} />
-            <AcknowledgedPanel acknowledgedAlerts={acknowledgedAlerts} />
           </div>
         </section>
 
-        {/* ── Analytics Section ───────────────────────────────────────────────── */}
-        <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] gap-5">
-
-          {/* Alerts Trend */}
-          <Card className="p-5 min-w-0">
-            <div className="flex items-start justify-between mb-4">
-              <SectionLabel
-                title="Alerts Trend"
-                subtitle="7-day alert volume by severity"
-              />
-              <div className="flex items-center gap-3 flex-shrink-0">
-                {[
-                  { label: 'Critical', color: '#ef4444' },
-                  { label: 'Warning',  color: '#f59e0b' },
-                  { label: 'Info',     color: '#3b82f6' },
-                ].map((s) => (
-                  <span key={s.label} className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500">
-                    <span className="w-4 h-0.5 rounded-full" style={{ backgroundColor: s.color }} />
-                    {s.label}
-                  </span>
-                ))}
-              </div>
+        {/* ── Trend Chart ─────────────────────────────────────────────────────── */}
+        <Card className="p-5 min-w-0">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-[15px] font-bold text-gray-900">Alerts Trend</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">Daily alert count over the past 7 days · by severity level</p>
             </div>
-            <AlertsTrendChart />
-          </Card>
-
-          {/* Heatmap */}
-          <AlertHeatmap heatmapData={heatmapData} />
-        </section>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {[
+                { label: 'Critical', color: '#ef4444' },
+                { label: 'Warning',  color: '#f59e0b' },
+                { label: 'Info',     color: '#3b82f6' },
+              ].map((s) => (
+                <span key={s.label} className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500">
+                  <span className="w-4 h-0.5 rounded-full" style={{ backgroundColor: s.color }} />
+                  {s.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <AlertsTrendChart />
+        </Card>
 
       </main>
     </div>
