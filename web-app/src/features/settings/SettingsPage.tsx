@@ -1445,13 +1445,6 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
-            <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            <p className="text-[10.5px] text-blue-700 font-medium leading-snug">
-              All data syncs instantly to Firestore — mobile apps will see the new warehouse, zones, and sensors in real time.
-            </p>
-          </div>
-
           {createErr && (
             <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200">
               <svg className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1816,14 +1809,6 @@ function InfrastructureTab() {
       {wizardOpen && <AddWarehouseWizard onClose={() => setWizardOpen(false)} />}
 
       <div className="space-y-5">
-        {/* Sync banner */}
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
-          <svg className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          <p className="text-[11.5px] text-blue-700 font-medium leading-snug">
-            All changes sync automatically to Firestore — mobile apps and other devices see updates in real time.
-          </p>
-        </div>
-
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
