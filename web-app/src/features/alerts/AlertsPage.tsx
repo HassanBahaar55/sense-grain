@@ -684,6 +684,7 @@ export default function AlertsPage() {
     const iv = setInterval(() => setElapsedSec(Math.floor((Date.now() - lastCheckedAt) / 1000)), 1000);
     return () => clearInterval(iv);
   }, [lastCheckedAt]);
+  const lastCheckedTime = new Date(lastCheckedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const activeFilterCount = (filters.severity !== 'all' ? 1 : 0) + (filters.type !== 'all' ? 1 : 0) + (filters.status !== 'all' ? 1 : 0);
 
@@ -736,8 +737,8 @@ export default function AlertsPage() {
         )}>
           <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', activeEffective.length > 0 ? 'bg-amber-500' : 'bg-green-500 animate-pulse')} />
           {activeEffective.length > 0
-            ? `${activeEffective.length} active alert${activeEffective.length > 1 ? 's' : ''} detected — last sensor check ${elapsedSec < 5 ? 'just now' : `${elapsedSec}s ago`}`
-            : `All sensors normal — last checked ${elapsedSec < 5 ? 'just now' : `${elapsedSec}s ago`}`
+            ? `${activeEffective.length} active alert${activeEffective.length > 1 ? 's' : ''} detected — last sensor check ${elapsedSec < 5 ? 'just now' : `${elapsedSec}s ago`} · ${lastCheckedTime}`
+            : `All sensors normal — last checked ${elapsedSec < 5 ? 'just now' : `${elapsedSec}s ago`} · ${lastCheckedTime}`
           }
           <span className="ml-auto text-[10px] font-medium opacity-70">Sensors update every 10s · Alerts checked every 60s</span>
         </div>

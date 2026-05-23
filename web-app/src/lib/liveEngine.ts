@@ -242,8 +242,9 @@ export class LiveEngine {
             timestamp: Date.now(), resolved: false,
           };
           this.alerts.push(newAlert);
-          // Write to alertHistory immediately (not via queue) so it persists before next sync
+          // Write immediately to both collections — don't wait for the 2-min sync
           this.writeAlertHistory(newAlert, undefined);
+          this.writeActiveAlert(newAlert);
         }
       }
 
@@ -255,6 +256,7 @@ export class LiveEngine {
         );
         this.alertCooldown.set(cooldownKey, resolvedAt);
         this.writeAlertHistory({ ...dup, resolved: true }, resolvedAt);
+        this.deleteActiveAlert(dup.id);
       }
     }
 
@@ -280,8 +282,33 @@ export class LiveEngine {
         date:        new Date(alert.timestamp).toISOString().slice(0, 10),
         updatedAt:   serverTimestamp(),
       }, { merge: true });
+    } catch (err) {
+      // Log so we can diagnose Firestore rules issues
+      console.warn('[liveEngine] writeAlertHistory failed — check Firestore rules for alertHistory collection:', err);
+    }
+  }
+
+  // ── Immediate write/delete to live `alerts` collection ───────────────────────
+
+  private async writeActiveAlert(alert: LiveAlert) {
+    try {
+      const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const firebaseApp = (await import('@/config/firebase')).default;
+      const db = getFirestore(firebaseApp);
+      await setDoc(doc(db, 'alerts', alert.id), { ...alert, updatedAt: serverTimestamp() });
+    } catch (err) {
+      console.warn('[liveEngine] writeActiveAlert failed:', err);
+    }
+  }
+
+  private async deleteActiveAlert(alertId: string) {
+    try {
+      const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
+      const firebaseApp = (await import('@/config/firebase')).default;
+      const db = getFirestore(firebaseApp);
+      await deleteDoc(doc(db, 'alerts', alertId));
     } catch {
-      // Non-fatal — will retry on next sync
+      // Non-fatal
     }
   }
 
