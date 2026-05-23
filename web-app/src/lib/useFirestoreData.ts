@@ -17,7 +17,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   getFirestore,
   collection, doc,
-  onSnapshot, query, orderBy, limit,
+  onSnapshot, query, orderBy, limit, where,
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
@@ -370,13 +370,16 @@ export function useFirestoreAnalytics(): AnalyticsData {
     const humStability  = Math.max(50, Math.round(100 - Math.max(0, avgHum - 60) * 2.5));
     const spoilRisk     = +(Math.max(1, Math.min(15, 15 - goodPct / 10)).toFixed(1));
 
+    const avgCap = active.length
+      ? Math.round(active.reduce((s, w) => s + (w.usedPct ?? 0), 0) / active.length)
+      : 68;
+
     const kpis: AnalyticsKPI[] = [
-      { label: 'Temp Stability',     value: tempStability, unit: '%', delta: `${tempStability > 80 ? '+' : ''}${(tempStability - 78).toFixed(1)}%`, trend: tempStability > 80 ? 'up' : 'down',   colorKey: 'amber'  },
-      { label: 'Humidity Stability', value: humStability,  unit: '%', delta: '+1.2%',     trend: humStability > 80 ? 'up' : 'stable', colorKey: 'blue'   },
-      { label: 'Storage Efficiency', value: Math.round(goodPct),      unit: '%', delta: '+2.1%', trend: 'up',    colorKey: 'green'  },
-      { label: 'AI Accuracy',        value: 94,            unit: '%', delta: '+0.3%',     trend: 'stable',                           colorKey: 'purple' },
-      { label: 'Spoilage Risk',      value: spoilRisk,     unit: '%', delta: '-0.8%',     trend: 'down',    invertedTrend: true,     colorKey: 'red'    },
-      { label: 'Sensor Health',      value: 92,            unit: '%', delta: '+0.5%',     trend: 'up',                               colorKey: 'teal'   },
+      { label: 'Temp Stability',      value: tempStability, unit: '%', delta: `${tempStability > 80 ? '+' : ''}${(tempStability - 78).toFixed(1)}%`, trend: tempStability > 80 ? 'up' : 'down',   colorKey: 'amber'  },
+      { label: 'Humidity Stability',  value: humStability,  unit: '%', delta: '+1.2%', trend: humStability > 80 ? 'up' : 'stable', colorKey: 'blue'   },
+      { label: 'Capacity Utilization', value: avgCap,        unit: '%', delta: '+1.3%', trend: 'up',                               colorKey: 'green'  },
+      { label: 'Spoilage Risk',        value: spoilRisk,     unit: '%', delta: '-0.8%', trend: 'down', invertedTrend: true,        colorKey: 'red'    },
+      { label: 'Sensor Health',        value: 92,            unit: '%', delta: '+0.5%', trend: 'up',                               colorKey: 'teal'   },
     ];
 
     const today = new Date();
@@ -549,8 +552,8 @@ export function useFirestoreParamTrend(): ParamTrendPoint[] {
 
 // ─── Alert trend + env trend + WH performance (used by monitor/analytics) ────
 
-export function useFirestoreAlertTrend(): AlertTrendPoint[] {
-  const history = useSensorHistory(7);
+export function useFirestoreAlertTrend(days: 7 | 30 = 7): AlertTrendPoint[] {
+  const history = useSensorHistory(days);
   const today = new Date();
   return history.length > 0
     ? history.map(h => ({
@@ -559,7 +562,7 @@ export function useFirestoreAlertTrend(): AlertTrendPoint[] {
         Warning:  h.alertCounts.Warning,
         Info:     h.alertCounts.Info,
       }))
-    : Array.from({ length: 7 }, (_, i) => ({ day: dayLabel(addDays(today, i - 6)), Critical: 0, Warning: 2, Info: 8 }));
+    : Array.from({ length: days }, (_, i) => ({ day: dayLabel(addDays(today, i - (days - 1))), Critical: 0, Warning: 2, Info: 8 }));
 }
 
 export function useFirestoreEnvTrend(): EnvTrendPoint[] {
@@ -587,6 +590,43 @@ export function useFirestoreWhPerformance(): WHPerformancePoint[] {
       Stability:   Math.max(40, Math.round(100 - (wh.status === 'high' ? 35 : wh.status === 'medium' ? 18 : 6))),
       Utilization: wh.usedPct,
     })), [readings]);
+}
+
+// ─── Alert History ────────────────────────────────────────────────────────────
+
+export interface AlertHistoryItem {
+  id:          string;
+  warehouseId: string;
+  param:       string;
+  severity:    'critical' | 'high' | 'medium';
+  message:     string;
+  value:       number;
+  unit:        string;
+  threshold:   number;
+  triggeredAt: number;
+  resolvedAt:  number | null;
+  date:        string;
+  resolved:    boolean;
+}
+
+export function useAlertHistory(days: number): AlertHistoryItem[] {
+  const [items, setItems] = useState<AlertHistoryItem[]>([]);
+
+  useEffect(() => {
+    const since = Date.now() - days * 24 * 60 * 60 * 1000;
+    const q = query(
+      collection(db, 'alertHistory'),
+      where('triggeredAt', '>=', since),
+      orderBy('triggeredAt', 'desc'),
+      limit(200),
+    );
+    const unsub = onSnapshot(q, snap => {
+      setItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as AlertHistoryItem)));
+    }, () => { /* offline — keep previous */ });
+    return unsub;
+  }, [days]);
+
+  return items;
 }
 
 export function useFirestoreStability(days: number): StabilityPoint[] {

@@ -1,12 +1,56 @@
-node_modules/
-android/
-ios/
-.gradle/
-.bundle/
-vendor/bundle/
-*.keystore
-*.mobileprovision
-.env
-coverage/
+# OSX
+.DS_Store
+
+# Xcode
 build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+**/.xcode.env.local
+
+# Android/IntelliJ
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+.kotlin/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment and secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ruby / CocoaPods
+**/Pods/
+/vendor/bundle/
+
+# React Native
+*.jsbundle
+.bundle/
+.metro-health-check*
+
+# Test and build output
+coverage/
 dist/

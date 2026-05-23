@@ -1,13 +1,18 @@
 import React from 'react';
-import {SafeAreaView, StatusBar, Text, View} from 'react-native';
+import {StatusBar} from 'react-native';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+
+import {AuthProvider} from './AuthProvider';
+import {RootNavigator} from '../navigation/RootNavigator';
+import {colors} from '../theme/tokens';
 
 export default function App() {
   return (
-    <SafeAreaView>
-      <StatusBar barStyle="dark-content" />
-      <View>
-        <Text>Sense Grain</Text>
-      </View>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

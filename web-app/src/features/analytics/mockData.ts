@@ -18,8 +18,7 @@ export interface AnalyticsKPI {
 export const analyticsKPIs: AnalyticsKPI[] = [
   { label: 'Temp Stability',     value: 87.4, unit: '%', delta: '+2.1%', trend: 'up',     colorKey: 'amber'  },
   { label: 'Humidity Stability', value: 82.1, unit: '%', delta: '0.0%',  trend: 'stable', colorKey: 'blue'   },
-  { label: 'Storage Efficiency', value: 91.6, unit: '%', delta: '+1.3%', trend: 'up',     colorKey: 'green'  },
-  { label: 'AI Accuracy',        value: 96.3, unit: '%', delta: '+0.2%', trend: 'stable', colorKey: 'purple' },
+  { label: 'Capacity Utilization', value: 68.0, unit: '%', delta: '+1.3%', trend: 'up',     colorKey: 'green'  },
   { label: 'Spoilage Risk',      value: 4.2,  unit: '%', delta: '-0.8%', trend: 'down',   colorKey: 'red',   invertedTrend: true },
   { label: 'Sensor Health',      value: 94.8, unit: '%', delta: '+0.5%', trend: 'up',     colorKey: 'teal'   },
 ];
