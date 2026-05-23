@@ -1201,13 +1201,6 @@ function InfraFooter({ onClose, onSave, saving, label }: {
 
 type WizardStep = 1 | 2 | 3;
 interface WizardZone { name: string; }
-interface WizardSensor { type: SensorType; name: string; }
-
-const DEFAULT_SENSORS_PRESET: WizardSensor[] = [
-  { type: 'temperature', name: 'Temperature Sensor' },
-  { type: 'humidity',    name: 'Humidity Sensor'    },
-  { type: 'moisture',    name: 'Moisture Sensor'    },
-];
 
 function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   const [step, setStep]     = useState<WizardStep>(1);
@@ -1223,9 +1216,6 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
 
   // Step 2 fields — zones
   const [zones, setZones] = useState<WizardZone[]>([{ name: 'Zone 1' }, { name: 'Zone 2' }, { name: 'Zone 3' }]);
-
-  // Step 3 — sensors option
-  const [defaultSensors, setDefaultSensors] = useState(true);
 
   const addZoneEntry   = () => setZones(z => [...z, { name: `Zone ${z.length + 1}` }]);
   const removeZone     = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
@@ -1254,15 +1244,10 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
       const whRef = await addWarehouse(whPayload);
       const whId  = whRef.id;
 
-      // 2. Create zones + sensors sequentially
+      // 2. Create zones (no sensors — user adds them manually per zone)
       for (const z of zones) {
         if (!z.name.trim()) continue;
-        const zRef = await addZone({ warehouseId: whId, name: z.name.trim(), status: whStatus });
-        if (defaultSensors && whStatus === 'active') {
-          for (const s of DEFAULT_SENSORS_PRESET) {
-            await addSensor({ zoneId: zRef.id, warehouseId: whId, name: s.name, type: s.type, status: 'active' });
-          }
-        }
+        await addZone({ warehouseId: whId, name: z.name.trim(), status: whStatus });
       }
       onClose();
     } catch (err) {
@@ -1395,33 +1380,9 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Step 3 — sensors + review */}
+      {/* Step 3 — review */}
       {step === 3 && (
         <div className="space-y-4">
-          {/* Default sensor toggle */}
-          {whStatus === 'active' && (
-            <div
-              className={cn(
-                'flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all',
-                defaultSensors ? 'border-[#1f5135] bg-green-50' : 'border-gray-200 bg-gray-50',
-              )}
-              onClick={() => setDefaultSensors(v => !v)}
-            >
-              <div className={cn(
-                'w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all',
-                defaultSensors ? 'border-[#1f5135] bg-[#1f5135]' : 'border-gray-300',
-              )}>
-                {defaultSensors && (
-                  <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                )}
-              </div>
-              <div>
-                <p className="text-[12px] font-bold text-gray-800">Add default sensors to all zones</p>
-                <p className="text-[10px] text-gray-500 mt-0.5">Temperature, Humidity, Moisture — 3 sensors × {zones.length} zones = {zones.length * 3} sensors total</p>
-              </div>
-            </div>
-          )}
-
           {/* Review summary */}
           <div className="bg-gray-50 rounded-xl p-4 space-y-3 text-[12px]">
             <p className="font-bold text-gray-700 text-[13px]">Review</p>
@@ -1437,12 +1398,14 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
               <span className="text-gray-400">Zones</span>
               <span className="font-semibold text-gray-800">{zones.length} ({zones.map(z => z.name).join(', ')})</span>
               <span className="text-gray-400">Sensors</span>
-              <span className="font-semibold text-gray-800">
-                {defaultSensors && whStatus === 'active'
-                  ? `${zones.length * 3} (temp, humidity, moisture per zone)`
-                  : 'None — add manually later'}
-              </span>
+              <span className="font-semibold text-gray-500">0 — add manually per zone after creation</span>
             </div>
+          </div>
+
+          {/* Hint */}
+          <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
+            <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <p className="text-[11px] text-blue-700 leading-snug">After creating the warehouse, expand each zone in the Infrastructure tab and use <strong>+ Add Sensor</strong> to install sensors manually.</p>
           </div>
 
           {createErr && (
