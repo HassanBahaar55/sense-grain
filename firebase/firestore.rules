@@ -2,6 +2,7 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
@@ -19,6 +20,58 @@ service cloud.firestore {
     match /storageBins/{storageBinId} {
       allow read: if request.auth != null;
       allow write: if false;
+    }
+
+    // Sensor simulation writes from authenticated web client
+    match /warehouseReadings/{warehouseId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Alerts written by authenticated web client
+    match /alerts/{alertId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Historical sensor snapshots (seeded on first login, appended daily)
+    match /sensorHistory/{dateKey} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Reports written by authenticated user or seeder
+    match /reports/{reportId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Report metadata (stats, trend, type breakdown)
+    match /reportsMeta/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Seeding marker — prevents re-seeding on every login
+    match /meta/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Storage management — warehouses, zones, sensors (user-managed)
+    match /storageWarehouses/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    match /storageZones/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    match /storageSensors/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
     }
 
     match /{document=**} {

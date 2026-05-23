@@ -61,6 +61,9 @@ mobile-app/ios/**/xcuserdata/
 web-app/.next/
 web-app/out/
 
+# Claude Code memory (local only)
+.claude/
+
 # OS and editor files
 .DS_Store
 Thumbs.db
@@ -68,3 +71,5 @@ Desktop.ini
 .idea/
 *.swp
 *.swo
+
+.vercel
