@@ -4,7 +4,6 @@ import { useState, useMemo } from 'react';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { PredictionForecastChart } from '@/components/charts/PredictionForecastChart';
-import { RiskForecastChart } from '@/components/charts/RiskForecastChart';
 import {
   forecastSeries,
   type TrendDir,
@@ -409,68 +408,128 @@ function WarehouseForecastsTab({ timeframe, warehouse }: { timeframe: Timeframe;
 }
 
 // ─── Tab: Risk Forecast ───────────────────────────────────────────────────────
+// Shows per-warehouse spoilage risk based on live sensor readings.
+// Spoilage risk = weighted score from temp (40%), humidity (28%), moisture (22%), CO₂ (10%).
+// This tells grain managers WHICH warehouse needs action and WHY.
 
 function RiskForecastTab() {
-  const { riskForecastData } = usePredictionsData();
-  const lastDay = riskForecastData[riskForecastData.length - 1];
+  const { whPredTable } = usePredictionsData();
+  const { readings }    = useLiveData();
+
+  // Sort by spoilage risk descending so highest-risk warehouses appear first
+  const sorted = [...whPredTable].sort((a, b) => b.spoilage30d - a.spoilage30d);
+
+  const riskBars: Record<string, number> = { low: 0, medium: 0, high: 0 };
+  for (const row of whPredTable) {
+    if (row.overallRisk === 'low') riskBars.low++;
+    else if (row.overallRisk === 'medium') riskBars.medium++;
+    else if (row.overallRisk === 'high') riskBars.high++;
+  }
+  const total = whPredTable.length || 1;
 
   return (
-    <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,280px)] gap-5">
-      <Card className="p-5 min-w-0">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h2 className="text-[15px] font-bold text-gray-900">Risk Level Forecast</h2>
-            <p className="text-xs text-gray-400 mt-0.5">7-day projected zone risk distribution</p>
-          </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {[{ l: 'Low', c: '#22c55e' }, { l: 'Medium', c: '#f59e0b' }, { l: 'High', c: '#ef4444' }].map((s) => (
-              <span key={s.l} className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500">
-                <span className="w-4 h-0.5 rounded-full" style={{ backgroundColor: s.c }} />{s.l}
-              </span>
-            ))}
-          </div>
-        </div>
-        <RiskForecastChart />
-      </Card>
-
-      <Card className="p-5 min-w-0">
-        <h2 className="text-[15px] font-bold text-gray-900 mb-4">Risk Projection</h2>
-        <div className="space-y-4">
-          {[
-            { label: 'Low Risk Zones',    key: 'Low',    color: 'bg-green-400', text: 'text-green-700', bg: 'bg-green-50', val: lastDay.Low    },
-            { label: 'Medium Risk Zones', key: 'Medium', color: 'bg-amber-400', text: 'text-amber-700', bg: 'bg-amber-50', val: lastDay.Medium  },
-            { label: 'High Risk Zones',   key: 'High',   color: 'bg-red-400',   text: 'text-red-600',   bg: 'bg-red-50',   val: lastDay.High   },
-          ].map((item) => (
-            <div key={item.key} className={cn('p-3.5 rounded-xl', item.bg)}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold text-gray-700">{item.label}</span>
-                <span className={cn('text-[18px] font-bold', item.text)}>{item.val.toFixed(1)}%</span>
-              </div>
-              <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
-                <div className={cn('h-full rounded-full', item.color)} style={{ width: `${item.val}%` }} />
-              </div>
-              <p className="text-[9px] text-gray-500 mt-1 font-medium">Projected · 7-day outlook</p>
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <section className="grid grid-cols-3 gap-4">
+        {[
+          { label: 'Safe Warehouses',      count: riskBars.low,    bg: 'bg-green-50', text: 'text-green-700', bar: 'bg-green-500', desc: 'Spoilage risk < 20%' },
+          { label: 'Needs Monitoring',     count: riskBars.medium, bg: 'bg-amber-50', text: 'text-amber-700', bar: 'bg-amber-400', desc: 'Spoilage risk 20–40%' },
+          { label: 'Action Required',      count: riskBars.high,   bg: 'bg-red-50',   text: 'text-red-600',   bar: 'bg-red-500',   desc: 'Spoilage risk > 40%' },
+        ].map(item => (
+          <Card key={item.label} className={cn('p-4', item.bg)}>
+            <p className={cn('text-[28px] font-bold', item.text)}>{item.count}</p>
+            <p className="text-[11px] font-bold text-gray-700 mt-0.5">{item.label}</p>
+            <p className="text-[9px] text-gray-400 mt-0.5">{item.desc}</p>
+            <div className="h-1 bg-white/60 rounded-full mt-2 overflow-hidden">
+              <div className={cn('h-full rounded-full', item.bar)} style={{ width: `${(item.count / total) * 100}%` }} />
             </div>
-          ))}
+          </Card>
+        ))}
+      </section>
 
-          <div className="pt-2 border-t border-gray-100">
-            <p className="text-[11px] font-bold text-gray-700 mb-2">7-Day Risk Change</p>
-            <div className="space-y-1.5">
-              {[
-                { label: 'Low Risk',    delta: `${(riskForecastData[6].Low    - riskForecastData[0].Low).toFixed(1)}%`,    col: 'text-red-600'   },
-                { label: 'Medium Risk', delta: `+${(riskForecastData[6].Medium - riskForecastData[0].Medium).toFixed(1)}%`, col: 'text-amber-600' },
-                { label: 'High Risk',   delta: `+${(riskForecastData[6].High   - riskForecastData[0].High).toFixed(1)}%`,   col: 'text-red-600'   },
-              ].map((r) => (
-                <div key={r.label} className="flex items-center justify-between">
-                  <span className="text-[10px] text-gray-500 font-medium">{r.label}</span>
-                  <span className={cn('text-[11px] font-bold', r.col)}>{r.delta}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Per-warehouse risk table */}
+      <Card className="p-5 min-w-0 overflow-hidden">
+        <div className="mb-4">
+          <h2 className="text-[15px] font-bold text-gray-900">Spoilage Risk — Per Warehouse</h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Live assessment · Risk = weighted score from Temperature (40%), Humidity (28%), Moisture (22%), CO₂ (10%)
+          </p>
         </div>
+        <div className="overflow-x-auto rounded-xl ring-1 ring-gray-200">
+          <table className="w-full text-[11px] whitespace-nowrap">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                {['Warehouse', 'Spoilage Risk', 'Risk Level', 'Temp (°C)', 'Humidity (%)', 'Moisture (%)', 'CO₂ (ppm)', 'Trend'].map(h => (
+                  <th key={h} className="px-3 py-2.5 text-left font-bold text-gray-500 uppercase tracking-wide text-[9px]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sorted.map(row => {
+                const rc   = riskConfig[row.overallRisk];
+                const live = readings[row.id];
+                const risk = row.spoilage30d;
+                const riskColor = risk >= 40 ? 'text-red-600' : risk >= 20 ? 'text-amber-600' : 'text-green-700';
+                const barColor  = risk >= 40 ? 'bg-red-500'  : risk >= 20 ? 'bg-amber-400'  : 'bg-green-500';
+                return (
+                  <tr key={row.id} className={cn(
+                    'hover:bg-gray-50/80 transition-colors',
+                    row.overallRisk === 'high' ? 'bg-red-50/30' : '',
+                  )}>
+                    <td className="px-3 py-3">
+                      <p className="font-bold text-gray-800">{row.name}</p>
+                      <p className="text-[9px] text-gray-400 font-mono">{row.id}</p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden flex-shrink-0">
+                          <div className={cn('h-full rounded-full', barColor)} style={{ width: `${risk}%` }} />
+                        </div>
+                        <span className={cn('font-bold tabular-nums', riskColor)}>{risk}%</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className={cn('text-[9px] font-bold px-2 py-0.5 rounded-full', rc.badge)}>{rc.label}</span>
+                    </td>
+                    <td className={cn('px-3 py-3 font-bold tabular-nums',
+                      live && live.temperature >= 32 ? 'text-red-600' :
+                      live && live.temperature >= 29 ? 'text-amber-600' : 'text-gray-700',
+                    )}>
+                      {live ? live.temperature.toFixed(1) : row.tempForecast.toFixed(1)}
+                    </td>
+                    <td className={cn('px-3 py-3 font-semibold tabular-nums',
+                      live && live.humidity >= 72 ? 'text-red-600' :
+                      live && live.humidity >= 65 ? 'text-amber-600' : 'text-gray-700',
+                    )}>
+                      {live ? live.humidity : row.humForecast}%
+                    </td>
+                    <td className={cn('px-3 py-3 font-semibold tabular-nums',
+                      live && live.moisture >= 15 ? 'text-red-600' :
+                      live && live.moisture >= 13 ? 'text-amber-600' : 'text-gray-700',
+                    )}>
+                      {live ? live.moisture.toFixed(1) : row.moistForecast.toFixed(1)}%
+                    </td>
+                    <td className={cn('px-3 py-3 font-semibold tabular-nums',
+                      live && live.co2 >= 650 ? 'text-red-600' :
+                      live && live.co2 >= 550 ? 'text-amber-600' : 'text-gray-700',
+                    )}>
+                      {live ? live.co2 : row.co2Forecast}
+                    </td>
+                    <td className="px-3 py-3">
+                      <TrendIcon trend={row.trend} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-3">
+          Action threshold: Spoilage Risk &gt; 40% requires immediate ventilation or temperature control.
+          Risk &gt; 20% should be monitored daily.
+        </p>
       </Card>
-    </section>
+    </div>
   );
 }
 
@@ -491,44 +550,14 @@ export default function PredictionsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('params');
   const [timeframe, setTimeframe] = useState<Timeframe>('7D');
   const [warehouse, setWarehouse] = useState('All Warehouses');
-  const [isRunning, setIsRunning] = useState(false);
-  const [runToast,  setRunToast]  = useState<{ timeframe: string; warehouse: string } | null>(null);
-
-  function handleRunPrediction() {
-    if (isRunning) return;
-    setIsRunning(true);
-    setRunToast(null);
-    setTimeout(() => {
-      setIsRunning(false);
-      setRunToast({ timeframe, warehouse });
-      setTimeout(() => setRunToast(null), 4000);
-    }, 2500);
-  }
 
   const selectCls = 'h-8 pl-2.5 pr-7 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 transition-colors appearance-none cursor-pointer';
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
-      {/* Run Prediction toast */}
-      {runToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 bg-white rounded-2xl shadow-xl ring-1 ring-black/[0.08] px-5 py-4 max-w-sm animate-in slide-in-from-bottom-4 duration-300">
-          <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
-          </div>
-          <div className="min-w-0">
-            <p className="text-[13px] font-black text-gray-900">Forecast Updated</p>
-            <p className="text-[11px] text-gray-500 mt-0.5">{runToast.timeframe} · {runToast.warehouse}</p>
-            <p className="text-[10.5px] text-[#1f5135] font-semibold mt-1">Predictions refreshed from live data</p>
-          </div>
-          <button onClick={() => setRunToast(null)} className="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-gray-500 flex-shrink-0">
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-      )}
-
       <DashboardHeader
         title="Predictions"
-        subtitle="AI-powered forecasts for all environmental parameters and overall risk"
+        subtitle="Sensor-based forecasts for environmental parameters and spoilage risk"
       />
 
       <main className="flex-1 p-6 space-y-5 overflow-y-auto overflow-x-hidden">
@@ -562,7 +591,7 @@ export default function PredictionsPage() {
               <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
             </div>
 
-            {/* Timeframe pills */}
+            {/* Timeframe pills — controls how many days of history + how far ahead to forecast */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
               {TIMEFRAMES.map((t) => (
                 <button
@@ -577,29 +606,9 @@ export default function PredictionsPage() {
                 </button>
               ))}
             </div>
-
-            <div className="ml-auto">
-              <button
-                onClick={handleRunPrediction}
-                disabled={isRunning}
-                className={cn(
-                  'flex items-center gap-1.5 h-8 px-4 rounded-lg text-white text-[11px] font-semibold transition-all shadow-sm',
-                  isRunning ? 'bg-[#1f5135]/70 cursor-not-allowed' : 'bg-[#1f5135] hover:bg-[#174028] active:scale-95',
-                )}
-              >
-                {isRunning ? (
-                  <>
-                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-                    Run Prediction
-                  </>
-                )}
-              </button>
-            </div>
+            <span className="text-[10px] text-gray-400 hidden sm:block">
+              {timeframe} history + {timeframe === '24H' || timeframe === '3D' ? '3' : '7'}-day forecast ahead
+            </span>
           </div>
         </Card>
 

@@ -42,19 +42,15 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     // Delete alertHistory + resolved alerts older than 7 days
     cleanupOldAlerts().catch(() => {});
 
-    // Track whether we have pre-loaded Firestore alerts into the engine
-    let alertsBootstrapped = false;
+    // Track bootstrap state for both readings and alerts
+    let alertsBootstrapped   = false;
+    let readingsBootstrapped = false;
 
     // 2. Drive local UI from simulation directly (smooth, instant updates)
-    //    During the warmup window (first 4 ticks / ~40s), don't let the engine
-    //    overwrite alerts with an empty array — Firestore alerts are authoritative
-    //    until the engine has had time to evaluate its own threshold checks.
+    //    During the warmup window, don't let the engine overwrite Firestore state.
     const unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
       setReadings({ ...newReadings });
       setLiveAlerts(prev => {
-        // Before Firestore has responded, NEVER let the engine overwrite UI alerts.
-        // Engine tick 1 is skipped, but ticks 2-5 could still arrive before Firestore
-        // if network is slow — keep prev (Firestore state) until bootstrap is confirmed.
         if (!alertsBootstrapped) return prev;
         return [...newAlerts];
       });
@@ -68,6 +64,13 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
         setReadings(firestoreReadings);
         setTick(t => t + 1);
         setLiveOverride(firestoreReadings);
+        // Sync engine's internal sensor state from Firestore ONCE on startup.
+        // This ensures alert checks at tick 6 use actual last-known values, not
+        // random init values — prevents spurious alert resolution after refresh.
+        if (!readingsBootstrapped) {
+          liveEngine.loadPersistedReadings(firestoreReadings as Record<string, import('@/lib/liveEngine').LiveSensorReading>);
+          readingsBootstrapped = true;
+        }
       }
     });
 

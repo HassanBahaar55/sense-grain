@@ -59,14 +59,27 @@ function CustomTooltip({ active, payload, label }: {
   if (!active || !payload?.length) return null;
   const visible = payload.filter(e => e.value != null);
   if (!visible.length) return null;
+  // At the transition point (today), both historical and forecast entries exist.
+  // Remove forecast duplicates when a historical entry for the same series is present.
+  const deduped = visible.filter(entry => {
+    if (!entry.name?.includes('(Forecast)')) return true;
+    const baseName = entry.name.replace(' (Forecast)', '');
+    return !visible.some(e => e.name === baseName);
+  });
+  const isForecastOnly = deduped.every(e => e.name?.includes('(Forecast)'));
   return (
     <div className="bg-white rounded-xl shadow-lg ring-1 ring-black/[0.08] p-3 min-w-[160px]">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{label}</p>
-      {visible.map((entry, i) => (
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+      {isForecastOnly && (
+        <p className="text-[9px] text-blue-400 font-semibold mb-1.5">Forecast</p>
+      )}
+      {deduped.map((entry, i) => (
         <div key={i} className="flex items-center justify-between gap-4 py-[2px]">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
-            <span className="text-[11px] text-gray-600">{entry.name}</span>
+            <span className="text-[11px] text-gray-600">
+              {entry.name?.replace(' (Forecast)', '') ?? entry.name}
+            </span>
           </div>
           <span className="text-[11px] font-bold text-gray-800">{entry.value}</span>
         </div>

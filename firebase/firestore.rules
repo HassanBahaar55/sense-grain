@@ -52,6 +52,12 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Permanent alert audit log — written on alert fire/resolve, kept 7 days
+    match /alertHistory/{alertId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
     // Seeding marker — prevents re-seeding on every login
     match /meta/{docId} {
       allow read:  if request.auth != null;

@@ -378,6 +378,31 @@ export class LiveEngine {
       }
     }
   }
+
+  /**
+   * Sync engine sensor state from Firestore readings.
+   * Must be called before the first checkAlerts tick so alert resolution
+   * decisions are based on the actual last-known sensor values, not random init.
+   */
+  loadPersistedReadings(firestoreReadings: Record<string, LiveSensorReading>) {
+    for (const [id, r] of Object.entries(firestoreReadings)) {
+      if (this.readings[id] && r.temperature != null) {
+        this.readings[id] = {
+          ...this.readings[id],
+          temperature:  r.temperature,
+          humidity:     r.humidity,
+          moisture:     r.moisture,
+          co2:          r.co2,
+          aqi:          r.aqi,
+          capacity:     r.capacity,
+          spoilageRisk: r.spoilageRisk,
+          health:       r.health,
+          status:       r.status,
+          trend:        r.trend,
+        };
+      }
+    }
+  }
 }
 
 // Singleton — one engine for the whole app
