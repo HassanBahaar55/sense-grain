@@ -5,14 +5,20 @@ import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { ParameterTrendsChart } from '@/components/charts/ParameterTrendsChart';
 import {
   monitorWarehouses,
-  zoneData,
   trendSeries,
   realtimeMetrics,
   type WarehouseOnlineStatus,
   type ZoneStatus,
   type ZoneReading,
 } from './mockData';
-import { useWarehouses, type ManagedWarehouse } from '@/lib/storageManagement';
+import {
+  useWarehouses,
+  useZones,
+  useSensorsForWarehouse,
+  type ManagedWarehouse,
+  type ManagedZone,
+  type ManagedSensor,
+} from '@/lib/storageManagement';
 import { useLiveData } from '@/contexts/LiveDataContext';
 import type { LiveSensorReading } from '@/lib/liveEngine';
 import { cn } from '@/lib/utils';
@@ -25,13 +31,17 @@ const T = {
   moisture: { safe: 13, warn: 14 },
 };
 
-// ─── Per-zone offsets (distributed from warehouse-level reading) ──────────────
+// ─── Per-zone offsets — cycles for any number of zones ───────────────────────
 
 const ZONE_OFFSETS = [
   { temp: -0.6, humidity: -3, moisture: -0.3 },
   { temp: +0.8, humidity: +2, moisture: +0.4 },
   { temp: -0.2, humidity: -1, moisture: -0.1 },
   { temp: +0.5, humidity: +1, moisture: +0.2 },
+  { temp: +1.1, humidity: +3, moisture: +0.5 },
+  { temp: -0.4, humidity: -2, moisture: -0.2 },
+  { temp: +0.3, humidity:  0, moisture: +0.1 },
+  { temp: -0.9, humidity: -4, moisture: -0.5 },
 ];
 
 // ─── Temperature unit hook ────────────────────────────────────────────────────
@@ -102,17 +112,44 @@ function zoneStatus(temp: number | null, humidity: number | null, moisture: numb
   return 'good';
 }
 
-function computeLiveZones(effectiveMockId: string, readings: Record<string, LiveSensorReading>): ZoneReading[] {
-  const baseZones  = zoneData[effectiveMockId] ?? [];
-  const whReading  = readings[effectiveMockId];
-  if (!whReading) return baseZones;
+/**
+ * Build ZoneReading cards from Firestore zones + live engine reading.
+ * Works for any number of zones — ZONE_OFFSETS cycles via modulo.
+ * If liveReading is null (no liveEngineId linked), zones show as offline.
+ */
+function buildZoneReadings(
+  fsZones: ManagedZone[],
+  fsSensors: ManagedSensor[],
+  liveReading: LiveSensorReading | null,
+): ZoneReading[] {
+  return fsZones.map((zone, i) => {
+    const activeSensors = fsSensors.filter(s => s.zoneId === zone.id && s.status !== 'faulty');
+    const sensorLabel   = `S${i + 1}`;
 
-  return baseZones.map((z, i) => {
-    const off      = ZONE_OFFSETS[i] ?? { temp: 0, humidity: 0, moisture: 0 };
-    const temp     = +(whReading.temperature + off.temp).toFixed(1);
-    const humidity = Math.round(whReading.humidity + off.humidity);
-    const moisture = +(whReading.moisture + off.moisture).toFixed(1);
-    return { ...z, temp, humidity, moisture, co2: whReading.co2, aqi: whReading.aqi, status: zoneStatus(temp, humidity, moisture) };
+    if (!liveReading || activeSensors.length === 0) {
+      return {
+        id: sensorLabel,
+        label: zone.name,
+        bay: zone.name,
+        temp: null, humidity: null, moisture: null, co2: null, aqi: null,
+        status: 'offline',
+      };
+    }
+
+    const off      = ZONE_OFFSETS[i % ZONE_OFFSETS.length];
+    const temp     = +(liveReading.temperature + off.temp).toFixed(1);
+    const humidity = Math.round(liveReading.humidity + off.humidity);
+    const moisture = +(liveReading.moisture + off.moisture).toFixed(1);
+
+    return {
+      id: sensorLabel,
+      label: zone.name,
+      bay: zone.name,
+      temp, humidity, moisture,
+      co2: liveReading.co2,
+      aqi: liveReading.aqi,
+      status: zoneStatus(temp, humidity, moisture),
+    };
   });
 }
 
@@ -120,6 +157,49 @@ function avg(zones: ZoneReading[], key: keyof ZoneReading): number | null {
   const active = zones.filter(z => z.status !== 'offline' && z[key] !== null);
   if (!active.length) return null;
   return active.reduce((s, z) => s + (z[key] as number), 0) / active.length;
+}
+
+// ─── Dropdown entry type ──────────────────────────────────────────────────────
+
+type DropdownEntry = {
+  id: string;           // selection key (mock ID or Firestore ID)
+  fsId: string | null;  // Firestore warehouse document ID
+  name: string;
+  status: WarehouseOnlineStatus;
+  isUserWarehouse: boolean;
+  hasData: boolean;
+  canSelect: boolean;
+};
+
+function buildDropdownList(firestoreWarehouses: ManagedWarehouse[]): DropdownEntry[] {
+  // Mock warehouses — replaced by Firestore name if a warehouse is linked to them
+  const entries: DropdownEntry[] = monitorWarehouses.map(mw => {
+    const fsWh = firestoreWarehouses.find(fw => fw.liveEngineId === mw.id);
+    return {
+      id: mw.id,
+      fsId: fsWh?.id ?? null,
+      name: fsWh?.name ?? mw.name,
+      status: mw.status,
+      isUserWarehouse: !!fsWh,
+      hasData: true,
+      canSelect: mw.status !== 'offline',
+    };
+  });
+
+  // Firestore warehouses with no liveEngineId — separate from mock list
+  for (const fw of firestoreWarehouses.filter(fw => !fw.liveEngineId)) {
+    entries.push({
+      id: fw.id,
+      fsId: fw.id,
+      name: fw.name,
+      status: 'offline',
+      isUserWarehouse: true,
+      hasData: false,
+      canSelect: true,
+    });
+  }
+
+  return entries;
 }
 
 // ─── Live clock ───────────────────────────────────────────────────────────────
@@ -135,38 +215,7 @@ function LiveClock() {
   return <span suppressHydrationWarning className="tabular-nums">{t}</span>;
 }
 
-// ─── Unified dropdown ─────────────────────────────────────────────────────────
-
-type DropdownEntry = {
-  id: string;
-  name: string;
-  status: WarehouseOnlineStatus;
-  isUserWarehouse: boolean;
-  hasData: boolean;
-  canSelect: boolean;
-};
-
-function buildDropdownList(firestoreWarehouses: ManagedWarehouse[]): DropdownEntry[] {
-  // Mock warehouses — replace name if a Firestore warehouse is linked
-  const entries: DropdownEntry[] = monitorWarehouses.map(mw => {
-    const fsWh = firestoreWarehouses.find(fw => fw.liveEngineId === mw.id);
-    return {
-      id: mw.id,
-      name: fsWh?.name ?? mw.name,
-      status: mw.status,
-      isUserWarehouse: !!fsWh,
-      hasData: true,
-      canSelect: mw.status !== 'offline',
-    };
-  });
-
-  // Firestore warehouses with no liveEngineId — no sensor data yet
-  for (const fw of firestoreWarehouses.filter(fw => !fw.liveEngineId)) {
-    entries.push({ id: fw.id, name: fw.name, status: 'offline', isUserWarehouse: true, hasData: false, canSelect: true });
-  }
-
-  return entries;
-}
+// ─── Warehouse dropdown ───────────────────────────────────────────────────────
 
 function WarehouseDropdown({
   selected, onSelect, firestoreWarehouses,
@@ -212,7 +261,7 @@ function WarehouseDropdown({
       {open && (
         <div className="absolute top-full left-0 mt-1.5 bg-white rounded-xl ring-1 ring-black/[0.08] shadow-xl z-30 min-w-[240px] p-1.5 max-h-72 overflow-y-auto">
           {mainEntries.map(e => {
-            const c    = whCfg[e.status];
+            const c     = whCfg[e.status];
             const isSel = e.id === selected;
             const isOff = !e.canSelect;
             return (
@@ -283,9 +332,8 @@ function MonitorBar({
 
       <div className="flex-1" />
 
-      {/* Time range */}
       <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
-        {['1h', '6h', '24h'].map((t) => (
+        {['1h', '6h', '24h'].map(t => (
           <button
             key={t}
             onClick={() => onTimeRange(t)}
@@ -301,7 +349,6 @@ function MonitorBar({
 
       <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
-      {/* Live indicator */}
       <span className="flex items-center gap-1.5 text-[11px] font-semibold text-green-700 flex-shrink-0">
         <span className="relative flex">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 block" />
@@ -338,7 +385,6 @@ function ZoneCard({ zone, tempUnit }: { zone: ZoneReading; tempUnit: '°C' | '°
       zone.status === 'warning'  ? 'ring-1 ring-amber-200' :
       'ring-1 ring-black/[0.06]',
     )}>
-      {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0', cfg.dot, zone.status === 'critical' && 'animate-pulse')} />
@@ -350,7 +396,6 @@ function ZoneCard({ zone, tempUnit }: { zone: ZoneReading; tempUnit: '°C' | '°
         </span>
       </div>
 
-      {/* Metrics */}
       {isOffline ? (
         <p className="text-[11px] text-gray-400 text-center py-3">No signal from sensor</p>
       ) : (
@@ -375,7 +420,6 @@ function ZoneCard({ zone, tempUnit }: { zone: ZoneReading; tempUnit: '°C' | '°
         </div>
       )}
 
-      {/* Footer: CO₂ + AQI */}
       {!isOffline && (
         <div className="flex items-center gap-3 pt-1.5 border-t border-gray-50">
           <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">CO₂</span>
@@ -397,19 +441,40 @@ export default function RealtimeMonitorPage() {
   const [selectedWH, setSelectedWH] = useState('WH-A');
   const [timeRange,  setTimeRange]  = useState('1h');
   const tempUnit = useTempUnit();
+
   const { warehouses: firestoreWarehouses } = useWarehouses();
   const { readings } = useLiveData();
 
-  // Resolve which mock warehouse to read live data from
-  const selectedFsWh    = firestoreWarehouses.find(w => w.id === selectedWH);
-  const effectiveMockId = selectedFsWh ? (selectedFsWh.liveEngineId ?? '') : selectedWH;
-  const isFsWithNoData  = !!selectedFsWh && !selectedFsWh.liveEngineId;
+  // Build the dropdown entries list (also used in WarehouseDropdown internally)
+  const dropdownEntries = buildDropdownList(firestoreWarehouses);
+  const currentEntry    = dropdownEntries.find(e => e.id === selectedWH);
+
+  // fsId = Firestore warehouse document ID for the selected entry
+  const fsWhId          = currentEntry?.fsId ?? null;
+  // effectiveMockId = which WH-X to read live readings from
+  const effectiveMockId = (() => {
+    if (!currentEntry) return selectedWH;
+    if (currentEntry.hasData) {
+      // Find the liveEngineId: if it's a user warehouse, look up in firestoreWarehouses
+      const fsWh = firestoreWarehouses.find(fw => fw.id === currentEntry.fsId);
+      return fsWh?.liveEngineId ?? currentEntry.id;
+    }
+    return ''; // no-data warehouse
+  })();
+
+  // Load Firestore zones + sensors for this warehouse
+  const { zones: fsZones, loading: zonesLoading } = useZones(fsWhId);
+  const fsSensors = useSensorsForWarehouse(fsWhId);
+
+  // Live reading for the effective mock warehouse
+  const liveReading: LiveSensorReading | null = readings[effectiveMockId] ?? null;
+
+  // Build zone cards from Firestore zones + live data
+  const zones: ZoneReading[] = buildZoneReadings(fsZones, fsSensors, liveReading);
 
   const wh          = monitorWarehouses.find(w => w.id === effectiveMockId);
-  const displayName = selectedFsWh?.name ?? wh?.name ?? selectedWH;
-
-  // Compute live zones from warehouse-level reading + per-zone offsets
-  const zones: ZoneReading[] = isFsWithNoData ? [] : computeLiveZones(effectiveMockId, readings);
+  const displayName = currentEntry?.name ?? selectedWH;
+  const hasNoLink   = currentEntry?.hasData === false; // no liveEngineId
 
   const active      = zones.filter(z => z.status !== 'offline');
   const avgTemp     = avg(zones, 'temp');
@@ -422,9 +487,10 @@ export default function RealtimeMonitorPage() {
     <div className="flex flex-col flex-1 min-h-0">
       <DashboardHeader
         title="Realtime Monitor"
-        subtitle={isFsWithNoData
-          ? `${displayName} · No sensor data — connect a Live Engine ID in Settings`
-          : `${displayName} · ${active.length} of ${zones.length} sensors active`
+        subtitle={
+          hasNoLink
+            ? `${displayName} · Zones configured — connect a Live Engine ID in Settings to get readings`
+            : `${displayName} · ${active.length} of ${zones.length} sensors active`
         }
       />
 
@@ -462,10 +528,10 @@ export default function RealtimeMonitorPage() {
             },
             {
               label: 'Alert Status',
-              value: critCount > 0 ? `${critCount} Critical` : warnCount > 0 ? `${warnCount} Warning` : 'All Clear',
+              value: critCount > 0 ? `${critCount} Critical` : warnCount > 0 ? `${warnCount} Warning` : zones.length === 0 ? '—' : 'All Clear',
               bar: critCount > 0 ? 'bg-red-400' : warnCount > 0 ? 'bg-amber-400' : 'bg-green-400',
               status: critCount > 0 ? 'critical' : warnCount > 0 ? 'warning' : 'good',
-              tip: `${zones.length} sensor zones`,
+              tip: `${zones.length} sensor zone${zones.length !== 1 ? 's' : ''}`,
             },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl ring-1 ring-black/[0.06] shadow-sm overflow-hidden">
@@ -497,27 +563,21 @@ export default function RealtimeMonitorPage() {
           ))}
         </section>
 
-        {/* ── Zone cards or no-data placeholder ────────────────────────────── */}
-        {isFsWithNoData ? (
-          <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-10 flex flex-col items-center justify-center gap-3 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-1">
-              <svg className="w-6 h-6 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
+        {/* ── Sensor zones ─────────────────────────────────────────────────── */}
+        <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{displayName} — Sensor Zones</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {zonesLoading
+                  ? 'Loading zones…'
+                  : hasNoLink
+                  ? `${zones.length} zone${zones.length !== 1 ? 's' : ''} configured · connect a Live Engine ID to see readings`
+                  : `${active.length} of ${zones.length} sensors active · updates every 30 s`
+                }
+              </p>
             </div>
-            <h3 className="text-[15px] font-bold text-gray-700">{displayName}</h3>
-            <p className="text-[12px] text-gray-400 max-w-xs">
-              This warehouse has no live sensor connection yet. Go to <strong>Settings → Infrastructure</strong>, edit this warehouse, and set a Live Engine ID (e.g. WH-A) to start receiving sensor readings.
-            </p>
-          </section>
-        ) : (
-          <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5">
-            {/* Header */}
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div>
-                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{displayName} — Sensor Zones</h2>
-                <p className="text-[11px] text-gray-400 mt-0.5">{active.length} of {zones.length} sensors active · updates every 30 s</p>
-              </div>
+            {!hasNoLink && (
               <span className={cn(
                 'text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0',
                 wh?.status === 'alert'   ? 'bg-red-50 text-red-700'     :
@@ -527,35 +587,65 @@ export default function RealtimeMonitorPage() {
               )}>
                 {whCfg[wh?.status ?? 'online'].label}
               </span>
-            </div>
+            )}
+            {hasNoLink && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 flex-shrink-0">
+                No connection
+              </span>
+            )}
+          </div>
 
-            {/* Zone cards grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {zones.map(zone => (
-                <ZoneCard key={zone.id} zone={zone} tempUnit={tempUnit} />
-              ))}
+          {zonesLoading ? (
+            <div className="flex items-center justify-center py-12 gap-2 text-gray-400">
+              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+              <span className="text-[12px] font-semibold">Loading sensor zones…</span>
             </div>
-
-            {/* Safe limits reference */}
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <span className="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest">Safe limits:</span>
-                {[
-                  { label: 'Temp',     safe: tempThreshold(T.temp.safe, tempUnit),   warn: `${convertTemp(T.temp.safe, tempUnit)}–${convertTemp(T.temp.warn, tempUnit)}` },
-                  { label: 'Humidity', safe: `< ${T.humidity.safe}%`,                warn: `${T.humidity.safe}–${T.humidity.warn}%` },
-                  { label: 'Moisture', safe: `< ${T.moisture.safe}%`,                warn: `${T.moisture.safe}–${T.moisture.warn}%` },
-                ].map(r => (
-                  <div key={r.label} className="flex items-center gap-1.5">
-                    <span className="text-[9.5px] font-bold text-gray-500">{r.label}:</span>
-                    <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{r.safe}</span>
-                    <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">{r.warn}</span>
-                    <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">above = critical</span>
-                  </div>
+          ) : zones.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-2 text-center">
+              <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center mb-1">
+                <svg className="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                </svg>
+              </div>
+              <p className="text-[13px] font-bold text-gray-600">No zones configured</p>
+              <p className="text-[11px] text-gray-400 max-w-xs">
+                Go to <strong>Settings → Infrastructure</strong>, select this warehouse, and add zones to start monitoring.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Zone cards — responsive grid, any number of zones */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {zones.map(zone => (
+                  <ZoneCard key={zone.id + zone.bay} zone={zone} tempUnit={tempUnit} />
                 ))}
               </div>
-            </div>
-          </section>
-        )}
+
+              {/* Safe limits reference */}
+              {!hasNoLink && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <span className="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest">Safe limits:</span>
+                    {[
+                      { label: 'Temp',     safe: tempThreshold(T.temp.safe, tempUnit),   warn: `${convertTemp(T.temp.safe, tempUnit)}–${convertTemp(T.temp.warn, tempUnit)}` },
+                      { label: 'Humidity', safe: `< ${T.humidity.safe}%`,                warn: `${T.humidity.safe}–${T.humidity.warn}%` },
+                      { label: 'Moisture', safe: `< ${T.moisture.safe}%`,                warn: `${T.moisture.safe}–${T.moisture.warn}%` },
+                    ].map(r => (
+                      <div key={r.label} className="flex items-center gap-1.5">
+                        <span className="text-[9.5px] font-bold text-gray-500">{r.label}:</span>
+                        <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{r.safe}</span>
+                        <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">{r.warn}</span>
+                        <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">above = critical</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
 
         {/* ── Parameter Trends ─────────────────────────────────────────────── */}
         <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5">
