@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartTooltip, ResponsiveContainer } from 'recharts';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { AlertsTrendChart } from '@/components/charts/AlertsTrendChart';
@@ -356,7 +356,10 @@ function AlertsByTypePanel({ alertsByType }: { alertsByType: { label: string; co
 
 // ─── Recent alerts feed ────────────────────────────────────────────────────────
 
-function RecentAlertsPanel({ recentAlertFeed }: { recentAlertFeed: { id: string; severity: AlertSeverity; warehouse: string; zone: string; message: string; time: string }[] }) {
+function RecentAlertsPanel({ recentAlertFeed, onViewAll }: {
+  recentAlertFeed: { id: string; severity: AlertSeverity; warehouse: string; zone: string; message: string; time: string }[];
+  onViewAll?: () => void;
+}) {
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between mb-3">
@@ -382,7 +385,10 @@ function RecentAlertsPanel({ recentAlertFeed }: { recentAlertFeed: { id: string;
           );
         })}
       </div>
-      <button className="mt-2 text-[10px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors">
+      <button
+        onClick={onViewAll}
+        className="mt-2 text-[10px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors"
+      >
         View all alerts →
       </button>
     </Card>
@@ -686,6 +692,11 @@ export default function AlertsPage() {
   const alertsByType = alertsData.alertsByType;
   const recentAlertFeed = alertsData.recentFeed;
 
+  const tableRef = useRef<HTMLDivElement>(null);
+  function scrollToTable() {
+    tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   // Local state for status mutations
   const [statusOverrides, setStatusOverrides] = useState<Record<string, AlertStatus>>({});
   const [detailAlert, setDetailAlert] = useState<Alert | null>(null);
@@ -894,24 +905,26 @@ export default function AlertsPage() {
         <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,272px)] gap-5">
 
           {/* Alerts table */}
-          <AlertsTable
-            alerts={effectiveAlerts}
-            search={search}
-            severityF={severityF}
-            typeF={typeF}
-            statusF={statusF}
-            page={page}
-            setPage={setPage}
-            onAcknowledge={(id) => setAlertStatus(id, 'acknowledged')}
-            onResolve={(id) => setAlertStatus(id, 'resolved')}
-            onMute={(id) => setAlertStatus(id, 'muted')}
-            onViewDetail={(id) => setDetailAlert(effectiveAlerts.find(a => a.id === id) ?? null)}
-          />
+          <div ref={tableRef}>
+            <AlertsTable
+              alerts={effectiveAlerts}
+              search={search}
+              severityF={severityF}
+              typeF={typeF}
+              statusF={statusF}
+              page={page}
+              setPage={setPage}
+              onAcknowledge={(id) => setAlertStatus(id, 'acknowledged')}
+              onResolve={(id) => setAlertStatus(id, 'resolved')}
+              onMute={(id) => setAlertStatus(id, 'muted')}
+              onViewDetail={(id) => setDetailAlert(effectiveAlerts.find(a => a.id === id) ?? null)}
+            />
+          </div>
 
           {/* Right sidebar */}
           <div className="flex flex-col gap-4 min-w-0">
             <AlertsByTypePanel alertsByType={alertsByType} />
-            <RecentAlertsPanel recentAlertFeed={recentAlertFeed} />
+            <RecentAlertsPanel recentAlertFeed={recentAlertFeed} onViewAll={scrollToTable} />
           </div>
         </section>
 
