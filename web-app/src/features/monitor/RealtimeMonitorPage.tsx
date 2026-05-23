@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { ParameterTrendsChart } from '@/components/charts/ParameterTrendsChart';
 import {
@@ -17,57 +17,57 @@ import {
 } from './mockData';
 import { cn } from '@/lib/utils';
 
-// ─── Safe thresholds for grain storage ────────────────────────────────────────
+// ─── Safe thresholds ──────────────────────────────────────────────────────────
 
 const T = {
-  temp:     { safe: 27, warn: 30 },   // °C  — grain spoils quickly above 30°C
-  humidity: { safe: 62, warn: 70 },   // %   — mold risk above 70%
-  moisture: { safe: 13, warn: 14 },   // %   — grain moisture threshold
+  temp:     { safe: 27, warn: 30 },
+  humidity: { safe: 62, warn: 70 },
+  moisture: { safe: 13, warn: 14 },
 };
 
 // ─── Configs ──────────────────────────────────────────────────────────────────
 
-const whCfg: Record<WarehouseOnlineStatus, { dot: string; label: string }> = {
-  online:  { dot: 'bg-green-400', label: 'Online'  },
-  warning: { dot: 'bg-amber-400', label: 'Warning' },
-  alert:   { dot: 'bg-red-400',   label: 'Alert'   },
-  offline: { dot: 'bg-gray-300',  label: 'Offline' },
+const whCfg: Record<WarehouseOnlineStatus, { dot: string; label: string; badge: string }> = {
+  online:  { dot: 'bg-green-400', label: 'Online',  badge: 'bg-green-50 text-green-700' },
+  warning: { dot: 'bg-amber-400', label: 'Warning', badge: 'bg-amber-50 text-amber-700' },
+  alert:   { dot: 'bg-red-400',   label: 'Alert',   badge: 'bg-red-50 text-red-700'     },
+  offline: { dot: 'bg-gray-300',  label: 'Offline', badge: 'bg-gray-100 text-gray-400'  },
 };
 
 const statusCfg: Record<ZoneStatus, { dot: string; badge: string; label: string; rowBg: string }> = {
-  good:     { dot: 'bg-green-400', badge: 'bg-green-50 text-green-700',  label: 'Good',     rowBg: '' },
-  normal:   { dot: 'bg-blue-400',  badge: 'bg-blue-50 text-blue-700',    label: 'Normal',   rowBg: '' },
-  warning:  { dot: 'bg-amber-400', badge: 'bg-amber-100 text-amber-700', label: 'Warning',  rowBg: 'bg-amber-50/30' },
-  critical: { dot: 'bg-red-500',   badge: 'bg-red-100 text-red-600',     label: 'Critical', rowBg: 'bg-red-50/40' },
-  offline:  { dot: 'bg-gray-300',  badge: 'bg-gray-100 text-gray-400',   label: 'Offline',  rowBg: 'bg-gray-50/60' },
+  good:     { dot: 'bg-green-400', badge: 'bg-green-50 text-green-700 ring-1 ring-green-200',   label: 'Good',     rowBg: '' },
+  normal:   { dot: 'bg-blue-400',  badge: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',       label: 'Normal',   rowBg: '' },
+  warning:  { dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',   label: 'Warning',  rowBg: 'bg-amber-50/30' },
+  critical: { dot: 'bg-red-500',   badge: 'bg-red-50 text-red-600 ring-1 ring-red-200',         label: 'Critical', rowBg: 'bg-red-50/30' },
+  offline:  { dot: 'bg-gray-300',  badge: 'bg-gray-100 text-gray-400 ring-1 ring-gray-200',     label: 'Offline',  rowBg: '' },
 };
 
 // ─── View mode ────────────────────────────────────────────────────────────────
 
 type ViewMode = 'status' | 'temp' | 'humidity';
 
-const viewModes: { mode: ViewMode; label: string }[] = [
-  { mode: 'status',   label: 'Status'   },
-  { mode: 'temp',     label: 'Temp'     },
-  { mode: 'humidity', label: 'Humidity' },
+const viewModes: { mode: ViewMode; label: string; desc: string }[] = [
+  { mode: 'status',   label: 'Status',   desc: 'Combined health: green = all readings safe · blue = slight elevation · yellow = approaching limit · red = action needed' },
+  { mode: 'temp',     label: 'Temp',     desc: `Temperature view: green < ${T.temp.safe}°C · yellow ${T.temp.safe}–${T.temp.warn}°C · red ≥ ${T.temp.warn}°C` },
+  { mode: 'humidity', label: 'Humidity', desc: `Humidity view: green < ${T.humidity.safe}% · yellow ${T.humidity.safe}–${T.humidity.warn}% · red ≥ ${T.humidity.warn}%` },
 ];
 
 const viewLegend: Record<ViewMode, Array<{ color: string; text: string }>> = {
   status: [
-    { color: '#22c55e', text: 'Good — all within safe range' },
-    { color: '#3b82f6', text: 'Normal — slight elevation' },
-    { color: '#f59e0b', text: 'Warning — above safe limit' },
-    { color: '#ef4444', text: 'Critical — immediate action' },
+    { color: '#22c55e', text: 'Good' },
+    { color: '#3b82f6', text: 'Normal' },
+    { color: '#f59e0b', text: 'Warning' },
+    { color: '#ef4444', text: 'Critical' },
   ],
   temp: [
-    { color: '#22c55e', text: `< ${T.temp.safe}°C — Safe` },
-    { color: '#f59e0b', text: `${T.temp.safe}–${T.temp.warn}°C — Caution` },
-    { color: '#ef4444', text: `≥ ${T.temp.warn}°C — Critical` },
+    { color: '#22c55e', text: `< ${T.temp.safe}°C` },
+    { color: '#f59e0b', text: `${T.temp.safe}–${T.temp.warn}°C` },
+    { color: '#ef4444', text: `≥ ${T.temp.warn}°C` },
   ],
   humidity: [
-    { color: '#22c55e', text: `< ${T.humidity.safe}% — Safe` },
-    { color: '#f59e0b', text: `${T.humidity.safe}–${T.humidity.warn}% — Caution` },
-    { color: '#ef4444', text: `≥ ${T.humidity.warn}% — Critical` },
+    { color: '#22c55e', text: `< ${T.humidity.safe}%` },
+    { color: '#f59e0b', text: `${T.humidity.safe}–${T.humidity.warn}%` },
+    { color: '#ef4444', text: `≥ ${T.humidity.warn}%` },
   ],
 };
 
@@ -99,15 +99,14 @@ function getSensorColors(s: SensorPoint, mode: ViewMode): SensorColorSet {
 function valColor(val: number | null, safe: number, warn: number) {
   if (val === null) return 'text-gray-300';
   if (val >= warn)  return 'text-red-600';
-  if (val >= safe)  return 'text-amber-700';
+  if (val >= safe)  return 'text-amber-600';
   return 'text-gray-800';
 }
 
 function avg(zones: ZoneReading[], key: keyof ZoneReading) {
   const active = zones.filter(z => z[key] !== null);
   if (!active.length) return null;
-  const sum = active.reduce((s, z) => s + (z[key] as number), 0);
-  return sum / active.length;
+  return active.reduce((s, z) => s + (z[key] as number), 0) / active.length;
 }
 
 // ─── Live clock ───────────────────────────────────────────────────────────────
@@ -123,61 +122,136 @@ function LiveClock() {
   return <span suppressHydrationWarning className="tabular-nums">{t}</span>;
 }
 
-// ─── Sub-header ───────────────────────────────────────────────────────────────
+// ─── Warehouse dropdown ────────────────────────────────────────────────────────
+
+function WarehouseDropdown({
+  selected, onSelect,
+}: { selected: string; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const wh = monitorWarehouses.find((w) => w.id === selected)!;
+  const cfg = whCfg[wh.status];
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 h-8 pl-3 pr-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-[12px] font-semibold text-gray-800 transition-all duration-150 select-none min-w-[160px]"
+      >
+        <span className={cn('w-2 h-2 rounded-full flex-shrink-0', cfg.dot, wh.status === 'alert' && 'animate-pulse')} />
+        <span className="flex-1 text-left">{wh.id} — {wh.name}</span>
+        <svg className={cn('w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150', open && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 bg-white rounded-xl ring-1 ring-black/[0.08] shadow-xl z-30 min-w-[220px] p-1.5 space-y-0.5">
+          {monitorWarehouses.map((w) => {
+            const c = whCfg[w.status];
+            const isOff = w.status === 'offline';
+            const isSel = w.id === selected;
+            return (
+              <button
+                key={w.id}
+                disabled={isOff}
+                onClick={() => { onSelect(w.id); setOpen(false); }}
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-semibold transition-colors text-left',
+                  isSel   ? 'bg-[#1f5135]/[0.08] text-[#1f5135]'
+                  : isOff ? 'text-gray-300 cursor-not-allowed'
+                  : 'text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                <span className={cn('w-2 h-2 rounded-full flex-shrink-0', c.dot)} />
+                <span className="font-bold">{w.id}</span>
+                <span className="text-gray-400 font-medium flex-1">{w.name}</span>
+                <span className={cn('text-[9.5px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0', c.badge)}>
+                  {c.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sub-header bar ───────────────────────────────────────────────────────────
 
 function MonitorBar({
-  selected, onSelect, timeRange, onTimeRange,
+  selected, onSelect,
+  viewMode, onViewMode,
+  timeRange, onTimeRange,
 }: {
   selected: string; onSelect: (id: string) => void;
+  viewMode: ViewMode; onViewMode: (m: ViewMode) => void;
   timeRange: string; onTimeRange: (t: string) => void;
 }) {
   return (
-    <div className="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-1.5 flex-wrap">
-      {monitorWarehouses.map((wh) => {
-        const cfg    = whCfg[wh.status];
-        const isSel  = selected === wh.id;
-        const isOff  = wh.status === 'offline';
-        return (
-          <button key={wh.id} onClick={() => !isOff && onSelect(wh.id)} disabled={isOff}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-bold transition-all duration-150',
-              isSel  ? 'bg-[#1f5135] text-white shadow-sm'
-              : isOff ? 'text-gray-300 cursor-not-allowed'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800',
-            )}
-          >
-            <span className={cn('w-[6px] h-[6px] rounded-full flex-shrink-0', cfg.dot,
-              wh.status === 'alert' && !isSel && 'animate-pulse'
-            )} />
-            {wh.id}
-            {isOff && <span className="text-[9px] font-normal opacity-50">off</span>}
-          </button>
-        );
-      })}
+    <div className="bg-white border-b border-gray-100 px-5 py-2.5 flex items-center gap-3 flex-wrap">
+      {/* Warehouse dropdown */}
+      <WarehouseDropdown selected={selected} onSelect={onSelect} />
+
+      <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
+
+      {/* Color view toggle */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">Color view:</span>
+        <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          {viewModes.map(({ mode, label }) => (
+            <button
+              key={mode}
+              onClick={() => onViewMode(mode)}
+              className={cn(
+                'px-2.5 py-1 rounded-md text-[11px] font-bold transition-all duration-150',
+                viewMode === mode ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+      {/* Time range */}
+      <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
         {['1h', '6h', '24h'].map((t) => (
-          <button key={t} onClick={() => onTimeRange(t)}
+          <button
+            key={t}
+            onClick={() => onTimeRange(t)}
             className={cn(
               'px-2.5 py-1 rounded-md text-[11px] font-bold transition-all duration-150',
               timeRange === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700',
             )}
-          >{t}</button>
+          >
+            {t}
+          </button>
         ))}
       </div>
 
-      <div className="w-px h-4 bg-gray-200 mx-1" />
+      <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
-      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-green-700">
+      {/* Live indicator */}
+      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-green-700 flex-shrink-0">
         <span className="relative flex">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 block" />
           <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-60" />
         </span>
         Live
       </span>
-      <span className="text-[11px] font-semibold text-gray-400 tabular-nums flex items-center gap-1 ml-1">
+      <span className="text-[11px] font-semibold text-gray-400 tabular-nums flex items-center gap-1 flex-shrink-0">
         <svg className="w-3 h-3 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
         </svg>
@@ -187,7 +261,7 @@ function MonitorBar({
   );
 }
 
-// ─── Floor plan ───────────────────────────────────────────────────────────────
+// ─── Floor plan SVG ───────────────────────────────────────────────────────────
 
 function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: ViewMode }) {
   const sensors: SensorPoint[] = sensorPositions[warehouseId] ?? defaultSensorPositions(warehouseId);
@@ -202,7 +276,7 @@ function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: V
   ];
 
   return (
-    <div className="w-full bg-[#f8fafc] rounded-xl overflow-hidden border border-gray-200" style={{ aspectRatio: '16/9', minHeight: 190 }}>
+    <div className="w-full campus-svg bg-[#f8fafc] rounded-xl overflow-hidden border border-gray-200" style={{ aspectRatio: '16/9', minHeight: 190 }}>
       <svg viewBox="0 0 480 270" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
         <defs>
           <pattern id="mg" width="24" height="24" patternUnits="userSpaceOnUse">
@@ -245,7 +319,7 @@ function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: V
         {!isOffline && sensors.map((s, i) => {
           const c = getSensorColors(s, viewMode);
           const needsPulse = s.status === 'critical' || s.status === 'warning';
-          const primary = viewMode === 'humidity' ? `${s.humidity}%` : `${s.temp}°`;
+          const primary   = viewMode === 'humidity' ? `${s.humidity}%` : `${s.temp}°`;
           const secondary = viewMode === 'humidity' ? `${s.temp}°C` : `${s.humidity}%H`;
           return (
             <g key={i}>
@@ -282,16 +356,19 @@ function FloorPlan({ warehouseId, viewMode }: { warehouseId: string; viewMode: V
   );
 }
 
-// ─── Monitoring point table ───────────────────────────────────────────────────
+// ─── Sensor readings table ────────────────────────────────────────────────────
 
-function MonitoringTable({ zones }: { zones: ZoneReading[] }) {
-  if (!zones.length) return <p className="text-[12px] text-gray-400 py-4 text-center">No monitoring points configured.</p>;
+function SensorTable({ zones }: { zones: ZoneReading[] }) {
+  if (!zones.length) return (
+    <p className="text-[12px] text-gray-400 py-6 text-center">No sensors configured.</p>
+  );
+
   return (
     <div className="overflow-hidden rounded-xl ring-1 ring-gray-100">
-      {/* Table header */}
-      <div className="grid grid-cols-[80px_1fr_68px_68px_68px_70px] gap-x-2 items-center px-3.5 py-2.5 bg-gray-50 border-b border-gray-100">
-        {['Point', 'Location', 'Temp', 'Humidity', 'Moisture', 'Status'].map((h) => (
-          <span key={h} className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{h}</span>
+      {/* Header */}
+      <div className="grid grid-cols-[28px_minmax(0,1fr)_50px_50px_50px_58px] gap-x-2 px-3.5 py-2.5 bg-gray-50 border-b border-gray-100">
+        {['', 'Zone', 'Temp', 'Hum', 'Moist', 'Status'].map((h) => (
+          <span key={h} className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wide">{h}</span>
         ))}
       </div>
       {/* Rows */}
@@ -301,34 +378,38 @@ function MonitoringTable({ zones }: { zones: ZoneReading[] }) {
           <div
             key={zone.id}
             className={cn(
-              'grid grid-cols-[80px_1fr_68px_68px_68px_70px] gap-x-2 items-center px-3.5 py-3',
-              i < zones.length - 1 && 'border-b border-gray-100',
+              'grid grid-cols-[28px_minmax(0,1fr)_50px_50px_50px_58px] gap-x-2 items-center px-3.5 py-2.5',
+              i < zones.length - 1 && 'border-b border-gray-50',
               cfg.rowBg,
             )}
           >
-            {/* ID */}
-            <div className="flex items-center gap-2">
-              <span className={cn('w-2 h-2 rounded-full flex-shrink-0', cfg.dot,
-                zone.status === 'critical' && 'animate-pulse'
-              )} />
-              <span className="text-[12px] font-bold text-gray-600 font-mono">{zone.id}</span>
+            {/* Status dot */}
+            <span className={cn('w-2 h-2 rounded-full mx-auto flex-shrink-0', cfg.dot,
+              zone.status === 'critical' && 'animate-pulse'
+            )} />
+
+            {/* Zone name */}
+            <div className="min-w-0">
+              <p className="text-[12px] font-bold text-gray-800 truncate">{zone.id} <span className="font-medium text-gray-400 text-[10px]">·</span> <span className="text-[11px] font-medium text-gray-500">{zone.bay}</span></p>
             </div>
-            {/* Location */}
-            <span className="text-[12px] font-medium text-gray-700 truncate">{zone.bay}</span>
-            {/* Temperature */}
-            <span className={cn('text-[12.5px] font-bold tabular-nums', valColor(zone.temp, T.temp.safe, T.temp.warn))}>
+
+            {/* Temp */}
+            <span className={cn('text-[11.5px] font-bold tabular-nums', valColor(zone.temp, T.temp.safe, T.temp.warn))}>
               {zone.temp != null ? `${zone.temp}°C` : '—'}
             </span>
+
             {/* Humidity */}
-            <span className={cn('text-[12.5px] font-bold tabular-nums', valColor(zone.humidity, T.humidity.safe, T.humidity.warn))}>
+            <span className={cn('text-[11.5px] font-bold tabular-nums', valColor(zone.humidity, T.humidity.safe, T.humidity.warn))}>
               {zone.humidity != null ? `${zone.humidity}%` : '—'}
             </span>
+
             {/* Moisture */}
-            <span className={cn('text-[12.5px] font-bold tabular-nums', valColor(zone.moisture, T.moisture.safe, T.moisture.warn))}>
+            <span className={cn('text-[11.5px] font-bold tabular-nums', valColor(zone.moisture, T.moisture.safe, T.moisture.warn))}>
               {zone.moisture != null ? `${zone.moisture}%` : '—'}
             </span>
-            {/* Status */}
-            <span className={cn('text-[10px] font-bold px-1.5 py-[3px] rounded-full leading-none inline-flex items-center gap-1', cfg.badge)}>
+
+            {/* Status badge */}
+            <span className={cn('text-[9.5px] font-bold px-1.5 py-[3px] rounded-full leading-none text-center', cfg.badge)}>
               {cfg.label}
             </span>
           </div>
@@ -345,33 +426,33 @@ export default function RealtimeMonitorPage() {
   const [timeRange,  setTimeRange]   = useState('1h');
   const [viewMode,   setViewMode]    = useState<ViewMode>('status');
 
-  const wh    = monitorWarehouses.find((w) => w.id === selectedWH);
-  const zones = zoneData[selectedWH] ?? [];
-  const active = zones.filter(z => z.status !== 'offline');
-
-  // Compute per-warehouse stats
-  const avgTemp     = avg(zones, 'temp');
-  const avgHumidity = avg(zones, 'humidity');
-  const avgMoisture = avg(zones, 'moisture');
-  const critCount   = zones.filter(z => z.status === 'critical').length;
-  const warnCount   = zones.filter(z => z.status === 'warning').length;
-
-  const legend = viewLegend[viewMode];
+  const wh          = monitorWarehouses.find((w) => w.id === selectedWH);
+  const zones        = zoneData[selectedWH] ?? [];
+  const active       = zones.filter((z) => z.status !== 'offline');
+  const avgTemp      = avg(zones, 'temp');
+  const avgHumidity  = avg(zones, 'humidity');
+  const avgMoisture  = avg(zones, 'moisture');
+  const critCount    = zones.filter((z) => z.status === 'critical').length;
+  const warnCount    = zones.filter((z) => z.status === 'warning').length;
+  const legend       = viewLegend[viewMode];
+  const currentMode  = viewModes.find((m) => m.mode === viewMode)!;
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <DashboardHeader
         title="Realtime Monitor"
-        subtitle={`Live sensor data · ${selectedWH} — ${wh?.name ?? ''} · ${active.length}/${zones.length} points active`}
+        subtitle={`${selectedWH} — ${wh?.name ?? ''} · ${active.length}/${zones.length} sensors active`}
       />
+
       <MonitorBar
         selected={selectedWH} onSelect={setSelectedWH}
+        viewMode={viewMode}   onViewMode={setViewMode}
         timeRange={timeRange}  onTimeRange={setTimeRange}
       />
 
-      <main className="flex-1 p-6 space-y-5 overflow-auto">
+      <main className="flex-1 p-5 space-y-4 overflow-auto">
 
-        {/* ── WH stats strip ───────────────────────────────────────────────── */}
+        {/* ── Stats strip ──────────────────────────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             {
@@ -379,48 +460,51 @@ export default function RealtimeMonitorPage() {
               value: avgTemp !== null ? `${avgTemp.toFixed(1)}°C` : '—',
               bar: 'bg-amber-400',
               status: avgTemp !== null && avgTemp >= T.temp.warn ? 'critical' : avgTemp !== null && avgTemp >= T.temp.safe ? 'warning' : 'good',
+              tip: `Safe < ${T.temp.safe}°C`,
             },
             {
               label: 'Avg Humidity',
               value: avgHumidity !== null ? `${Math.round(avgHumidity)}%` : '—',
               bar: 'bg-blue-400',
               status: avgHumidity !== null && avgHumidity >= T.humidity.warn ? 'critical' : avgHumidity !== null && avgHumidity >= T.humidity.safe ? 'warning' : 'good',
+              tip: `Safe < ${T.humidity.safe}%`,
             },
             {
               label: 'Avg Moisture',
               value: avgMoisture !== null ? `${avgMoisture.toFixed(1)}%` : '—',
               bar: 'bg-green-400',
               status: avgMoisture !== null && avgMoisture >= T.moisture.warn ? 'critical' : avgMoisture !== null && avgMoisture >= T.moisture.safe ? 'warning' : 'good',
+              tip: `Safe < ${T.moisture.safe}%`,
             },
             {
               label: 'Alert Status',
               value: critCount > 0 ? `${critCount} Critical` : warnCount > 0 ? `${warnCount} Warning` : 'All Clear',
               bar: critCount > 0 ? 'bg-red-400' : warnCount > 0 ? 'bg-amber-400' : 'bg-green-400',
               status: critCount > 0 ? 'critical' : warnCount > 0 ? 'warning' : 'good',
+              tip: `${zones.length} sensor zones`,
             },
           ].map((s) => (
             <div key={s.label} className="bg-white rounded-xl ring-1 ring-black/[0.06] shadow-sm overflow-hidden">
               <div className={cn('h-[3px]', s.bar)} />
-              <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">{s.label}</p>
+              <div className="px-4 py-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5 truncate">{s.label}</p>
                   <p className={cn(
                     'text-[20px] font-black tracking-tight leading-none tabular-nums',
-                    s.status === 'critical' ? 'text-red-600' : s.status === 'warning' ? 'text-amber-700' : 'text-green-600',
+                    s.status === 'critical' ? 'text-red-600' : s.status === 'warning' ? 'text-amber-600' : 'text-green-600',
                   )}>{s.value}</p>
+                  <p className="text-[9.5px] text-gray-400 font-medium mt-1">{s.tip}</p>
                 </div>
                 <span className={cn(
                   'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
                   s.status === 'critical' ? 'bg-red-50' : s.status === 'warning' ? 'bg-amber-50' : 'bg-green-50',
                 )}>
-                  {s.status === 'critical' || s.status === 'warning' ? (
+                  {s.status === 'good' ? (
+                    <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  ) : (
                     <svg className={cn('w-4 h-4', s.status === 'critical' ? 'text-red-500' : 'text-amber-500')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                       <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                      <polyline points="20 6 9 17 4 12" />
                     </svg>
                   )}
                 </span>
@@ -429,36 +513,34 @@ export default function RealtimeMonitorPage() {
           ))}
         </section>
 
-        {/* ── Floor plan + Monitoring table ─────────────────────────────────── */}
-        <section className="grid grid-cols-1 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_460px] gap-5">
+        {/* ── Zone map + Sensor readings ────────────────────────────────────── */}
+        <section className="grid grid-cols-1 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px] gap-4">
 
-          {/* Floor plan */}
-          <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5">
-            {/* Header row with view toggle */}
-            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          {/* Zone map card */}
+          <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5 flex flex-col gap-3">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">{selectedWH} — Sensor Map</h2>
-                <p className="text-[11.5px] text-gray-400 mt-0.5">Each circle = one monitoring point · {wh?.lastUpdate && `updated ${wh.lastUpdate}`}</p>
+                <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">{selectedWH} — Zone Map</h2>
+                <p className="text-[11px] text-gray-400 mt-0.5 leading-snug max-w-sm">{currentMode.desc}</p>
               </div>
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 flex-shrink-0">
-                {viewModes.map(({ mode, label }) => (
-                  <button key={mode} onClick={() => setViewMode(mode)}
-                    className={cn(
-                      'px-2.5 py-1 rounded-md text-[11px] font-bold transition-all duration-150',
-                      viewMode === mode ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700',
-                    )}
-                  >{label}</button>
-                ))}
-              </div>
+              <span className={cn(
+                'text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5',
+                wh?.status === 'alert'   ? 'bg-red-50 text-red-700' :
+                wh?.status === 'warning' ? 'bg-amber-50 text-amber-700' :
+                wh?.status === 'offline' ? 'bg-gray-100 text-gray-400' :
+                'bg-green-50 text-green-700'
+              )}>
+                {whCfg[wh?.status ?? 'online'].label}
+              </span>
             </div>
 
+            {/* Map */}
             <FloorPlan warehouseId={selectedWH} viewMode={viewMode} />
 
-            {/* Compact inline legend — immediately below the map */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                {viewMode === 'temp' ? 'Temperature scale:' : viewMode === 'humidity' ? 'Humidity scale:' : 'Status colors:'}
-              </span>
+            {/* Color legend */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <span className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wide">Colors:</span>
               {legend.map((l) => (
                 <span key={l.text} className="flex items-center gap-1.5 text-[10.5px] font-semibold text-gray-500">
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
@@ -468,34 +550,45 @@ export default function RealtimeMonitorPage() {
             </div>
           </div>
 
-          {/* Monitoring points panel */}
+          {/* Sensor readings card */}
           <div className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm flex flex-col">
-            <div className="px-5 pt-5 pb-3.5 border-b border-gray-100">
-              <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">Monitoring Points</h2>
-              <p className="text-[11.5px] text-gray-400 mt-0.5">
-                Live readings · each point = one sensor cluster at a fixed location
-              </p>
+            {/* Header */}
+            <div className="px-5 pt-4 pb-3 border-b border-gray-100">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">Sensor Readings</h2>
+                  <p className="text-[11px] text-gray-400 mt-0.5">{selectedWH} · {active.length} of {zones.length} sensors online</p>
+                </div>
+                {wh?.lastUpdate && (
+                  <span className="text-[10px] text-gray-400 font-medium flex-shrink-0">
+                    Updated {wh.lastUpdate}
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="flex-1 p-4">
-              <MonitoringTable zones={zones} />
+            {/* Table */}
+            <div className="flex-1 p-4 min-h-0">
+              <SensorTable zones={zones} />
             </div>
 
-            {/* Safe limits — compact, inside the panel */}
+            {/* Safe thresholds — compact reference strip */}
             <div className="px-4 pb-4">
-              <div className="p-3 bg-gray-50 rounded-xl ring-1 ring-gray-100">
-                <p className="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest mb-2">Safe Limits</p>
-                <div className="flex flex-wrap gap-x-5 gap-y-1">
+              <div className="rounded-xl bg-gray-50 px-3.5 py-2.5 ring-1 ring-gray-100">
+                <p className="text-[9.5px] font-bold text-gray-400 uppercase tracking-widest mb-2">Safe limits (grain storage)</p>
+                <div className="grid grid-cols-3 gap-x-2 gap-y-1.5">
                   {[
-                    { param: 'Temp',     safe: `< ${T.temp.safe}°C`,     warn: `${T.temp.safe}–${T.temp.warn}°C`, crit: `≥ ${T.temp.warn}°C` },
-                    { param: 'Humidity', safe: `< ${T.humidity.safe}%`,  warn: `${T.humidity.safe}–${T.humidity.warn}%`, crit: `≥ ${T.humidity.warn}%` },
-                    { param: 'Moisture', safe: `< ${T.moisture.safe}%`,  warn: `${T.moisture.safe}–${T.moisture.warn}%`, crit: `≥ ${T.moisture.warn}%` },
+                    { label: 'Temp',     safe: `< ${T.temp.safe}°C`,    warn: `${T.temp.safe}–${T.temp.warn}°C`, crit: `≥ ${T.temp.warn}°C` },
+                    { label: 'Humidity', safe: `< ${T.humidity.safe}%`, warn: `${T.humidity.safe}–${T.humidity.warn}%`, crit: `≥ ${T.humidity.warn}%` },
+                    { label: 'Moisture', safe: `< ${T.moisture.safe}%`, warn: `${T.moisture.safe}–${T.moisture.warn}%`, crit: `≥ ${T.moisture.warn}%` },
                   ].map((r) => (
-                    <div key={r.param} className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-gray-500 w-14">{r.param}</span>
-                      <span className="text-[9.5px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{r.safe}</span>
-                      <span className="text-[9.5px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">{r.warn}</span>
-                      <span className="text-[9.5px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">{r.crit}</span>
+                    <div key={r.label}>
+                      <p className="text-[9px] font-bold text-gray-500 mb-1">{r.label}</p>
+                      <div className="flex flex-wrap gap-x-1 gap-y-0.5">
+                        <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.safe}</span>
+                        <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.warn}</span>
+                        <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded whitespace-nowrap">{r.crit}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -504,39 +597,42 @@ export default function RealtimeMonitorPage() {
           </div>
         </section>
 
-        {/* ── Parameter Trends (full width) ─────────────────────────────────── */}
+        {/* ── Parameter Trends ─────────────────────────────────────────────── */}
         <section className="bg-white rounded-2xl ring-1 ring-black/[0.06] shadow-sm p-5">
           <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
             <div>
-              <h2 className="text-[15px] font-bold text-gray-900 tracking-tight">Parameter Trends</h2>
-              <p className="text-[11.5px] text-gray-400 mt-0.5">
-                Reading as % of max safe threshold · last {timeRange} · {selectedWH}
+              <h2 className="text-[14px] font-bold text-gray-900 tracking-tight">Parameter Trends</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Each line shows the reading as % of its maximum safe threshold · last {timeRange} · {selectedWH}
               </p>
             </div>
-            <div className="flex items-center gap-4 text-[10.5px] font-semibold text-gray-400">
+            <div className="flex items-center gap-3 text-[10.5px] font-semibold text-gray-400 flex-shrink-0">
               <span className="flex items-center gap-1.5">
-                <span className="w-6 h-2 rounded-sm bg-amber-100 inline-block border border-amber-200" /> 75–90% — Caution zone
+                <span className="w-5 h-2 rounded-sm bg-amber-100 inline-block border border-amber-200" />
+                75–90% Caution
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-6 h-2 rounded-sm bg-red-100 inline-block border border-red-200" /> 90%+ — Critical zone
+                <span className="w-5 h-2 rounded-sm bg-red-100 inline-block border border-red-200" />
+                90%+ Critical
               </span>
             </div>
           </div>
 
           <ParameterTrendsChart />
 
-          {/* Trend legend */}
-          <div className="flex flex-wrap gap-x-6 gap-y-2 mt-4 pt-3 border-t border-gray-100">
-            {trendSeries.map((s) => (
-              <div key={s.key} className="flex items-center gap-2">
-                <span className="w-5 h-0.5 rounded-full" style={{ backgroundColor: s.color }} />
-                <span className="text-[11px] font-semibold text-gray-500">{s.label}</span>
-                <span className="text-[11px] font-bold text-gray-700 tabular-nums">
-                  {realtimeMetrics.find((m) => m.id === s.key)?.value}{s.unit}
-                </span>
-                <span className="text-[10px] text-gray-400">/ {s.threshold}{s.unit} max</span>
-              </div>
-            ))}
+          {/* Legend + current values */}
+          <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 pt-3 border-t border-gray-100">
+            {trendSeries.map((s) => {
+              const metric = realtimeMetrics.find((m) => m.id === s.key);
+              return (
+                <div key={s.key} className="flex items-center gap-2">
+                  <span className="w-5 h-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="text-[11px] font-semibold text-gray-500">{s.label}</span>
+                  <span className="text-[11px] font-bold text-gray-800 tabular-nums">{metric?.value}{s.unit}</span>
+                  <span className="text-[10px] text-gray-400">/ {s.threshold}{s.unit} max</span>
+                </div>
+              );
+            })}
           </div>
         </section>
 
