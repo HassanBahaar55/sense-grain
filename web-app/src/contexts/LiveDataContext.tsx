@@ -34,7 +34,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // 1. Start simulation — UI ticks every 30s, Firestore sync every 60s
-    liveEngine.start(30000, 60000);
+    liveEngine.start(10000, 60000);
     setIsRunning(true);
 
     // Seed Firestore on first login (no-op if already seeded)

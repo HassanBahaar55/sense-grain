@@ -573,7 +573,7 @@ export default function RealtimeMonitorPage() {
                   ? 'Loading zones…'
                   : hasNoLink
                   ? `${zones.length} zone${zones.length !== 1 ? 's' : ''} configured · connect a Live Engine ID to see readings`
-                  : `${active.length} of ${zones.length} sensors active · updates every 30 s`
+                  : `${active.length} of ${zones.length} sensors active · updates every 10 s`
                 }
               </p>
             </div>
