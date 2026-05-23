@@ -6,9 +6,10 @@
  * so page components need only a one-line import change.
  *
  * Data sources:
- *   warehouseReadings  ← liveEngine writes every 60 s  (real-time)
- *   alerts             ← liveEngine writes every 60 s  (real-time)
- *   sensorHistory      ← seeded 14 days + daily append (historical charts)
+ *   warehouseReadings  ← liveEngine writes every 2 min (real-time)
+ *   alerts             ← liveEngine writes every 2 min (real-time)
+ *   alertHistory       ← permanent log, written on alert fire/resolve
+ *   sensorHistory      ← seeded 30 days + daily append (historical charts)
  *   reports            ← seeded on login + user-generated
  *   reportsMeta        ← seeded on login + updated on new report
  */
@@ -622,15 +623,19 @@ export function useAlertHistory(days: number): AlertHistoryItem[] {
   const [items, setItems] = useState<AlertHistoryItem[]>([]);
 
   useEffect(() => {
-    const since = Date.now() - days * 24 * 60 * 60 * 1000;
+    // Simple query without compound index requirement; filter by date in JS
     const q = query(
       collection(db, 'alertHistory'),
-      where('triggeredAt', '>=', since),
       orderBy('triggeredAt', 'desc'),
-      limit(200),
+      limit(500),
     );
     const unsub = onSnapshot(q, snap => {
-      setItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as AlertHistoryItem)));
+      const since = Date.now() - days * 24 * 60 * 60 * 1000;
+      setItems(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as AlertHistoryItem))
+          .filter(item => (item.triggeredAt ?? 0) >= since),
+      );
     }, () => { /* offline — keep previous */ });
     return unsub;
   }, [days]);

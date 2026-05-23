@@ -94,8 +94,10 @@ export class LiveEngine {
   private alertSeq     = 1;
   private tickCount    = 0;
   private alertCooldown: Map<string, number> = new Map();
-  // 20 min cooldown — prevents spam after a sensor returns to normal and spikes again
   private readonly COOLDOWN_MS = 20 * 60 * 1000;
+  // Check alerts every 6th tick (every ~60s at 10s interval) to reduce noise
+  private readonly ALERT_CHECK_EVERY = 6;
+  lastTickAt = 0; // exposed so UI can show "last checked X ago"
 
   // Queue of history writes to flush on next Firestore sync
   private historyPending: { alert: LiveAlert; resolvedAt?: number }[] = [];
@@ -125,6 +127,7 @@ export class LiveEngine {
 
   private tick() {
     this.tickCount++;
+    this.lastTickAt = Date.now();
     const circ = circadian();
 
     for (const cfg of WH_CONFIGS) {
@@ -178,7 +181,10 @@ export class LiveEngine {
       s.trend = delta > 0.05 ? 'up' : delta < -0.05 ? 'down' : 'stable';
 
       this.recalcDerived(cfg.id);
-      this.checkAlerts(cfg.id, s);
+      // Check alerts every ALERT_CHECK_EVERY ticks (~60s), but always on tick 1
+      if (this.tickCount === 1 || this.tickCount % this.ALERT_CHECK_EVERY === 0) {
+        this.checkAlerts(cfg.id, s);
+      }
     }
 
     this.notify();

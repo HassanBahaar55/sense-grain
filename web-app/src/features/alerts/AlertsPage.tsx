@@ -6,6 +6,7 @@ import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { AlertsTrendChart } from '@/components/charts/AlertsTrendChart';
 import { type Alert, type AlertSeverity, type AlertStatus, type AlertParamType } from '@/lib/dataEngine';
 import { useFirestoreAlertsData as useAlertsData, useAlertHistory, type AlertHistoryItem } from '@/lib/useFirestoreData';
+import { useLiveData } from '@/contexts/LiveDataContext';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
@@ -674,7 +675,15 @@ export default function AlertsPage() {
   const [search, setSearch]   = useState('');
   const [filters, setFilters] = useState<{ severity: string; type: string; status: string }>({ severity: 'all', type: 'all', status: 'all' });
   const [page, setPage]       = useState(1);
-  const [chartDays, setChartDays] = useState<7 | 30>(7);
+  // "Last checked" status — updates every second based on liveEngine tick
+  const { tick } = useLiveData();
+  const [lastCheckedAt, setLastCheckedAt] = useState(Date.now());
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => { setLastCheckedAt(Date.now()); }, [tick]);
+  useEffect(() => {
+    const iv = setInterval(() => setElapsedSec(Math.floor((Date.now() - lastCheckedAt) / 1000)), 1000);
+    return () => clearInterval(iv);
+  }, [lastCheckedAt]);
 
   const activeFilterCount = (filters.severity !== 'all' ? 1 : 0) + (filters.type !== 'all' ? 1 : 0) + (filters.status !== 'all' ? 1 : 0);
 
@@ -717,6 +726,21 @@ export default function AlertsPage() {
           <SummaryCard label="Warnings" value={effectiveSummary.warning} sub="Approaching safe threshold" iconBg="bg-amber-50" iconColor="text-amber-500" valueColor={effectiveSummary.warning > 0 ? 'text-amber-600' : undefined} icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>} />
           <SummaryCard label="Resolved" value={effectiveSummary.resolved} sub="Confirmed fixed and closed" iconBg="bg-green-50" iconColor="text-green-600" valueColor={effectiveSummary.resolved > 0 ? 'text-green-600' : undefined} icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>} />
         </section>
+
+        {/* ── Last checked status bar ─────────────────────────────────────────── */}
+        <div className={cn(
+          'flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-semibold',
+          activeEffective.length > 0
+            ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+            : 'bg-green-50 text-green-700 ring-1 ring-green-200',
+        )}>
+          <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', activeEffective.length > 0 ? 'bg-amber-500' : 'bg-green-500 animate-pulse')} />
+          {activeEffective.length > 0
+            ? `${activeEffective.length} active alert${activeEffective.length > 1 ? 's' : ''} detected — last sensor check ${elapsedSec < 5 ? 'just now' : `${elapsedSec}s ago`}`
+            : `All sensors normal — last checked ${elapsedSec < 5 ? 'just now' : `${elapsedSec}s ago`}`
+          }
+          <span className="ml-auto text-[10px] font-medium opacity-70">Sensors update every 10s · Alerts checked every 60s</span>
+        </div>
 
         {/* ── Search + Filter bar ─────────────────────────────────────────────── */}
         <Card className="px-5 py-3.5">
@@ -840,18 +864,9 @@ export default function AlertsPage() {
           <div className="flex items-start justify-between mb-1 gap-4">
             <div>
               <h2 className="text-[15px] font-bold text-gray-900">Alerts Trend</h2>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                {chartDays === 7 ? 'Past 7 days — daily alert count by severity' : 'Past 30 days — daily alert count by severity'}
-              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Past 7 days — daily alert count by severity</p>
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
-              <div className="flex items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-                {([7, 30] as const).map((d) => (
-                  <button key={d} onClick={() => setChartDays(d)} className={cn('h-6 px-2.5 rounded-md text-[10px] font-bold transition-all duration-150', chartDays === d ? 'bg-[#1f5135] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700')}>
-                    {d === 7 ? '7D' : '30D'}
-                  </button>
-                ))}
-              </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
               {[{ label: 'Critical', color: '#ef4444' }, { label: 'Warning', color: '#f59e0b' }, { label: 'Info', color: '#3b82f6' }].map((s) => (
                 <span key={s.label} className="flex items-center gap-1.5 text-[10px] font-medium text-gray-500">
                   <span className="w-4 h-0.5 rounded-full" style={{ backgroundColor: s.color }} />{s.label}
@@ -860,9 +875,9 @@ export default function AlertsPage() {
             </div>
           </div>
           <p className="text-[10px] text-gray-400 mb-4">
-            This graph shows how many alerts fired each day, grouped by severity. It helps identify if certain days had spikes (e.g. heatwave, power failure).
+            Daily alert count by severity — helps identify spikes (e.g. heatwave, sensor failure).
           </p>
-          <AlertsTrendChart days={chartDays} />
+          <AlertsTrendChart days={7} />
         </Card>
 
       </main>
