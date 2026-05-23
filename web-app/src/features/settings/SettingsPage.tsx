@@ -1212,6 +1212,7 @@ const DEFAULT_SENSORS_PRESET: WizardSensor[] = [
 function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   const [step, setStep]     = useState<WizardStep>(1);
   const [saving, setSaving] = useState(false);
+  const [createErr, setCreateErr] = useState('');
 
   // Step 1 fields
   const [whName,     setWhName]     = useState('');
@@ -1226,43 +1227,47 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   // Step 3 — sensors option
   const [defaultSensors, setDefaultSensors] = useState(true);
 
-  const addZoneEntry  = () => setZones(z => [...z, { name: `Zone ${z.length + 1}` }]);
-  const removeZone    = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
+  const addZoneEntry   = () => setZones(z => [...z, { name: `Zone ${z.length + 1}` }]);
+  const removeZone     = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
   const updateZoneName = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { name: v } : z2));
 
   const canGoStep2 = whName.trim().length > 0;
   const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0);
 
   async function create() {
+    setCreateErr('');
     setSaving(true);
     try {
-      const now = Date.now();
-      // 1. Create warehouse
-      const whRef = await addWarehouse({
-        name: whName.trim(),
+      // Build warehouse payload — never pass undefined to Firestore
+      const whPayload: {
+        name: string; capacity: number; location: string;
+        status: ManagedStatus; liveEngineId?: string;
+      } = {
+        name:     whName.trim(),
         capacity: Number(whCap) || 1000,
         location: whLoc.trim(),
-        status: whStatus,
-        liveEngineId: whLiveId.trim() || undefined,
-      });
-      const whId = whRef.id;
+        status:   whStatus,
+      };
+      if (whLiveId.trim()) whPayload.liveEngineId = whLiveId.trim();
 
-      // 2. Create zones + sensors
-      let ts = now + 1;
+      // 1. Create warehouse
+      const whRef = await addWarehouse(whPayload);
+      const whId  = whRef.id;
+
+      // 2. Create zones + sensors sequentially
       for (const z of zones) {
         if (!z.name.trim()) continue;
         const zRef = await addZone({ warehouseId: whId, name: z.name.trim(), status: whStatus });
-        ts++;
         if (defaultSensors && whStatus === 'active') {
           for (const s of DEFAULT_SENSORS_PRESET) {
             await addSensor({ zoneId: zRef.id, warehouseId: whId, name: s.name, type: s.type, status: 'active' });
-            ts++;
           }
         }
       }
       onClose();
     } catch (err) {
       console.error('[AddWarehouseWizard]', err);
+      setCreateErr('Failed to create warehouse. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -1446,6 +1451,13 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
               All data syncs instantly to Firestore — mobile apps will see the new warehouse, zones, and sensors in real time.
             </p>
           </div>
+
+          {createErr && (
+            <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200">
+              <svg className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <p className="text-[11px] text-red-700 font-medium leading-snug">{createErr}</p>
+            </div>
+          )}
         </div>
       )}
     </InfraModal>
