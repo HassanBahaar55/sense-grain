@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useCallback, type FormEvent } from 'react';
+import { useState, useCallback, useEffect, useRef, type FormEvent } from 'react';
 import Link from 'next/link';
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
 
 function Logo() {
   return (
@@ -27,46 +29,146 @@ function Spinner() {
   );
 }
 
+// ─── Rate-limit: max 3 sends per 10 minutes ───────────────────────────────────
+
+const RATE_LIMIT    = 3;
+const RATE_WINDOW   = 10 * 60 * 1000; // 10 min
+const COOLDOWN_MS   = 60 * 1000;      // 60s between consecutive sends
+
+function getRateMeta(): { attempts: number[]; lastSent: number } {
+  try {
+    return JSON.parse(sessionStorage.getItem('_fprl') ?? '{"attempts":[],"lastSent":0}');
+  } catch { return { attempts: [], lastSent: 0 }; }
+}
+function setRateMeta(m: { attempts: number[]; lastSent: number }) {
+  sessionStorage.setItem('_fprl', JSON.stringify(m));
+}
+
+function checkRateLimit(): { allowed: boolean; waitMs: number } {
+  const now  = Date.now();
+  const meta = getRateMeta();
+  const recent = meta.attempts.filter(t => now - t < RATE_WINDOW);
+  if (recent.length >= RATE_LIMIT) {
+    const oldest = Math.min(...recent);
+    return { allowed: false, waitMs: RATE_WINDOW - (now - oldest) };
+  }
+  if (meta.lastSent && now - meta.lastSent < COOLDOWN_MS) {
+    return { allowed: false, waitMs: COOLDOWN_MS - (now - meta.lastSent) };
+  }
+  return { allowed: true, waitMs: 0 };
+}
+function recordAttempt() {
+  const now  = Date.now();
+  const meta = getRateMeta();
+  const recent = meta.attempts.filter(t => now - t < RATE_WINDOW);
+  setRateMeta({ attempts: [...recent, now], lastSent: now });
+}
+
+function fmtWait(ms: number) {
+  const s = Math.ceil(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.ceil(s / 60)}m`;
+}
+
+// ─── Cooldown countdown display ───────────────────────────────────────────────
+
+function useCooldown() {
+  const [remaining, setRemaining] = useState(0);
+  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const start = useCallback(() => {
+    const tick = () => {
+      const { waitMs } = checkRateLimit();
+      setRemaining(Math.ceil(waitMs / 1000));
+      if (waitMs <= 0 && ref.current) { clearInterval(ref.current); ref.current = null; }
+    };
+    tick();
+    ref.current = setInterval(tick, 1000);
+  }, []);
+
+  useEffect(() => () => { if (ref.current) clearInterval(ref.current); }, []);
+  return { remaining, start };
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 type Screen = 'form' | 'sent';
 
 export default function ForgotPasswordPage() {
-  const [screen, setScreen]     = useState<Screen>('form');
-  const [email, setEmail]       = useState('');
-  const [emailErr, setEmailErr] = useState('');
+  const [screen, setScreen]       = useState<Screen>('form');
+  const [email, setEmail]         = useState('');
+  const [emailErr, setEmailErr]   = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError]       = useState('');
-  const [sentTo, setSentTo]     = useState('');
+  const [error, setError]         = useState('');
+  const [sentTo, setSentTo]       = useState('');
+  const { remaining, start: startCooldown } = useCooldown();
 
-  const handleSubmit = useCallback(async (e: FormEvent) => {
-    e.preventDefault();
-    setError('');
-    const trimmed = email.trim();
-    if (!trimmed) { setEmailErr('Email is required'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) { setEmailErr('Enter a valid email address'); return; }
-    setEmailErr('');
+  const blocked = remaining > 0;
+
+  const sendReset = useCallback(async (trimmed: string) => {
+    const rate = checkRateLimit();
+    if (!rate.allowed) {
+      setError(`Please wait ${fmtWait(rate.waitMs)} before requesting another reset email.`);
+      startCooldown();
+      return;
+    }
     setIsLoading(true);
+    setError('');
     try {
       const { getAuth, sendPasswordResetEmail } = await import('firebase/auth');
       const app = (await import('@/config/firebase')).default;
-      await sendPasswordResetEmail(getAuth(app), trimmed);
+      const auth = getAuth(app);
+
+      // actionCodeSettings sends user to our in-app reset page
+      const actionCodeSettings = {
+        url: `${window.location.origin}/reset-password`,
+        handleCodeInApp: false,
+      };
+
+      await sendPasswordResetEmail(auth, trimmed, actionCodeSettings);
+      recordAttempt();
       setSentTo(trimmed);
       setScreen('sent');
+      startCooldown();
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
       console.error('[Reset Email Error]', { code, err });
-      if (code === 'auth/user-not-found' || code === 'auth/invalid-email') {
-        // For security, don't reveal whether account exists
+      // Security: don't reveal if account exists or not
+      if (
+        code === 'auth/user-not-found' ||
+        code === 'auth/invalid-email'
+      ) {
+        // Still show success screen — don't reveal whether email exists
+        recordAttempt();
         setSentTo(trimmed);
         setScreen('sent');
+        startCooldown();
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many requests. Please wait a few minutes and try again.');
       } else if (code === 'auth/network-request-failed') {
-        setError('Network error. Check your connection.');
+        setError('Network error. Check your connection and try again.');
       } else {
         setError('Failed to send reset email. Please try again.');
       }
     } finally {
       setIsLoading(false);
     }
-  }, [email]);
+  }, [startCooldown]);
+
+  const handleSubmit = useCallback(async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const trimmed = email.trim();
+    if (!trimmed)                                          { setEmailErr('Email is required'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed))     { setEmailErr('Enter a valid email address'); return; }
+    setEmailErr('');
+    await sendReset(trimmed);
+  }, [email, sendReset]);
+
+  const handleResend = useCallback(() => {
+    if (blocked) return;
+    sendReset(sentTo);
+  }, [blocked, sentTo, sendReset]);
 
   return (
     <div className="w-full max-w-[420px]">
@@ -76,13 +178,21 @@ export default function ForgotPasswordPage() {
 
         {screen === 'form' ? (
           <>
+            {/* Header */}
             <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
               <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">Reset password</h1>
               <p className="text-[13px] text-gray-500 mt-1">
                 Enter your email and we&apos;ll send you a reset link
               </p>
             </div>
 
+            {/* Error */}
             {error && (
               <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-5">
                 <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -93,9 +203,10 @@ export default function ForgotPasswordPage() {
               </div>
             )}
 
+            {/* Form */}
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div>
-                <label className="block text-[13px] font-semibold text-gray-800 mb-1.5">Email</label>
+                <label className="block text-[13px] font-semibold text-gray-800 mb-1.5">Email address</label>
                 <input
                   type="email"
                   placeholder="you@example.com"
@@ -114,15 +225,24 @@ export default function ForgotPasswordPage() {
 
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || blocked}
                 className="w-full h-11 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[14px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-emerald-900/20"
               >
-                {isLoading ? <><Spinner /> Sending…</> : 'Send reset link'}
+                {isLoading
+                  ? <><Spinner /> Sending…</>
+                  : blocked
+                  ? `Wait ${remaining}s`
+                  : 'Send reset link'}
               </button>
             </form>
+
+            <p className="mt-4 text-[11.5px] text-gray-400 text-center leading-relaxed">
+              For security, reset links expire after 1 hour and can only be used once.
+            </p>
           </>
         ) : (
           <>
+            {/* Sent screen */}
             <div className="flex justify-center mb-4">
               <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
                 <svg className="w-7 h-7 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -138,18 +258,42 @@ export default function ForgotPasswordPage() {
               <p className="text-[13px] font-semibold text-gray-900 mt-0.5 break-all">{sentTo}</p>
             </div>
 
-            <p className="text-[12.5px] text-gray-500 text-center leading-relaxed mb-5">
-              Click the link in your email to reset your password.<br />
+            {/* Steps */}
+            <ol className="space-y-2 mb-5">
+              {[
+                'Open the email from Sense Grain',
+                'Click "Reset password" in the email',
+                'Create a new secure password',
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-2.5">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <span className="text-[12.5px] text-gray-600 leading-snug">{step}</span>
+                </li>
+              ))}
+            </ol>
+
+            <p className="text-[12px] text-gray-400 text-center mb-4 leading-relaxed">
               Check your spam folder if you don&apos;t see it.
+              The link expires in <strong className="text-gray-500">1 hour</strong>.
             </p>
+
+            {error && (
+              <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 mb-3">
+                <p className="text-[12.5px] text-red-700 font-medium flex-1 leading-snug">{error}</p>
+              </div>
+            )}
 
             <button
               type="button"
-              onClick={() => { handleSubmit({ preventDefault: () => {} } as FormEvent); }}
-              disabled={isLoading}
-              className="w-full h-11 rounded-xl border border-gray-200 bg-white text-[13.5px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-150 disabled:opacity-50"
+              onClick={handleResend}
+              disabled={isLoading || blocked}
+              className="w-full h-11 rounded-xl border border-gray-200 bg-white text-[13.5px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Sending…' : 'Resend email'}
+              {isLoading
+                ? <span className="flex items-center justify-center gap-2"><Spinner /> Sending…</span>
+                : blocked
+                ? `Resend in ${remaining}s`
+                : 'Resend email'}
             </button>
           </>
         )}
