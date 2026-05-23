@@ -555,14 +555,23 @@ export function useFirestoreParamTrend(): ParamTrendPoint[] {
 export function useFirestoreAlertTrend(days: 7 | 30 = 7): AlertTrendPoint[] {
   const history = useSensorHistory(days);
   const today = new Date();
-  return history.length > 0
-    ? history.map(h => ({
-        day:      dayLabel(new Date(h.date + 'T00:00:00')),
-        Critical: h.alertCounts.Critical,
-        Warning:  h.alertCounts.Warning,
-        Info:     h.alertCounts.Info,
-      }))
-    : Array.from({ length: days }, (_, i) => ({ day: dayLabel(addDays(today, i - (days - 1))), Critical: 0, Warning: 2, Info: 8 }));
+
+  // Build a full N-day range, filling missing days with zeros
+  return useMemo(() => {
+    const byDate = new Map(history.map(h => [h.date, h]));
+    return Array.from({ length: days }, (_, i) => {
+      const d    = addDays(today, i - (days - 1));
+      const key  = d.toISOString().slice(0, 10);
+      const doc  = byDate.get(key);
+      return {
+        day:      dayLabel(d),
+        Critical: doc?.alertCounts.Critical ?? 0,
+        Warning:  doc?.alertCounts.Warning  ?? 0,
+        Info:     doc?.alertCounts.Info     ?? 0,
+      };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, days]);
 }
 
 export function useFirestoreEnvTrend(): EnvTrendPoint[] {

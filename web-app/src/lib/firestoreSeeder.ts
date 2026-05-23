@@ -43,7 +43,7 @@ function dateKey(d: Date): string {
 export async function seedFirestoreIfEmpty(): Promise<void> {
   try {
     // Check version — bump SEED_VERSION to force a reseed
-    const SEED_VERSION = 2;
+    const SEED_VERSION = 3;
     const metaRef  = doc(db, 'meta', 'seeded');
     const metaSnap = await getDoc(metaRef);
     if (metaSnap.exists() && (metaSnap.data()?.version ?? 0) >= SEED_VERSION) return;
@@ -51,8 +51,8 @@ export async function seedFirestoreIfEmpty(): Promise<void> {
     const today = new Date();
     const batch = writeBatch(db);
 
-    // ── 1. sensorHistory — 14 days of daily warehouse snapshots ─────────────
-    for (let i = 13; i >= 0; i--) {
+    // ── 1. sensorHistory — 30 days of daily warehouse snapshots ─────────────
+    for (let i = 29; i >= 0; i--) {
       const day = addDays(today, -i);
       const key = dateKey(day);
       const warehouses = getWarehouseReadings(day);
@@ -112,7 +112,7 @@ export async function seedFirestoreIfEmpty(): Promise<void> {
     // ── 3. Mark seeding complete ─────────────────────────────────────────────
     batch.set(metaRef, {
       seededAt: serverTimestamp(),
-      version: 2,
+      version: 3,
     });
 
     await batch.commit();

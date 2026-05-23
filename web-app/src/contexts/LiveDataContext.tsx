@@ -33,23 +33,33 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const [isRunning,  setIsRunning]  = useState(false);
 
   useEffect(() => {
-    // 1. Start simulation — UI ticks every 30s, Firestore sync every 60s
+    // 1. Start simulation — UI ticks every 10s, Firestore sync every 60s
     liveEngine.start(10000, 60000);
     setIsRunning(true);
 
     // Seed Firestore on first login (no-op if already seeded)
     seedFirestoreIfEmpty().catch(() => {});
 
-    // 2. Also drive local UI from simulation directly (smooth, instant updates)
+    // Track whether we have pre-loaded Firestore alerts into the engine
+    let alertsBootstrapped = false;
+
+    // 2. Drive local UI from simulation directly (smooth, instant updates)
+    //    During the warmup window (first 4 ticks / ~40s), don't let the engine
+    //    overwrite alerts with an empty array — Firestore alerts are authoritative
+    //    until the engine has had time to evaluate its own threshold checks.
     const unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
       setReadings({ ...newReadings });
-      setLiveAlerts([...newAlerts]);
+      setLiveAlerts(prev => {
+        // Once bootstrapped, use engine state (it now knows about existing alerts)
+        if (alertsBootstrapped) return [...newAlerts];
+        // Before bootstrap: keep Firestore alerts if engine has none yet
+        return newAlerts.length > 0 ? [...newAlerts] : prev;
+      });
       setTick(newTick);
       setLiveOverride(newReadings);
     });
 
     // 3. Subscribe to Firestore — mobile app writes here too; keeps all platforms synced
-    //    If Firestore has newer data (e.g. from another device), it overrides local state
     const unsubFirestoreReadings = subscribeToReadings((firestoreReadings) => {
       if (Object.keys(firestoreReadings).length > 0) {
         setReadings(firestoreReadings);
@@ -61,6 +71,13 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     const unsubFirestoreAlerts = subscribeToAlerts((firestoreAlerts) => {
       if (firestoreAlerts.length > 0) {
         setLiveAlerts(firestoreAlerts);
+        // Pre-populate engine once so it can properly dedup + resolve them
+        if (!alertsBootstrapped) {
+          liveEngine.loadPersistedAlerts(firestoreAlerts as import('@/lib/liveEngine').LiveAlert[]);
+          alertsBootstrapped = true;
+        }
+      } else {
+        alertsBootstrapped = true; // No Firestore alerts — engine is authoritative
       }
     });
 

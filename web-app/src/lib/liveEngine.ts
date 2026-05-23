@@ -325,6 +325,18 @@ export class LiveEngine {
   getReadings() { return { ...this.readings }; }
   getAlerts()   { return [...this.alerts]; }
   getTick()     { return this.tickCount; }
+
+  /** Pre-populate alerts from Firestore so engine continues from last known state. */
+  loadPersistedAlerts(existing: LiveAlert[]) {
+    for (const a of existing) {
+      if (!a.resolved && !this.alerts.find(x => x.id === a.id)) {
+        this.alerts.push({ ...a });
+        // Track highest sequence so new IDs don't collide
+        const seq = parseInt(a.id.replace('live-', ''), 10);
+        if (!isNaN(seq) && seq >= this.alertSeq) this.alertSeq = seq + 1;
+      }
+    }
+  }
 }
 
 // Singleton — one engine for the whole app
