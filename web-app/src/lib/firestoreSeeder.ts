@@ -1,157 +1,478 @@
 'use client';
 
 /**
- * One-time Firestore seeder.
- * Runs on first login — checks `meta/seeded` before writing anything.
- * Seeds: sensorHistory (14 days), reports (10 docs), reportsMeta/global.
- * All subsequent data comes from liveEngine ticks (warehouseReadings, alerts)
- * or user actions (new reports).
+ * Per-user Firestore seeder.
+ * seedUserData(uid, email) — called once per login from LiveDataContext.
+ * Checks accounts/{uid}/meta/seeded before writing anything.
+ *
+ * test user (testing@gmail.com):
+ *   4 warehouses × 4 zones × 3 sensors + 30-day history + 55 alerts + 6 reports
+ * all other approved users:
+ *   4 warehouses + 4 zones + 4 sensors + 7-day history (minimal skeleton)
  */
 
 import {
-  getFirestore, doc, getDoc, setDoc, writeBatch,
-  serverTimestamp, collection, query, where, orderBy, getDocs, deleteDoc,
+  getFirestore, doc, getDoc, setDoc, writeBatch, collection,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
-import {
-  getWarehouseReadings, getReportsData,
-  type ReportItem,
-} from './dataEngine';
+import { col, isTestEmail } from '@/lib/accountDb';
+import type { LiveSensorReading } from './liveEngine';
 
 const db = getFirestore(firebaseApp);
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const SEED_VERSION = 1;
 
-/** Deterministic pseudo-random integer in [min, max] based on date string + salt */
-function seededVariation(dateStr: string, salt: number, min: number, max: number): number {
-  const seed = dateStr.split('-').reduce((acc, p) => acc + parseInt(p, 10) * salt, 0);
-  return min + (Math.abs(Math.sin(seed) * 10000) % (max - min + 1) | 0);
-}
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
-function addDays(date: Date, n: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
+function addDays(d: Date, n: number): Date {
+  const nd = new Date(d);
+  nd.setDate(nd.getDate() + n);
+  return nd;
 }
 
 function dateKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ─── Main seeder ──────────────────────────────────────────────────────────────
+/** Deterministic float in [min, max] from a string seed + salt */
+function seeded(seed: string, salt: number, min: number, max: number): number {
+  const h = seed.split('').reduce((acc, c) => acc + c.charCodeAt(0) * salt, 0);
+  return min + (Math.abs(Math.sin(h) * 10000) % (max - min));
+}
 
-export async function seedFirestoreIfEmpty(): Promise<void> {
+function seededInt(seed: string, salt: number, min: number, max: number): number {
+  return min + (Math.abs(Math.round(seeded(seed, salt, 0, max - min + 1))) % (max - min + 1));
+}
+
+function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
+
+// ─── Test-user warehouse definitions ─────────────────────────────────────────
+
+const TEST_WAREHOUSES = [
+  { id: 'WH-A', name: 'North Wing Silo',    capacity: 5000, location: 'Block A, North',  baseTemp: 25.5, baseHum: 57, baseMoist: 10.8, baseCO2: 488, baseAQI: 33, baseCap: 72 },
+  { id: 'WH-B', name: 'East Block Storage',  capacity: 4200, location: 'Block B, East',   baseTemp: 27.0, baseHum: 61, baseMoist: 11.8, baseCO2: 512, baseAQI: 40, baseCap: 67 },
+  { id: 'WH-C', name: 'South Facility',      capacity: 6100, location: 'Block C, South',  baseTemp: 26.0, baseHum: 55, baseMoist: 10.5, baseCO2: 502, baseAQI: 37, baseCap: 81 },
+  { id: 'WH-D', name: 'West Cold Unit',      capacity: 3800, location: 'Block D, West',   baseTemp: 27.5, baseHum: 62, baseMoist: 12.0, baseCO2: 518, baseAQI: 43, baseCap: 61 },
+];
+
+const ZONE_NAMES = ['Zone Alpha', 'Zone Beta', 'Zone Gamma', 'Zone Delta'];
+
+// ─── Build a daily sensorHistory snapshot ────────────────────────────────────
+
+function buildDaySnapshot(dateStr: string, whConfigs: typeof TEST_WAREHOUSES) {
+  const variants = whConfigs.map(wh => ({
+    id:          wh.id,
+    temperature: clamp(+(wh.baseTemp + seeded(dateStr, wh.id.charCodeAt(2), -2, 4)).toFixed(1), 20, 36),
+    humidity:    clamp(Math.round(wh.baseHum + seeded(dateStr, wh.id.charCodeAt(3), -4, 8)),     40, 80),
+    moisture:    clamp(+(wh.baseMoist + seeded(dateStr, wh.id.charCodeAt(2) + 1, -1, 2)).toFixed(1), 8, 16),
+    co2:         clamp(Math.round(wh.baseCO2 + seeded(dateStr, wh.id.charCodeAt(2) + 2, -30, 80)), 400, 700),
+    aqi:         clamp(Math.round(wh.baseAQI + seeded(dateStr, wh.id.charCodeAt(2) + 3, -8, 20)),   10, 90),
+  }));
+
+  const avgT   = +(variants.reduce((s, w) => s + w.temperature, 0) / variants.length).toFixed(1);
+  const avgH   = Math.round(variants.reduce((s, w) => s + w.humidity, 0) / variants.length);
+  const avgM   = +(variants.reduce((s, w) => s + w.moisture, 0) / variants.length).toFixed(1);
+  const avgCO2 = Math.round(variants.reduce((s, w) => s + w.co2, 0) / variants.length);
+  const avgAQI = Math.round(variants.reduce((s, w) => s + w.aqi, 0) / variants.length);
+
+  const statuses = variants.map(w => {
+    if (w.temperature >= 32 || w.humidity >= 72 || w.co2 >= 650) return 'high';
+    if (w.temperature >= 29 || w.humidity >= 65 || w.co2 >= 550) return 'medium';
+    return 'good';
+  });
+
+  const good     = statuses.filter(s => s === 'good').length;
+  const warning  = statuses.filter(s => s === 'medium').length;
+  const critical = statuses.filter(s => s === 'high').length;
+
+  const stability: Record<string, number> = {};
+  for (const w of variants) {
+    const tScore = clamp(100 - Math.max(0, w.temperature - 25) * 8, 0, 100);
+    const hScore = clamp(100 - Math.max(0, w.humidity - 60) * 4, 0, 100);
+    stability[w.id] = Math.round(tScore * 0.6 + hScore * 0.4);
+  }
+
+  return {
+    date: dateStr,
+    averages:         { temperature: avgT, humidity: avgH, moisture: avgM, co2: avgCO2, aqi: avgAQI },
+    warehouseStatus:  { good, warning, critical },
+    stability,
+    alertCounts: {
+      Critical: Math.max(0, critical * 2 + seededInt(dateStr, 11, 0, 3)),
+      Warning:  Math.max(0, warning * 3 + critical + seededInt(dateStr, 7, 0, 6)),
+      Info:     Math.max(0, 5 + good + seededInt(dateStr, 3, 0, 5)),
+    },
+  };
+}
+
+// ─── Build live warehouseReadings ─────────────────────────────────────────────
+
+function buildReading(wh: typeof TEST_WAREHOUSES[0]): LiveSensorReading {
+  const temp     = clamp(+(wh.baseTemp + (Math.random() - 0.4) * 3).toFixed(1), 20, 36);
+  const humidity = clamp(Math.round(wh.baseHum + (Math.random() - 0.4) * 6), 40, 80);
+  const moisture = clamp(+(wh.baseMoist + (Math.random() - 0.4) * 1.5).toFixed(1), 8, 16);
+  const co2      = clamp(Math.round(wh.baseCO2 + (Math.random() - 0.4) * 60), 400, 700);
+  const aqi      = clamp(Math.round(wh.baseAQI + (Math.random() - 0.4) * 15), 10, 90);
+  const capacity = clamp(Math.round(wh.baseCap + (Math.random() - 0.5) * 8), 10, 98);
+
+  const status: LiveSensorReading['status'] =
+    temp >= 32 || humidity >= 72 || co2 >= 650 ? 'high' :
+    temp >= 29 || humidity >= 65 || co2 >= 550 ? 'medium' : 'good';
+
+  const spoilageRisk = clamp(Math.round(
+    Math.max(0, temp - 24) * 3 + Math.max(0, humidity - 58) * 1.5 + Math.max(0, moisture - 11) * 5
+  ), 1, 95);
+
+  const health = clamp(
+    100 - spoilageRisk - Math.max(0, co2 - 500) * 0.05 - Math.max(0, aqi - 40) * 0.3,
+    10, 99
+  );
+
+  return {
+    warehouseId:  wh.id,
+    temperature:  temp,
+    humidity,
+    moisture,
+    co2,
+    aqi,
+    capacity,
+    spoilageRisk,
+    health:       +health.toFixed(1),
+    status,
+    trend:        'stable',
+    lastUpdate:   Date.now(),
+  };
+}
+
+// ─── Build seed alerts ────────────────────────────────────────────────────────
+
+const ALERT_TEMPLATES = [
+  { param: 'Temperature', unit: '°C', threshold: 29, severity: 'high' as const,   baseValue: 30.5 },
+  { param: 'Temperature', unit: '°C', threshold: 32, severity: 'critical' as const, baseValue: 33.1 },
+  { param: 'Humidity',    unit: '%',  threshold: 65, severity: 'high' as const,   baseValue: 68 },
+  { param: 'Humidity',    unit: '%',  threshold: 72, severity: 'critical' as const, baseValue: 74 },
+  { param: 'Moisture',    unit: '%',  threshold: 13, severity: 'high' as const,   baseValue: 13.8 },
+  { param: 'CO₂',         unit: 'ppm',threshold: 550, severity: 'high' as const,  baseValue: 572 },
+  { param: 'CO₂',         unit: 'ppm',threshold: 650, severity: 'critical' as const, baseValue: 668 },
+  { param: 'AQI',         unit: '',   threshold: 50, severity: 'high' as const,   baseValue: 57 },
+];
+
+function buildAlerts(today: Date) {
+  const active: object[]  = [];
+  const history: object[] = [];
+
+  let count = 0;
+  for (let daysAgo = 29; daysAgo >= 0; daysAgo--) {
+    const day  = addDays(today, -daysAgo);
+    const dKey = dateKey(day);
+    const alertsThisDay = seededInt(dKey, 13, 0, 3);
+
+    for (let j = 0; j < alertsThisDay; j++) {
+      const tpl = ALERT_TEMPLATES[seededInt(`${dKey}-${j}`, 17, 0, ALERT_TEMPLATES.length - 1)];
+      const wh  = TEST_WAREHOUSES[seededInt(`${dKey}-${j}`, 19, 0, 3)];
+      const id  = `seed-${dKey}-${j}`;
+      const value = +(tpl.baseValue + seeded(`${dKey}-v-${j}`, 7, -1, 2)).toFixed(1);
+      const ts  = day.getTime() + seededInt(`${dKey}-ts-${j}`, 11, 0, 86399) * 1000;
+      const isResolved = daysAgo > 0; // only the most recent day has unresolved alerts
+
+      const alertDoc = {
+        id,
+        warehouseId: wh.id,
+        param:       tpl.param,
+        value,
+        unit:        tpl.unit,
+        threshold:   tpl.threshold,
+        severity:    tpl.severity,
+        message:     `${tpl.param} ${value}${tpl.unit} exceeded threshold of ${tpl.threshold}${tpl.unit} in ${wh.name}`,
+        timestamp:   ts,
+        resolved:    isResolved,
+      };
+
+      if (!isResolved) active.push(alertDoc);
+
+      history.push({
+        ...alertDoc,
+        triggeredAt: ts,
+        resolvedAt:  isResolved ? ts + seededInt(`${dKey}-ra-${j}`, 3, 3600, 86400) * 1000 : null,
+        date:        dKey,
+      });
+
+      count++;
+      if (count >= 55) break;
+    }
+    if (count >= 55) break;
+  }
+
+  return { active, history };
+}
+
+// ─── Build seed reports ───────────────────────────────────────────────────────
+
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function buildReports(today: Date) {
+  type ReportType = 'environmental' | 'compliance' | 'performance' | 'alert-summary' | 'custom';
+  const types: { type: ReportType; label: string; color: string }[] = [
+    { type: 'environmental', label: 'Environmental', color: '#1f5135' },
+    { type: 'compliance',    label: 'Compliance',    color: '#3b82f6' },
+    { type: 'performance',   label: 'Performance',   color: '#f59e0b' },
+    { type: 'alert-summary', label: 'Alert Summary', color: '#ef4444' },
+    { type: 'custom',        label: 'Custom',        color: '#8b5cf6' },
+  ];
+
+  const reports = types.map((t, i) => {
+    const d   = addDays(today, -i * 5);
+    const mon = MONTHS_SHORT[d.getMonth()];
+    const day = d.getDate();
+    const yr  = d.getFullYear();
+    return {
+      id:           `rep-seed-${i + 1}`,
+      type:          t.type,
+      title:        `${t.label} Report — ${mon} ${day}, ${yr}`,
+      warehouse:    i < 4 ? TEST_WAREHOUSES[i].id : 'All',
+      period:       `Last 30 days`,
+      generatedAt:  `${mon} ${day}, ${yr}`,
+      dateGenerated: dateKey(d),
+      generatedBy:  'System',
+      size:         `${seededInt(dateKey(d), 7, 120, 850)} KB`,
+      downloads:     seededInt(dateKey(d), 11, 0, 12),
+      status:       'ready' as const,
+    };
+  });
+
+  const reportTypeData = types.map(t => ({
+    label: t.label,
+    count: seededInt(t.type, 5, 2, 18),
+    color: t.color,
+  }));
+
+  const today7 = Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(today, i - 6);
+    return {
+      day:        `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`,
+      Generated:  seededInt(dateKey(d), 3, 0, 5),
+      Downloaded: seededInt(dateKey(d), 7, 0, 8),
+    };
+  });
+
+  const stats = [
+    { label: 'Total Reports',    value: 47, delta: '+12',   deltaPositive: true,  colorKey: 'blue'   as const },
+    { label: 'This Month',       value: 14, delta: '+3',    deltaPositive: true,  colorKey: 'green'  as const },
+    { label: 'Avg Downloads',    value: 6,  delta: '+0.8',  deltaPositive: true,  colorKey: 'purple' as const },
+    { label: 'Compliance Score', value: 94, delta: '+2.1%', deltaPositive: true,  colorKey: 'amber'  as const },
+  ];
+
+  return { reports, reportTypeData, reportTrendData: today7, stats };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PUBLIC API
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Called from LiveDataContext on every login — idempotent via meta/seeded doc. */
+export async function seedUserData(uid: string, email: string): Promise<void> {
   try {
-    // Check version — bump SEED_VERSION to force a reseed
-    const SEED_VERSION = 3;
-    const metaRef  = doc(db, 'meta', 'seeded');
+    const metaRef  = doc(db, col.meta(uid), 'seeded');
     const metaSnap = await getDoc(metaRef);
     if (metaSnap.exists() && (metaSnap.data()?.version ?? 0) >= SEED_VERSION) return;
 
-    const today = new Date();
-    const batch = writeBatch(db);
+    const isTest = isTestEmail(email);
+    const today  = new Date();
+    const now    = Date.now();
 
-    // ── 1. sensorHistory — 30 days of daily warehouse snapshots ─────────────
-    for (let i = 29; i >= 0; i--) {
-      const day = addDays(today, -i);
-      const key = dateKey(day);
-      const warehouses = getWarehouseReadings(day);
-      const active = warehouses.filter(w => w.temp !== null);
-
-      const avgTemp     = active.length ? +(active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length).toFixed(1) : 0;
-      const avgHumidity = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 0;
-      const avgMoisture = active.length ? +(active.reduce((s, w) => s + (w.moisture ?? 0), 0) / active.length).toFixed(1) : 0;
-      const avgCO2      = active.length ? Math.round(active.reduce((s, w) => s + (w.co2 ?? 520), 0) / active.length) : 0;
-      const avgAQI      = active.length ? Math.round(active.reduce((s, w) => s + (w.aqi ?? 40), 0) / active.length) : 0;
-      const goodCount   = warehouses.filter(w => w.status === 'good').length;
-      const warnCount   = warehouses.filter(w => w.status === 'medium').length;
-      const critCount   = warehouses.filter(w => w.status === 'high').length;
-
-      batch.set(doc(db, 'sensorHistory', key), {
-        date: key,
-        averages: { temperature: avgTemp, humidity: avgHumidity, moisture: avgMoisture, co2: avgCO2, aqi: avgAQI },
-        warehouseStatus: { good: goodCount, warning: warnCount, critical: critCount },
-        // Stability scores per WH (for storage stability chart)
-        stability: Object.fromEntries(
-          warehouses.filter(w => w.temp !== null).map(wh => {
-            const tScore = Math.max(0, 100 - Math.max(0, (wh.temp ?? 25) - 25) * 8);
-            const hScore = Math.max(0, 100 - Math.max(0, (wh.humidity ?? 60) - 60) * 4);
-            return [wh.id, Math.round(tScore * 0.6 + hScore * 0.4)];
-          })
-        ),
-        // Alert counts with per-day variation so the trend chart is not flat
-        alertCounts: {
-          Critical: Math.max(0, critCount * 2      + seededVariation(key, 11, 0, 4)),
-          Warning:  Math.max(0, warnCount * 3 + critCount + seededVariation(key, 7, 0, 8)),
-          Info:     Math.max(0, 6 + goodCount      + seededVariation(key, 3, 0, 6)),
-        },
-        seededAt: serverTimestamp(),
-      });
+    if (isTest) {
+      await seedTestUser(uid, today, now, metaRef);
+    } else {
+      await seedRegularUser(uid, today, now, metaRef);
     }
 
-    // ── 2. Reports — 10 initial generated reports ────────────────────────────
-    const { recentReports, stats, reportTypeData, reportTrendData } = getReportsData(today);
-
-    // Store each report as its own document
-    for (const report of recentReports) {
-      batch.set(doc(db, 'reports', report.id), {
-        ...report,
-        createdAt: serverTimestamp(),
-      });
-    }
-
-    // Store report metadata
-    batch.set(doc(db, 'reportsMeta', 'global'), {
-      stats,
-      reportTypeData,
-      reportTrendData,
-      totalReports: stats[0]?.value ?? 0,
-      updatedAt: serverTimestamp(),
-    });
-
-    // ── 3. Mark seeding complete ─────────────────────────────────────────────
-    batch.set(metaRef, {
-      seededAt: serverTimestamp(),
-      version: 3,
-    });
-
-    await batch.commit();
-    console.info('[seeder] Firestore seeded successfully');
+    console.info(`[seeder] Seeded ${isTest ? 'test' : 'regular'} user ${uid}`);
   } catch (err) {
-    // Non-fatal — app works with local data if seeding fails
-    console.warn('[seeder] Seeding skipped or failed:', err);
+    console.warn('[seeder] Seeding failed (non-fatal):', err);
   }
 }
 
-// ─── Append today's snapshot (called by liveEngine once per day) ──────────────
+// ─── Test user seeding ────────────────────────────────────────────────────────
+
+async function seedTestUser(uid: string, today: Date, now: number, metaRef: ReturnType<typeof doc>) {
+  const batch1 = writeBatch(db);
+
+  // ── Warehouses ───────────────────────────────────────────────────────────────
+  for (const wh of TEST_WAREHOUSES) {
+    batch1.set(doc(db, col.warehouses(uid), wh.id), {
+      id:           wh.id,
+      name:         wh.name,
+      capacity:     wh.capacity,
+      location:     wh.location,
+      status:       'active',
+      liveEngineId: wh.id,
+      createdAt:    now - 30 * 24 * 3600 * 1000,
+    });
+  }
+
+  // ── Zones & Sensors ──────────────────────────────────────────────────────────
+  for (const wh of TEST_WAREHOUSES) {
+    for (let z = 0; z < 4; z++) {
+      const zoneId = `${wh.id}-Z${z + 1}`;
+      batch1.set(doc(db, col.zones(uid), zoneId), {
+        id:          zoneId,
+        warehouseId: wh.id,
+        name:        ZONE_NAMES[z],
+        status:      'active',
+        createdAt:   now - 29 * 24 * 3600 * 1000,
+      });
+
+      const sensorTypes: Array<'temperature' | 'humidity' | 'moisture'> = ['temperature', 'humidity', 'moisture'];
+      for (const sType of sensorTypes) {
+        const sensorId = `${zoneId}-${sType}`;
+        batch1.set(doc(db, col.sensors(uid), sensorId), {
+          id:          sensorId,
+          zoneId,
+          warehouseId: wh.id,
+          name:        `${sType.charAt(0).toUpperCase() + sType.slice(1)} Sensor`,
+          type:        sType,
+          status:      'active',
+          createdAt:   now - 28 * 24 * 3600 * 1000,
+        });
+      }
+    }
+  }
+
+  // ── warehouseReadings (current live snapshots) ───────────────────────────────
+  for (const wh of TEST_WAREHOUSES) {
+    const reading = buildReading(wh);
+    batch1.set(doc(db, col.warehouseReadings(uid), wh.id), {
+      ...reading,
+      updatedAt: { seconds: Math.floor(now / 1000), nanoseconds: 0 },
+    });
+  }
+
+  await batch1.commit();
+
+  // ── sensorHistory (30 days) — split into batch2 ───────────────────────────────
+  const batch2 = writeBatch(db);
+  for (let i = 29; i >= 0; i--) {
+    const day     = addDays(today, -i);
+    const dKey    = dateKey(day);
+    const snapshot = buildDaySnapshot(dKey, TEST_WAREHOUSES);
+    batch2.set(doc(db, col.sensorHistory(uid), dKey), snapshot);
+  }
+  await batch2.commit();
+
+  // ── Alerts ────────────────────────────────────────────────────────────────────
+  const { active, history } = buildAlerts(today);
+  const batch3 = writeBatch(db);
+  for (const a of active) {
+    batch3.set(doc(db, col.alerts(uid), (a as { id: string }).id), a);
+  }
+  for (const h of history) {
+    batch3.set(doc(db, col.alertHistory(uid), (h as { id: string }).id), h);
+  }
+  await batch3.commit();
+
+  // ── Reports ────────────────────────────────────────────────────────────────────
+  const { reports, reportTypeData, reportTrendData, stats } = buildReports(today);
+  const batch4 = writeBatch(db);
+  for (const r of reports) {
+    batch4.set(doc(db, col.reports(uid), r.id), r);
+  }
+  batch4.set(doc(db, col.reportsMeta(uid), 'global'), {
+    stats,
+    reportTypeData,
+    reportTrendData,
+    totalReports: 47,
+    updatedAt: { seconds: Math.floor(now / 1000), nanoseconds: 0 },
+  });
+  batch4.set(metaRef, { version: SEED_VERSION, seededAt: now, email: 'test' });
+  await batch4.commit();
+}
+
+// ─── Regular user seeding (minimal skeleton) ──────────────────────────────────
+
+async function seedRegularUser(uid: string, today: Date, now: number, metaRef: ReturnType<typeof doc>) {
+  const batch = writeBatch(db);
+
+  // 4 warehouses
+  for (const wh of TEST_WAREHOUSES) {
+    batch.set(doc(db, col.warehouses(uid), wh.id), {
+      id:           wh.id,
+      name:         wh.name,
+      capacity:     wh.capacity,
+      location:     wh.location,
+      status:       'active',
+      liveEngineId: wh.id,
+      createdAt:    now,
+    });
+
+    // 1 zone per warehouse
+    const zoneId = `${wh.id}-Z1`;
+    batch.set(doc(db, col.zones(uid), zoneId), {
+      id:          zoneId,
+      warehouseId: wh.id,
+      name:        'Zone Alpha',
+      status:      'active',
+      createdAt:   now,
+    });
+
+    // 1 sensor per zone
+    batch.set(doc(db, col.sensors(uid), `${zoneId}-temp`), {
+      id:          `${zoneId}-temp`,
+      zoneId,
+      warehouseId: wh.id,
+      name:        'Temperature Sensor',
+      type:        'temperature',
+      status:      'active',
+      createdAt:   now,
+    });
+
+    // Current reading
+    const reading = buildReading(wh);
+    batch.set(doc(db, col.warehouseReadings(uid), wh.id), {
+      ...reading,
+      updatedAt: { seconds: Math.floor(now / 1000), nanoseconds: 0 },
+    });
+  }
+
+  // 7 days sensorHistory
+  for (let i = 6; i >= 0; i--) {
+    const dKey = dateKey(addDays(today, -i));
+    batch.set(doc(db, col.sensorHistory(uid), dKey), buildDaySnapshot(dKey, TEST_WAREHOUSES));
+  }
+
+  batch.set(metaRef, { version: SEED_VERSION, seededAt: now, email: 'regular' });
+  await batch.commit();
+}
+
+// ─── Daily snapshot append (called by liveEngine) ─────────────────────────────
 
 export async function appendTodaySnapshot(
-  readings: Record<string, { temperature: number; humidity: number; moisture: number; co2: number; aqi: number; capacity: number; status: string }>,
+  uid: string,
+  readings: Record<string, LiveSensorReading>,
 ): Promise<void> {
   try {
-    const key = dateKey(new Date());
+    const key    = dateKey(new Date());
     const values = Object.values(readings);
     if (!values.length) return;
 
-    const avgTemp     = +(values.reduce((s, r) => s + r.temperature, 0) / values.length).toFixed(1);
-    const avgHumidity = Math.round(values.reduce((s, r) => s + r.humidity, 0) / values.length);
-    const avgMoisture = +(values.reduce((s, r) => s + r.moisture, 0) / values.length).toFixed(1);
-    const avgCO2      = Math.round(values.reduce((s, r) => s + r.co2, 0) / values.length);
-    const avgAQI      = Math.round(values.reduce((s, r) => s + r.aqi, 0) / values.length);
+    const avgT   = +(values.reduce((s, r) => s + r.temperature, 0) / values.length).toFixed(1);
+    const avgH   = Math.round(values.reduce((s, r) => s + r.humidity, 0) / values.length);
+    const avgM   = +(values.reduce((s, r) => s + r.moisture, 0) / values.length).toFixed(1);
+    const avgCO2 = Math.round(values.reduce((s, r) => s + r.co2, 0) / values.length);
+    const avgAQI = Math.round(values.reduce((s, r) => s + r.aqi, 0) / values.length);
 
-    await setDoc(doc(db, 'sensorHistory', key), {
+    await setDoc(doc(db, col.sensorHistory(uid), key), {
       date: key,
-      averages: { temperature: avgTemp, humidity: avgHumidity, moisture: avgMoisture, co2: avgCO2, aqi: avgAQI },
+      averages:        { temperature: avgT, humidity: avgH, moisture: avgM, co2: avgCO2, aqi: avgAQI },
       warehouseStatus: {
         good:     values.filter(r => r.status === 'good').length,
         warning:  values.filter(r => r.status === 'medium').length,
         critical: values.filter(r => r.status === 'high').length,
       },
       stability: Object.fromEntries(
-        Object.entries(readings).map(([id, r]) => {
-          const tScore = Math.max(0, 100 - Math.max(0, r.temperature - 25) * 8);
-          const hScore = Math.max(0, 100 - Math.max(0, r.humidity - 60) * 4);
-          return [id, Math.round(tScore * 0.6 + hScore * 0.4)];
+        values.map(r => {
+          const tScore = clamp(100 - Math.max(0, r.temperature - 25) * 8, 0, 100);
+          const hScore = clamp(100 - Math.max(0, r.humidity - 60) * 4, 0, 100);
+          return [r.warehouseId, Math.round(tScore * 0.6 + hScore * 0.4)];
         })
       ),
       alertCounts: {
@@ -159,47 +480,25 @@ export async function appendTodaySnapshot(
         Warning:  values.filter(r => r.status === 'medium').length * 3,
         Info:     8,
       },
-      updatedAt: serverTimestamp(),
+      updatedAt: Date.now(),
     }, { merge: true });
   } catch {
-    // Non-fatal
+    // non-fatal
   }
 }
 
-// ─── Save a new report to Firestore (called when user generates a report) ─────
+// ─── Save a report (called when user generates one) ──────────────────────────
 
-export async function saveReport(report: ReportItem): Promise<void> {
-  await setDoc(doc(db, 'reports', report.id), {
+export async function saveReport(
+  uid: string,
+  report: {
+    id: string; type: string; title: string; warehouse: string; period: string;
+    generatedAt: string; dateGenerated: string; generatedBy: string;
+    size: string; downloads: number; status: string;
+  },
+): Promise<void> {
+  await setDoc(doc(db, col.reports(uid), report.id), {
     ...report,
-    createdAt: serverTimestamp(),
+    createdAt: Date.now(),
   });
-}
-
-// ─── 7-day auto-cleanup (called on app startup) ───────────────────────────────
-
-export async function cleanupOldAlerts(): Promise<void> {
-  try {
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-
-    // 1. Delete alertHistory docs older than 7 days
-    const historyQ = query(
-      collection(db, 'alertHistory'),
-      orderBy('triggeredAt'),
-      where('triggeredAt', '<', cutoff),
-    );
-    const historySnap = await getDocs(historyQ);
-    await Promise.all(historySnap.docs.map(d => deleteDoc(doc(db, 'alertHistory', d.id))));
-
-    // 2. Delete ALL resolved alerts from the live `alerts` collection.
-    //    Resolved alerts must not persist here — they belong only in alertHistory.
-    const resolvedQ = query(collection(db, 'alerts'), where('resolved', '==', true));
-    const resolvedSnap = await getDocs(resolvedQ);
-    await Promise.all(resolvedSnap.docs.map(d => deleteDoc(doc(db, 'alerts', d.id))));
-
-    if (historySnap.size + resolvedSnap.size > 0) {
-      console.info(`[cleanup] Deleted ${historySnap.size} old alertHistory + ${resolvedSnap.size} resolved alerts from live collection`);
-    }
-  } catch {
-    // Non-fatal — cleanup will retry on next app startup
-  }
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { WarehousePerformanceChart } from '@/components/charts/WarehousePerformanceChart';
-import { type TrendDir, type RiskLevel } from './mockData';
+import { type TrendDir, type RiskLevel } from '@/lib/dataEngine';
 import {
   useFirestoreAnalytics as useAnalyticsData,
   useSensorPerformance,

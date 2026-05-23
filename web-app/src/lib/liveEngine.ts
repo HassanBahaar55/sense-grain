@@ -1,26 +1,28 @@
 /**
  * Live sensor simulation engine.
  * Physics-based model with realistic correlations between metrics.
- * Runs in the browser only; never imported on the server.
+ * Runs in the browser; writes to Firestore so all data persists permanently.
  *
- * Firestore sync: each tick writes readings + alerts to Firebase so the
- * mobile app (and any other client) stays in real-time sync with zero
- * extra infrastructure — no Cloud Functions, no billing upgrade needed.
+ * Per-user architecture: call setUid(uid) after login.
+ * All Firestore writes go to /accounts/{uid}/... so no two users share data.
+ *
+ * Alerts: stored permanently in alertHistory — never auto-deleted.
+ * Active (unresolved) alerts also live in /accounts/{uid}/alerts/.
  */
 
 export interface LiveSensorReading {
   warehouseId:  string;
-  temperature:  number; // °C
-  humidity:     number; // %
-  moisture:     number; // %
-  co2:          number; // ppm
+  temperature:  number;   // °C
+  humidity:     number;   // %
+  moisture:     number;   // %
+  co2:          number;   // ppm
   aqi:          number;
-  capacity:     number; // % used
-  spoilageRisk: number; // 0–100
-  health:       number; // 0–100
+  capacity:     number;   // % used
+  spoilageRisk: number;   // 0–100
+  health:       number;   // 0–100
   status:       'good' | 'medium' | 'high';
   trend:        'up' | 'down' | 'stable';
-  lastUpdate:   number; // Date.now()
+  lastUpdate:   number;   // Date.now()
 }
 
 export interface LiveAlert {
@@ -42,42 +44,35 @@ type Listener = (
   tick:     number,
 ) => void;
 
-// ─── Base configs per warehouse ───────────────────────────────────────────────
-// Base values set well below thresholds so alerts only fire during actual spikes,
-// not continuously. Thresholds: temp 29°C medium / 32°C critical, humidity 65% / 72%.
+// ─── Default warehouse configs (used until user has their own warehouses) ──────
 
-const WH_CONFIGS = [
+export const DEFAULT_WH_CONFIGS = [
   { id: 'WH-A', baseTemp: 25.5, baseHum: 57, baseMoist: 10.8, baseCO2: 488, baseAQI: 33, baseCap: 72, drift: 0.0   },
   { id: 'WH-B', baseTemp: 27.0, baseHum: 61, baseMoist: 11.8, baseCO2: 512, baseAQI: 40, baseCap: 67, drift: 0.07  },
   { id: 'WH-C', baseTemp: 26.0, baseHum: 55, baseMoist: 10.5, baseCO2: 502, baseAQI: 37, baseCap: 81, drift: -0.05 },
   { id: 'WH-D', baseTemp: 27.5, baseHum: 62, baseMoist: 12.0, baseCO2: 518, baseAQI: 43, baseCap: 61, drift: 0.10  },
-  { id: 'WH-E', baseTemp: 26.5, baseHum: 58, baseMoist: 11.2, baseCO2: 506, baseAQI: 35, baseCap: 70, drift: 0.02  },
-  { id: 'WH-F', baseTemp: 27.2, baseHum: 61, baseMoist: 11.8, baseCO2: 522, baseAQI: 41, baseCap: 73, drift: 0.05  },
-  { id: 'WH-G', baseTemp: 25.8, baseHum: 54, baseMoist: 10.8, baseCO2: 483, baseAQI: 31, baseCap: 52, drift: -0.02 },
 ];
 
 // ─── Alert thresholds ─────────────────────────────────────────────────────────
 
 const THR = {
-  temp:     { medium: 29,  high: 32   },
-  humidity: { medium: 65,  high: 72   },
-  moisture: { medium: 13,  high: 15   },
-  co2:      { medium: 550, high: 650  },
-  aqi:      { medium: 50,  high: 80   },
+  temp:     { medium: 29,  high: 32  },
+  humidity: { medium: 65,  high: 72  },
+  moisture: { medium: 13,  high: 15  },
+  co2:      { medium: 550, high: 650 },
+  aqi:      { medium: 50,  high: 80  },
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 
-/** Box-Muller Gaussian random */
 function gauss(mean: number, std: number): number {
   const u = Math.max(1e-10, Math.random());
   const v = Math.random();
   return mean + Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) * std;
 }
 
-/** Circadian temperature offset — peaks at 15:00, low at 03:00 */
 function circadian(): number {
   const h = new Date().getHours() + new Date().getMinutes() / 60;
   return Math.sin(((h - 9) / 12) * Math.PI) * 1.8;
@@ -86,6 +81,8 @@ function circadian(): number {
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 export class LiveEngine {
+  private uid:           string | null = null;
+  private whConfigs:     typeof DEFAULT_WH_CONFIGS = [...DEFAULT_WH_CONFIGS];
   private readings:      Record<string, LiveSensorReading> = {};
   private alerts:        LiveAlert[] = [];
   private listeners:     Set<Listener> = new Set();
@@ -93,14 +90,17 @@ export class LiveEngine {
   private syncTimer:     ReturnType<typeof setInterval> | null = null;
   private tickCount    = 0;
   private alertCooldown: Map<string, number> = new Map();
-  private readonly COOLDOWN_MS = 20 * 60 * 1000;
-  // Check alerts every 6th tick (every ~60s at 10s interval) to reduce noise
-  private readonly ALERT_CHECK_EVERY = 6;
-  lastTickAt = 0; // exposed so UI can show "last checked X ago"
+  private readonly COOLDOWN_MS      = 20 * 60 * 1000; // 20 min between same alert
+  private readonly ALERT_CHECK_EVERY = 6;              // check every 6th tick (~60s)
+  lastTickAt = 0;
 
   constructor() {
-    // Seed initial state from base configs
-    for (const cfg of WH_CONFIGS) {
+    this.initReadings();
+  }
+
+  private initReadings() {
+    this.readings = {};
+    for (const cfg of this.whConfigs) {
       this.readings[cfg.id] = {
         warehouseId:  cfg.id,
         temperature:  +(cfg.baseTemp + gauss(0, 0.4)).toFixed(1),
@@ -119,6 +119,41 @@ export class LiveEngine {
     }
   }
 
+  /** Set the current user uid — all Firestore writes go to /accounts/{uid}/... */
+  setUid(uid: string | null) {
+    this.uid = uid;
+  }
+
+  /** Replace the warehouse configs (called when user's warehouses load from Firestore) */
+  setWarehouseConfigs(configs: typeof DEFAULT_WH_CONFIGS) {
+    this.whConfigs = configs.length > 0 ? configs : [...DEFAULT_WH_CONFIGS];
+    // Add any new warehouse IDs to readings map without resetting existing ones
+    for (const cfg of this.whConfigs) {
+      if (!this.readings[cfg.id]) {
+        this.readings[cfg.id] = {
+          warehouseId:  cfg.id,
+          temperature:  +(cfg.baseTemp + gauss(0, 0.4)).toFixed(1),
+          humidity:     Math.round(cfg.baseHum + gauss(0, 1.5)),
+          moisture:     +(cfg.baseMoist + gauss(0, 0.2)).toFixed(1),
+          co2:          Math.round(cfg.baseCO2 + gauss(0, 8)),
+          aqi:          Math.round(cfg.baseAQI + gauss(0, 1.5)),
+          capacity:     cfg.baseCap,
+          spoilageRisk: 0,
+          health:       100,
+          status:       'good',
+          trend:        'stable',
+          lastUpdate:   Date.now(),
+        };
+        this.recalcDerived(cfg.id);
+      }
+    }
+    // Remove readings for warehouses no longer in configs
+    const validIds = new Set(this.whConfigs.map(c => c.id));
+    for (const id of Object.keys(this.readings)) {
+      if (!validIds.has(id)) delete this.readings[id];
+    }
+  }
+
   // ── Physics tick ────────────────────────────────────────────────────────────
 
   private tick() {
@@ -126,59 +161,51 @@ export class LiveEngine {
     this.lastTickAt = Date.now();
     const circ = circadian();
 
-    for (const cfg of WH_CONFIGS) {
+    for (const cfg of this.whConfigs) {
       const s = this.readings[cfg.id];
       if (!s) continue;
 
       const prevTemp = s.temperature;
 
-      // ── Temperature: Gaussian walk + circadian + slow drift + mean-reversion ──
       const tempTarget = cfg.baseTemp + circ + cfg.drift * this.tickCount * 0.01;
       s.temperature = clamp(
         +(s.temperature + gauss(0, 0.12) + (tempTarget - s.temperature) * 0.04).toFixed(1),
         cfg.baseTemp - 5, cfg.baseTemp + 9,
       );
 
-      // ── Humidity: inversely correlated with temp + own walk ──────────────────
       const tempRise = s.temperature - prevTemp;
       s.humidity = clamp(
         Math.round(s.humidity + gauss(0, 0.4) - tempRise * 0.6 + (cfg.baseHum - s.humidity) * 0.03),
         40, 94,
       );
 
-      // ── Moisture: very slow drift ────────────────────────────────────────────
       s.moisture = clamp(
         +(s.moisture + gauss(0, 0.025) + (cfg.baseMoist - s.moisture) * 0.015).toFixed(1),
         9, 16.5,
       );
 
-      // ── CO₂: capacity + activity based + slow walk ───────────────────────────
       const capContrib = (s.capacity - 60) * 0.04;
       s.co2 = clamp(
         Math.round(s.co2 + gauss(0, 2.5) + capContrib + (cfg.baseCO2 - s.co2) * 0.02),
         400, 850,
       );
 
-      // ── AQI: driven by CO₂ spike + temp heat ────────────────────────────────
-      const co2Factor  = Math.max(0, s.co2  - cfg.baseCO2)  * 0.05;
-      const tempFactor = Math.max(0, s.temperature - 28)    * 1.1;
+      const co2Factor  = Math.max(0, s.co2  - cfg.baseCO2) * 0.05;
+      const tempFactor = Math.max(0, s.temperature - 28)   * 1.1;
       s.aqi = clamp(
         Math.round(cfg.baseAQI + co2Factor + tempFactor + gauss(0, 1)),
         20, 120,
       );
 
-      // ── Capacity: very slow drift every 10 ticks ────────────────────────────
       if (this.tickCount % 10 === 0) {
         s.capacity = clamp(s.capacity + Math.round(gauss(0, 0.3)), 25, 98);
       }
 
-      // ── Trend direction ───────────────────────────────────────────────────────
       const delta = s.temperature - prevTemp;
       s.trend = delta > 0.05 ? 'up' : delta < -0.05 ? 'down' : 'stable';
 
       this.recalcDerived(cfg.id);
-      // Skip tick 1 — let Firestore bootstrap first so we don't flash stale engine alerts.
-      // After that, check every ALERT_CHECK_EVERY ticks (~60s).
+
       if (this.tickCount > 1 && this.tickCount % this.ALERT_CHECK_EVERY === 0) {
         this.checkAlerts(cfg.id, s);
       }
@@ -192,21 +219,18 @@ export class LiveEngine {
   private recalcDerived(id: string) {
     const s = this.readings[id];
     if (!s) return;
-
     const tempFactor  = Math.max(0, (s.temperature - 25) / 10) * 40;
     const humFactor   = Math.max(0, (s.humidity - 55)    / 15) * 28;
     const moistFactor = Math.max(0, (s.moisture - 10)    /  5) * 22;
     const co2Factor   = Math.max(0, (s.co2 - 500)        / 150) * 10;
     s.spoilageRisk = clamp(Math.round(tempFactor + humFactor + moistFactor + co2Factor), 0, 100);
     s.health       = clamp(Math.round(100 - s.spoilageRisk * 0.65), 15, 100);
-
     s.status =
       s.temperature >= THR.temp.high || s.humidity >= THR.humidity.high || s.moisture >= THR.moisture.high
         ? 'high'
         : s.temperature >= THR.temp.medium || s.humidity >= THR.humidity.medium || s.moisture >= THR.moisture.medium
         ? 'medium'
         : 'good';
-
     s.lastUpdate = Date.now();
   }
 
@@ -231,51 +255,53 @@ export class LiveEngine {
       if (c.value > c.thr && !dup) {
         const lastResolved = this.alertCooldown.get(cooldownKey) ?? 0;
         if (Date.now() - lastResolved >= this.COOLDOWN_MS) {
-          const dateStr = new Date().toISOString().slice(0, 10);
-          // Stable ID: same alert type on same day = same doc (no duplicates across restarts)
+          const dateStr  = new Date().toISOString().slice(0, 10);
           const stableId = `${whId}_${c.param.toLowerCase().replace(/[^a-z0-9]/g, '')}_${c.sev}_${dateStr}`;
           const newAlert: LiveAlert = {
-            id: stableId,
-            warehouseId: whId, param: c.param,
+            id: stableId, warehouseId: whId, param: c.param,
             value: c.value, unit: c.unit, threshold: c.thr,
             severity: c.sev, message: c.msg,
             timestamp: Date.now(), resolved: false,
           };
           this.alerts.push(newAlert);
-          // Write immediately to both collections — don't wait for the 2-min sync
           this.writeAlertHistory(newAlert, undefined);
           this.writeActiveAlert(newAlert);
         }
       }
 
-      // Auto-resolve if back below 95% of threshold; start cooldown
       if (c.value < c.thr * 0.95 && dup) {
         const resolvedAt = Date.now();
-        this.alerts = this.alerts.map(a =>
-          a.id === dup.id ? { ...a, resolved: true } : a,
-        );
+        this.alerts = this.alerts.map(a => a.id === dup.id ? { ...a, resolved: true } : a);
         this.alertCooldown.set(cooldownKey, resolvedAt);
+        // Update alertHistory with resolvedAt, remove from active alerts
         this.writeAlertHistory({ ...dup, resolved: true }, resolvedAt);
         this.deleteActiveAlert(dup.id);
       }
     }
 
-    // Keep last 40 alerts
-    if (this.alerts.length > 40) this.alerts = this.alerts.slice(-40);
+    // Keep only last 100 alerts in memory
+    if (this.alerts.length > 100) this.alerts = this.alerts.slice(-100);
   }
 
   private notify() {
     this.listeners.forEach(fn => fn({ ...this.readings }, [...this.alerts], this.tickCount));
   }
 
-  // ── Immediate alertHistory write (fire-and-forget) ──────────────────────────
+  // ── Firestore path helper ────────────────────────────────────────────────────
+
+  private get basePath(): string {
+    return this.uid ? `accounts/${this.uid}` : '__no_uid__';
+  }
+
+  // ── Immediate alertHistory write (permanent — never deleted) ─────────────────
 
   private async writeAlertHistory(alert: LiveAlert, resolvedAt: number | undefined) {
+    if (!this.uid) return;
     try {
       const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
-      const firebaseApp = (await import('@/config/firebase')).default;
-      const db = getFirestore(firebaseApp);
-      await setDoc(doc(db, 'alertHistory', alert.id), {
+      const app = (await import('@/config/firebase')).default;
+      const db  = getFirestore(app);
+      await setDoc(doc(db, `${this.basePath}/alertHistory`, alert.id), {
         ...alert,
         triggeredAt: alert.timestamp,
         resolvedAt:  resolvedAt ?? null,
@@ -283,77 +309,72 @@ export class LiveEngine {
         updatedAt:   serverTimestamp(),
       }, { merge: true });
     } catch (err) {
-      // Log so we can diagnose Firestore rules issues
-      console.warn('[liveEngine] writeAlertHistory failed — check Firestore rules for alertHistory collection:', err);
+      console.warn('[liveEngine] writeAlertHistory failed:', err);
     }
   }
 
-  // ── Immediate write/delete to live `alerts` collection ───────────────────────
-
   private async writeActiveAlert(alert: LiveAlert) {
+    if (!this.uid) return;
     try {
       const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
-      const firebaseApp = (await import('@/config/firebase')).default;
-      const db = getFirestore(firebaseApp);
-      await setDoc(doc(db, 'alerts', alert.id), { ...alert, updatedAt: serverTimestamp() });
+      const app = (await import('@/config/firebase')).default;
+      const db  = getFirestore(app);
+      await setDoc(doc(db, `${this.basePath}/alerts`, alert.id), { ...alert, updatedAt: serverTimestamp() });
     } catch (err) {
       console.warn('[liveEngine] writeActiveAlert failed:', err);
     }
   }
 
   private async deleteActiveAlert(alertId: string) {
+    if (!this.uid) return;
     try {
       const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
-      const firebaseApp = (await import('@/config/firebase')).default;
-      const db = getFirestore(firebaseApp);
-      await deleteDoc(doc(db, 'alerts', alertId));
-    } catch {
-      // Non-fatal
-    }
+      const app = (await import('@/config/firebase')).default;
+      const db  = getFirestore(app);
+      // Remove from active alerts (they are already permanently in alertHistory)
+      await deleteDoc(doc(db, `${this.basePath}/alerts`, alertId));
+    } catch { /* non-fatal */ }
   }
 
-  // ── Firestore sync (readings + current alert state) ─────────────────────────
+  // ── Firestore sync (readings + active alerts every 2 min) ───────────────────
 
   private async syncToFirestore() {
+    if (!this.uid) return;
     try {
       const { getFirestore, doc, setDoc, deleteDoc, serverTimestamp } = await import('firebase/firestore');
-      const firebaseApp = (await import('@/config/firebase')).default;
-      const db = getFirestore(firebaseApp);
+      const app = (await import('@/config/firebase')).default;
+      const db  = getFirestore(app);
+      const base = this.basePath;
 
-      // Sensor readings
-      const writes = Object.values(this.readings).map(r =>
-        setDoc(doc(db, 'warehouseReadings', r.warehouseId), {
-          ...r,
-          updatedAt: serverTimestamp(),
-        }),
+      const readingWrites = Object.values(this.readings).map(r =>
+        setDoc(doc(db, `${base}/warehouseReadings`, r.warehouseId), { ...r, updatedAt: serverTimestamp() }),
       );
 
-      // Active alerts → upsert into `alerts` collection
       const active   = this.alerts.filter(a => !a.resolved);
       const resolved = this.alerts.filter(a =>  a.resolved);
 
       const alertWrites  = active.map(a =>
-        setDoc(doc(db, 'alerts', a.id), { ...a, updatedAt: serverTimestamp() }),
+        setDoc(doc(db, `${base}/alerts`, a.id), { ...a, updatedAt: serverTimestamp() }),
       );
-      // Resolved alerts → DELETE from `alerts` (they live in alertHistory already)
+      // Resolved → remove from active alerts (still in alertHistory permanently)
       const alertDeletes = resolved.map(a =>
-        deleteDoc(doc(db, 'alerts', a.id)),
+        deleteDoc(doc(db, `${base}/alerts`, a.id)),
       );
 
-      await Promise.all([...writes, ...alertWrites, ...alertDeletes]);
+      await Promise.all([...readingWrites, ...alertWrites, ...alertDeletes]);
     } catch (err) {
-      if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] Firestore sync skipped:', err);
+      if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] sync skipped:', err);
     }
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  start(uiIntervalMs = 30000, syncIntervalMs = 60000) {
+  start(uiIntervalMs = 10000, syncIntervalMs = 120000) {
     if (this.timer) return;
-    this.timer     = setInterval(() => { this.tick(); }, uiIntervalMs);
-    this.syncTimer = setInterval(() => { this.syncToFirestore(); }, syncIntervalMs);
-    setTimeout(() => { this.tick(); }, 3000);   // delay first tick — let Firestore bootstrap first
-    setTimeout(() => { this.syncToFirestore(); }, 5000);
+    this.timer     = setInterval(() => this.tick(), uiIntervalMs);
+    this.syncTimer = setInterval(() => this.syncToFirestore(), syncIntervalMs);
+    setTimeout(() => this.tick(), 3000);
+    setTimeout(() => this.syncToFirestore(), 5000);
   }
 
   stop() {
@@ -370,7 +391,6 @@ export class LiveEngine {
   getAlerts()   { return [...this.alerts]; }
   getTick()     { return this.tickCount; }
 
-  /** Pre-populate alerts from Firestore so engine continues from last known state. */
   loadPersistedAlerts(existing: LiveAlert[]) {
     for (const a of existing) {
       if (!a.resolved && !this.alerts.find(x => x.id === a.id)) {
@@ -379,11 +399,6 @@ export class LiveEngine {
     }
   }
 
-  /**
-   * Sync engine sensor state from Firestore readings.
-   * Must be called before the first checkAlerts tick so alert resolution
-   * decisions are based on the actual last-known sensor values, not random init.
-   */
   loadPersistedReadings(firestoreReadings: Record<string, LiveSensorReading>) {
     for (const [id, r] of Object.entries(firestoreReadings)) {
       if (this.readings[id] && r.temperature != null) {
@@ -405,5 +420,5 @@ export class LiveEngine {
   }
 }
 
-// Singleton — one engine for the whole app
+// Singleton — one engine per app session
 export const liveEngine = new LiveEngine();

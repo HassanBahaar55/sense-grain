@@ -3,6 +3,8 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { getAuth, signOut } from 'firebase/auth';
+import firebaseApp from '@/config/firebase';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import { HeaderProvider } from '@/contexts/HeaderContext';
@@ -38,7 +40,6 @@ const BOTTOM_TABS = [
   {
     href: '/alerts',
     label: 'Alerts',
-    badge: 3,
     icon: (_active: boolean) => (
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -71,44 +72,15 @@ const BOTTOM_TABS = [
 function BottomNav() {
   const pathname = usePathname();
   return (
-    <nav
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="flex items-stretch">
         {BOTTOM_TABS.map((tab) => {
           const isActive = pathname === tab.href;
           return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={cn(
-                'relative flex-1 flex flex-col items-center justify-center gap-1 pt-2.5 pb-2.5 min-h-[56px] select-none transition-colors duration-150',
-                isActive ? 'text-[#1f5135]' : 'text-gray-400 active:text-gray-600',
-              )}
-            >
-              {/* Active indicator bar at top */}
-              {isActive && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-[2px] bg-[#1f5135] rounded-full" />
-              )}
-
-              {/* Icon with optional badge */}
-              <span className="relative flex items-center justify-center">
-                {tab.icon(isActive)}
-                {tab.badge && (
-                  <span className="absolute -top-1.5 -right-2.5 min-w-[15px] h-[15px] px-0.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center shadow-sm ring-2 ring-white">
-                    {tab.badge}
-                  </span>
-                )}
-              </span>
-
-              {/* Label */}
-              <span className={cn(
-                'text-[9px] font-semibold leading-none tracking-wide',
-                isActive ? 'text-[#1f5135]' : 'text-gray-400',
-              )}>
-                {tab.label}
-              </span>
+            <Link key={tab.href} href={tab.href} className={cn('relative flex-1 flex flex-col items-center justify-center gap-1 pt-2.5 pb-2.5 min-h-[56px] select-none transition-colors duration-150', isActive ? 'text-[#1f5135]' : 'text-gray-400 active:text-gray-600')}>
+              {isActive && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-[2px] bg-[#1f5135] rounded-full" />}
+              <span className="relative flex items-center justify-center">{tab.icon(isActive)}</span>
+              <span className={cn('text-[9px] font-semibold leading-none tracking-wide', isActive ? 'text-[#1f5135]' : 'text-gray-400')}>{tab.label}</span>
             </Link>
           );
         })}
@@ -117,27 +89,108 @@ function BottomNav() {
   );
 }
 
+// ─── Pending approval screen ───────────────────────────────────────────────────
+
+function PendingApprovalScreen({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+  return (
+    <div className="h-screen flex items-center justify-center bg-gray-50 p-6">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl ring-1 ring-black/[0.06] p-8 text-center">
+        <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-5">
+          <svg className="w-8 h-8 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <h1 className="text-[20px] font-bold text-gray-900 mb-2">Account Pending Approval</h1>
+        <p className="text-[13px] text-gray-500 leading-relaxed mb-2">
+          Your account <strong className="text-gray-700">{email}</strong> has been registered and is waiting for admin approval.
+        </p>
+        <p className="text-[12px] text-gray-400 mb-6">
+          You will get full access once the admin reviews and approves your account. This usually takes a short time.
+        </p>
+        <button
+          onClick={onSignOut}
+          className="w-full h-10 rounded-xl bg-gray-100 text-[12px] font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rejected screen ──────────────────────────────────────────────────────────
+
+function RejectedScreen({ email, reason, onSignOut }: { email: string; reason?: string; onSignOut: () => void }) {
+  return (
+    <div className="h-screen flex items-center justify-center bg-gray-50 p-6">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl ring-1 ring-black/[0.06] p-8 text-center">
+        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-5">
+          <svg className="w-8 h-8 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+        </div>
+        <h1 className="text-[20px] font-bold text-gray-900 mb-2">Account Not Approved</h1>
+        <p className="text-[13px] text-gray-500 leading-relaxed mb-2">
+          The account <strong className="text-gray-700">{email}</strong> was not approved by the admin.
+        </p>
+        {reason && (
+          <div className="bg-red-50 rounded-xl p-3 mb-4 text-left">
+            <p className="text-[11px] font-bold text-red-700 mb-1">Reason:</p>
+            <p className="text-[12px] text-red-600">{reason}</p>
+          </div>
+        )}
+        <button
+          onClick={onSignOut}
+          className="w-full h-10 rounded-xl bg-gray-100 text-[12px] font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Spinner ──────────────────────────────────────────────────────────────────
+
+function Spinner() {
+  return (
+    <div className="h-screen flex items-center justify-center bg-gray-50">
+      <svg className="w-6 h-6 animate-spin text-emerald-600" viewBox="0 0 24 24" fill="none">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+      </svg>
+    </div>
+  );
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, approvalStatus, rejectionReason, isAdmin } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace('/login');
-    }
+    if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
 
-  if (loading || !user) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <svg className="w-6 h-6 animate-spin text-emerald-600" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-      </div>
-    );
+  // Show spinner while auth+approval loads
+  if (loading || !user || approvalStatus === null) return <Spinner />;
+
+  // Admin always has access
+  if (!isAdmin) {
+    const handleSignOut = async () => {
+      await signOut(getAuth(firebaseApp));
+      router.replace('/login');
+    };
+
+    if (approvalStatus === 'pending') {
+      return <PendingApprovalScreen email={user.email ?? ''} onSignOut={handleSignOut} />;
+    }
+    if (approvalStatus === 'rejected') {
+      return <RejectedScreen email={user.email ?? ''} reason={rejectionReason} onSignOut={handleSignOut} />;
+    }
   }
 
   return (
@@ -147,7 +200,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <SidebarProvider>
             <div className="h-screen overflow-hidden bg-gray-50">
               <Sidebar />
-              {/* pb-14 on mobile reserves space so content never hides under the bottom nav */}
               <div className="lg:pl-60 h-full flex flex-col overflow-hidden pb-14 lg:pb-0">
                 {children}
               </div>

@@ -8,7 +8,6 @@ import type { LiveSensorReading } from '@/lib/liveEngine';
 import { cn } from '@/lib/utils';
 import {
   useWarehouses, useZones, useSensorsForWarehouse, useTotalZoneCount,
-  seedDefaultStorageIfEmpty,
   type ManagedWarehouse, type ManagedZone, type ManagedSensor,
   type SensorType,
 } from '@/lib/storageManagement';
@@ -227,7 +226,6 @@ export default function StorageUnitsPage() {
   const { zones, loading: zoneLoading } = useZones(selectedWhId);
   const allSensors = useSensorsForWarehouse(selectedWhId);
 
-  useEffect(() => { seedDefaultStorageIfEmpty(); }, []);
   useEffect(() => {
     if (!selectedWhId && warehouses.length > 0) setSelectedWhId(warehouses[0].id);
   }, [warehouses, selectedWhId]);

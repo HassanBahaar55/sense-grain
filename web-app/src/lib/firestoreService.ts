@@ -1,9 +1,8 @@
 'use client';
 
 /**
- * Firestore real-time subscriptions for sensor data.
- * Replaces the browser-side liveEngine — data now comes from Firebase,
- * so web and mobile stay perfectly in sync.
+ * Firestore real-time subscriptions — per-user architecture.
+ * All data lives under /accounts/{uid}/... so users never see each other's data.
  */
 
 import {
@@ -15,11 +14,12 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
+import { col } from '@/lib/accountDb';
 import type { LiveSensorReading, LiveAlert } from './liveEngine';
 
 const db = getFirestore(firebaseApp);
 
-// ─── Types matching Firestore document shape ───────────────────────────────────
+// ─── Firestore document shapes ────────────────────────────────────────────────
 
 interface FirestoreWarehouseDoc {
   warehouseId:  string;
@@ -46,68 +46,67 @@ interface FirestoreAlertDoc {
   severity:    'critical' | 'high' | 'medium';
   message:     string;
   resolved:    boolean;
+  timestamp:   number;
   updatedAt:   { seconds: number; nanoseconds: number } | null;
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 
-function toReading(doc: FirestoreWarehouseDoc): LiveSensorReading {
+function toReading(data: FirestoreWarehouseDoc): LiveSensorReading {
   return {
-    warehouseId:  doc.warehouseId,
-    temperature:  doc.temperature,
-    humidity:     doc.humidity,
-    moisture:     doc.moisture,
-    co2:          doc.co2,
-    aqi:          doc.aqi,
-    capacity:     doc.capacity,
-    spoilageRisk: doc.spoilageRisk,
-    health:       doc.health,
-    status:       doc.status,
-    trend:        doc.trend,
-    lastUpdate:   doc.updatedAt ? doc.updatedAt.seconds * 1000 : Date.now(),
+    warehouseId:  data.warehouseId,
+    temperature:  data.temperature,
+    humidity:     data.humidity,
+    moisture:     data.moisture,
+    co2:          data.co2,
+    aqi:          data.aqi,
+    capacity:     data.capacity,
+    spoilageRisk: data.spoilageRisk,
+    health:       data.health,
+    status:       data.status,
+    trend:        data.trend,
+    lastUpdate:   data.updatedAt ? data.updatedAt.seconds * 1000 : Date.now(),
   };
 }
 
-function toAlert(docId: string, doc: FirestoreAlertDoc): LiveAlert {
+function toAlert(docId: string, data: FirestoreAlertDoc): LiveAlert {
   return {
     id:          docId,
-    warehouseId: doc.warehouseId,
-    param:       doc.param,
-    value:       doc.value,
-    unit:        doc.unit,
-    threshold:   doc.threshold,
-    severity:    doc.severity,
-    message:     doc.message,
-    timestamp:   doc.updatedAt ? doc.updatedAt.seconds * 1000 : Date.now(),
-    resolved:    doc.resolved,
+    warehouseId: data.warehouseId,
+    param:       data.param,
+    value:       data.value,
+    unit:        data.unit,
+    threshold:   data.threshold,
+    severity:    data.severity,
+    message:     data.message,
+    timestamp:   data.timestamp ?? (data.updatedAt ? data.updatedAt.seconds * 1000 : Date.now()),
+    resolved:    data.resolved,
   };
 }
 
-// ─── Subscriptions ────────────────────────────────────────────────────────────
+// ─── Per-user subscriptions ───────────────────────────────────────────────────
 
 type ReadingsCallback = (readings: Record<string, LiveSensorReading>) => void;
 type AlertsCallback   = (alerts: LiveAlert[]) => void;
 
-/** Subscribe to all warehouse readings. Returns unsubscribe function. */
-export function subscribeToReadings(cb: ReadingsCallback): Unsubscribe {
-  return onSnapshot(collection(db, 'warehouseReadings'), (snap) => {
+/** Subscribe to this user's live warehouse readings. */
+export function subscribeToReadings(uid: string, cb: ReadingsCallback): Unsubscribe {
+  return onSnapshot(collection(db, col.warehouseReadings(uid)), (snap) => {
     const readings: Record<string, LiveSensorReading> = {};
-    snap.forEach((doc) => {
-      const data = doc.data() as FirestoreWarehouseDoc;
-      readings[data.warehouseId] = toReading(data);
+    snap.forEach((d) => {
+      const data = d.data() as FirestoreWarehouseDoc;
+      if (data.warehouseId) readings[data.warehouseId] = toReading(data);
     });
     cb(readings);
   });
 }
 
-/** Subscribe to active (unresolved) alerts only. Returns unsubscribe function. */
-export function subscribeToAlerts(cb: AlertsCallback): Unsubscribe {
-  const q = query(collection(db, 'alerts'), where('resolved', '==', false));
+/** Subscribe to this user's active (unresolved) alerts only. */
+export function subscribeToAlerts(uid: string, cb: AlertsCallback): Unsubscribe {
+  const q = query(collection(db, col.alerts(uid)), where('resolved', '==', false));
   return onSnapshot(q, (snap) => {
     const alerts: LiveAlert[] = [];
-    snap.forEach((doc) => {
-      alerts.push(toAlert(doc.id, doc.data() as FirestoreAlertDoc));
-    });
+    snap.forEach((d) => alerts.push(toAlert(d.id, d.data() as FirestoreAlertDoc)));
     cb(alerts);
   });
 }

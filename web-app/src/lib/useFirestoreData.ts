@@ -24,6 +24,7 @@ import {
 import firebaseApp from '@/config/firebase';
 import { useLiveData } from '@/contexts/LiveDataContext';
 import { useHeader } from '@/contexts/HeaderContext';
+import { col } from '@/lib/accountDb';
 import type { LiveSensorReading, LiveAlert } from './liveEngine';
 import type {
   WarehouseReading, DashboardData, AlertsData, StorageData,
@@ -116,16 +117,18 @@ interface SensorHistoryDoc {
 }
 
 export function useSensorHistory(days: number): SensorHistoryDoc[] {
+  const { uid } = useLiveData();
   const [history, setHistory] = useState<SensorHistoryDoc[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'sensorHistory'), orderBy('date', 'desc'), limit(days));
+    if (!uid) return;
+    const q = query(collection(db, col.sensorHistory(uid)), orderBy('date', 'desc'), limit(days));
     const unsub: Unsubscribe = onSnapshot(q, snap => {
       const docs = snap.docs.map(d => d.data() as SensorHistoryDoc);
       setHistory(docs.sort((a, b) => a.date.localeCompare(b.date)));
     });
     return unsub;
-  }, [days]);
+  }, [uid, days]);
 
   return history;
 }
@@ -140,20 +143,22 @@ interface ReportsMetaDoc {
 }
 
 function useFirestoreReportsRaw(): { items: ReportItem[]; meta: ReportsMetaDoc | null } {
+  const { uid } = useLiveData();
   const [items, setItems] = useState<ReportItem[]>([]);
   const [meta, setMeta]   = useState<ReportsMetaDoc | null>(null);
 
   useEffect(() => {
+    if (!uid) return;
     const unsubItems: Unsubscribe = onSnapshot(
-      query(collection(db, 'reports'), orderBy('dateGenerated', 'desc'), limit(20)),
+      query(collection(db, col.reports(uid)), orderBy('dateGenerated', 'desc'), limit(20)),
       snap => setItems(snap.docs.map(d => d.data() as ReportItem)),
     );
     const unsubMeta: Unsubscribe = onSnapshot(
-      doc(db, 'reportsMeta', 'global'),
+      doc(db, col.reportsMeta(uid), 'global'),
       snap => { if (snap.exists()) setMeta(snap.data() as ReportsMetaDoc); },
     );
     return () => { unsubItems(); unsubMeta(); };
-  }, []);
+  }, [uid]);
 
   return { items, meta };
 }
@@ -693,12 +698,13 @@ export interface AlertHistoryItem {
 }
 
 export function useAlertHistory(days: number): AlertHistoryItem[] {
+  const { uid } = useLiveData();
   const [items, setItems] = useState<AlertHistoryItem[]>([]);
 
   useEffect(() => {
-    // Simple query without compound index requirement; filter by date in JS
+    if (!uid) return;
     const q = query(
-      collection(db, 'alertHistory'),
+      collection(db, col.alertHistory(uid)),
       orderBy('triggeredAt', 'desc'),
       limit(500),
     );
@@ -711,7 +717,7 @@ export function useAlertHistory(days: number): AlertHistoryItem[] {
       );
     }, () => { /* offline — keep previous */ });
     return unsub;
-  }, [days]);
+  }, [uid, days]);
 
   return items;
 }

@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { getAuth, signOut } from 'firebase/auth';
+import firebaseApp from '@/config/firebase';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/contexts/SidebarContext';
-import { useUser } from '@/contexts/UserContext';
-import { ROLE_LABELS, ROLE_COLORS } from '@/lib/mockUsers';
+import { useAuth } from '@/contexts/AuthContext';
 import { useLiveData } from '@/contexts/LiveDataContext';
 
 function PlantIcon() {
@@ -107,82 +107,40 @@ const navItems = [
   },
 ];
 
-// ─── Demo account switcher ────────────────────────────────────────────────────
+// ─── User footer ──────────────────────────────────────────────────────────────
 
-function DemoSwitcher({ onSwitch }: { onSwitch: () => void }) {
-  const { currentUser, demoAccounts, switchUser } = useUser();
-  const [open, setOpen] = useState(false);
+function UserFooter() {
+  const { user, isAdmin } = useAuth();
+  const router = useRouter();
 
-  function handleSelect(id: string) {
-    switchUser(id);
-    setOpen(false);
-    onSwitch();
+  const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'User';
+  const initials    = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+
+  async function handleSignOut() {
+    await signOut(getAuth(firebaseApp));
+    router.replace('/login');
   }
 
   return (
-    <div className="px-3 pt-3 pb-1 border-t border-white/[0.06]">
-      <p className="text-[9px] font-bold text-white/25 tracking-widest uppercase px-1 mb-2">
-        Demo Account
-      </p>
-
-      {/* Current user card / toggle */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] transition-colors duration-150 group"
-      >
-        {/* Avatar */}
-        <div className="w-7 h-7 rounded-lg bg-[#1f5135] flex items-center justify-center flex-shrink-0 text-[11px] font-bold text-green-200">
-          {currentUser.avatar}
+    <div className="px-3 pt-3 pb-3 border-t border-white/[0.06]">
+      <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl bg-white/[0.04]">
+        <div className="w-7 h-7 rounded-lg bg-[#1f5135] flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-green-200">
+          {initials}
         </div>
-
-        <div className="flex-1 min-w-0 text-left">
-          <p className="text-[12px] font-semibold text-white/90 truncate leading-none mb-0.5">
-            {currentUser.name.split(' ')[0]}
-          </p>
-          <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', ROLE_COLORS[currentUser.role].bg, ROLE_COLORS[currentUser.role].text)}>
-            {ROLE_LABELS[currentUser.role]}
-          </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-semibold text-white/90 truncate leading-none">{displayName}</p>
+          <p className="text-[9px] text-white/35 truncate mt-0.5">{isAdmin ? 'Admin' : 'Operator'}</p>
         </div>
-
-        {/* Chevron */}
-        <svg
-          className={cn('w-3 h-3 text-white/30 flex-shrink-0 transition-transform duration-200', open && 'rotate-180')}
-          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        <button
+          onClick={handleSignOut}
+          title="Sign out"
+          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/[0.10] text-white/30 hover:text-white/70 transition-colors"
         >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div className="mt-1.5 space-y-0.5">
-          {demoAccounts.map(u => (
-            <button
-              key={u.id}
-              onClick={() => handleSelect(u.id)}
-              className={cn(
-                'w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors duration-150',
-                u.id === currentUser.id
-                  ? 'bg-[#1f5135]/50 cursor-default'
-                  : 'hover:bg-white/[0.06]',
-              )}
-            >
-              <div className="w-6 h-6 rounded-md bg-white/[0.08] flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-white/60">
-                {u.avatar}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-medium text-white/80 truncate leading-none">{u.name.split(' ')[0]}</p>
-                <p className="text-[9px] text-white/30 truncate">{ROLE_LABELS[u.role]}</p>
-              </div>
-              {u.id === currentUser.id && (
-                <svg className="w-3 h-3 text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -192,7 +150,7 @@ function DemoSwitcher({ onSwitch }: { onSwitch: () => void }) {
 export function Sidebar() {
   const pathname = usePathname();
   const { isOpen, close } = useSidebar();
-  const { isAdmin } = useUser();
+  const { isAdmin } = useAuth();
   const { liveAlerts } = useLiveData();
   const activeAlertCount = liveAlerts.filter(a => !a.resolved).length;
 
@@ -308,8 +266,8 @@ export function Sidebar() {
           )}
         </nav>
 
-        {/* ── Demo account switcher ── */}
-        <DemoSwitcher onSwitch={close} />
+        {/* ── Signed-in user + sign out ── */}
+        <UserFooter />
       </aside>
     </>
   );

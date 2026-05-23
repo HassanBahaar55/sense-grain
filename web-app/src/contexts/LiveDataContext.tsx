@@ -7,7 +7,8 @@ import {
 import { liveEngine, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
 import { subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
-import { seedFirestoreIfEmpty, cleanupOldAlerts } from '@/lib/firestoreSeeder';
+import { seedUserData } from '@/lib/firestoreSeeder';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,38 +17,41 @@ interface LiveDataContextValue {
   liveAlerts: LiveAlert[];
   tick:       number;
   isRunning:  boolean;
+  uid:        string | null;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 const LiveDataContext = createContext<LiveDataContextValue>({
-  readings: {}, liveAlerts: [], tick: 0, isRunning: false,
+  readings: {}, liveAlerts: [], tick: 0, isRunning: false, uid: null,
 });
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function LiveDataProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const uid      = user?.uid ?? null;
+
   const [readings,   setReadings]   = useState<Record<string, LiveSensorReading>>({});
   const [liveAlerts, setLiveAlerts] = useState<LiveAlert[]>([]);
   const [tick,       setTick]       = useState(0);
   const [isRunning,  setIsRunning]  = useState(false);
 
   useEffect(() => {
-    // 1. Start simulation — UI ticks every 10s, Firestore sync every 2 min
+    if (!uid) return;
+
+    // Tell the engine which user is logged in — all Firestore writes go to /accounts/{uid}/
+    liveEngine.setUid(uid);
     liveEngine.start(10000, 120000);
     setIsRunning(true);
 
-    // Seed Firestore on first login (no-op if already seeded)
-    seedFirestoreIfEmpty().catch(() => {});
-    // Delete alertHistory + resolved alerts older than 7 days
-    cleanupOldAlerts().catch(() => {});
+    // Seed this user's data on first login (no-op if already seeded)
+    seedUserData(uid, user?.email ?? '').catch(() => {});
 
-    // Track bootstrap state for both readings and alerts
     let alertsBootstrapped   = false;
     let readingsBootstrapped = false;
 
-    // 2. Drive local UI from simulation directly (smooth, instant updates)
-    //    During the warmup window, don't let the engine overwrite Firestore state.
+    // Drive local UI from simulation (fast, 10s refresh)
     const unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
       setReadings({ ...newReadings });
       setLiveAlerts(prev => {
@@ -58,46 +62,45 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
       setLiveOverride(newReadings);
     });
 
-    // 3. Subscribe to Firestore — mobile app writes here too; keeps all platforms synced
-    const unsubFirestoreReadings = subscribeToReadings((firestoreReadings) => {
+    // Subscribe to Firestore per-user collections — survives page refresh
+    const unsubReadings = subscribeToReadings(uid, (firestoreReadings) => {
       if (Object.keys(firestoreReadings).length > 0) {
         setReadings(firestoreReadings);
         setTick(t => t + 1);
         setLiveOverride(firestoreReadings);
-        // Sync engine's internal sensor state from Firestore ONCE on startup.
-        // This ensures alert checks at tick 6 use actual last-known values, not
-        // random init values — prevents spurious alert resolution after refresh.
         if (!readingsBootstrapped) {
-          liveEngine.loadPersistedReadings(firestoreReadings as Record<string, import('@/lib/liveEngine').LiveSensorReading>);
+          liveEngine.loadPersistedReadings(
+            firestoreReadings as Record<string, LiveSensorReading>,
+          );
           readingsBootstrapped = true;
         }
       }
     });
 
-    const unsubFirestoreAlerts = subscribeToAlerts((firestoreAlerts) => {
+    const unsubAlerts = subscribeToAlerts(uid, (firestoreAlerts) => {
       if (firestoreAlerts.length > 0) {
         setLiveAlerts(firestoreAlerts);
-        // Pre-populate engine once so it can properly dedup + resolve them
         if (!alertsBootstrapped) {
-          liveEngine.loadPersistedAlerts(firestoreAlerts as import('@/lib/liveEngine').LiveAlert[]);
+          liveEngine.loadPersistedAlerts(firestoreAlerts as LiveAlert[]);
           alertsBootstrapped = true;
         }
       } else {
-        alertsBootstrapped = true; // No Firestore alerts — engine is authoritative
+        alertsBootstrapped = true;
       }
     });
 
     return () => {
       unsubLocal();
-      unsubFirestoreReadings();
-      unsubFirestoreAlerts();
+      unsubReadings();
+      unsubAlerts();
       liveEngine.stop();
+      liveEngine.setUid(null);
       setIsRunning(false);
     };
-  }, []);
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <LiveDataContext.Provider value={{ readings, liveAlerts, tick, isRunning }}>
+    <LiveDataContext.Provider value={{ readings, liveAlerts, tick, isRunning, uid }}>
       {children}
     </LiveDataContext.Provider>
   );
@@ -109,13 +112,11 @@ export function useLiveData(): LiveDataContextValue {
   return useContext(LiveDataContext);
 }
 
-/** Returns live reading for a specific warehouse, or null if not yet available */
 export function useLiveWarehouse(warehouseId: string): LiveSensorReading | null {
   const { readings } = useLiveData();
   return readings[warehouseId] ?? null;
 }
 
-/** Returns only unresolved live alerts */
 export function useActiveAlerts(): LiveAlert[] {
   const { liveAlerts } = useLiveData();
   return liveAlerts.filter(a => !a.resolved);

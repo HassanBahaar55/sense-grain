@@ -1,11 +1,18 @@
 'use client';
 
+/**
+ * Per-user storage management (warehouses, zones, sensors).
+ * All data lives under /accounts/{uid}/... — never shared between users.
+ */
+
 import { useState, useEffect } from 'react';
 import {
   getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
   query, where, writeBatch, getDocs, getDoc,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
+import { col } from '@/lib/accountDb';
+import { useAuth } from '@/contexts/AuthContext';
 
 const db = getFirestore(firebaseApp);
 
@@ -16,59 +23,66 @@ export type SensorType    = 'temperature' | 'humidity' | 'moisture' | 'co2' | 'a
 export type SensorStatus  = 'active' | 'inactive' | 'faulty';
 
 export interface ManagedWarehouse {
-  id: string;
-  name: string;
-  capacity: number;   // tons
-  location: string;
-  status: ManagedStatus;
-  liveEngineId?: string; // maps to WH-A … WH-G for live readings
-  createdAt: number;
+  id:            string;
+  name:          string;
+  capacity:      number;        // tons
+  location:      string;
+  status:        ManagedStatus;
+  liveEngineId?: string;        // maps to WH-A…WH-D (or user's own ID) for live readings
+  createdAt:     number;
 }
 
 export interface ManagedZone {
-  id: string;
+  id:          string;
   warehouseId: string;
-  name: string;
-  status: ManagedStatus;
-  createdAt: number;
+  name:        string;
+  status:      ManagedStatus;
+  createdAt:   number;
 }
 
 export interface ManagedSensor {
-  id: string;
-  zoneId: string;
+  id:          string;
+  zoneId:      string;
   warehouseId: string;
-  name: string;
-  type: SensorType;
-  status: SensorStatus;
-  createdAt: number;
+  name:        string;
+  type:        SensorType;
+  status:      SensorStatus;
+  createdAt:   number;
 }
 
-// ─── Hooks ────────────────────────────────────────────────────────────────────
+// ─── Hooks (all per-user) ─────────────────────────────────────────────────────
 
 export function useWarehouses() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
   const [warehouses, setWarehouses] = useState<ManagedWarehouse[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading,    setLoading]    = useState(true);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'storageWarehouses'), (snap) => {
+    if (!uid) { setWarehouses([]); setLoading(false); return; }
+    const unsub = onSnapshot(collection(db, col.warehouses(uid)), (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ManagedWarehouse));
       docs.sort((a, b) => a.createdAt - b.createdAt);
       setWarehouses(docs);
       setLoading(false);
     });
     return unsub;
-  }, []);
+  }, [uid]);
 
   return { warehouses, loading };
 }
 
 export function useZones(warehouseId: string | null) {
-  const [zones, setZones] = useState<ManagedZone[]>([]);
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const [zones,   setZones]   = useState<ManagedZone[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!warehouseId) { setZones([]); setLoading(false); return; }
-    const q = query(collection(db, 'storageZones'), where('warehouseId', '==', warehouseId));
+    if (!uid || !warehouseId) { setZones([]); setLoading(false); return; }
+    const q = query(collection(db, col.zones(uid)), where('warehouseId', '==', warehouseId));
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ManagedZone));
       docs.sort((a, b) => a.createdAt - b.createdAt);
@@ -76,137 +90,108 @@ export function useZones(warehouseId: string | null) {
       setLoading(false);
     });
     return unsub;
-  }, [warehouseId]);
+  }, [uid, warehouseId]);
 
   return { zones, loading };
 }
 
+export function useAllZones() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const [zones, setZones] = useState<ManagedZone[]>([]);
+
+  useEffect(() => {
+    if (!uid) { setZones([]); return; }
+    const unsub = onSnapshot(collection(db, col.zones(uid)), (snap) => {
+      setZones(snap.docs.map(d => ({ id: d.id, ...d.data() } as ManagedZone)));
+    });
+    return unsub;
+  }, [uid]);
+
+  return zones;
+}
+
 export function useSensorsForWarehouse(warehouseId: string | null) {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
   const [sensors, setSensors] = useState<ManagedSensor[]>([]);
 
   useEffect(() => {
-    if (!warehouseId) { setSensors([]); return; }
-    const q = query(collection(db, 'storageSensors'), where('warehouseId', '==', warehouseId));
+    if (!uid || !warehouseId) { setSensors([]); return; }
+    const q = query(collection(db, col.sensors(uid)), where('warehouseId', '==', warehouseId));
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as ManagedSensor));
       docs.sort((a, b) => a.createdAt - b.createdAt);
       setSensors(docs);
     });
     return unsub;
-  }, [warehouseId]);
+  }, [uid, warehouseId]);
 
   return sensors;
 }
 
 export function useTotalZoneCount() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
   const [count, setCount] = useState<number | null>(null);
+
   useEffect(() => {
-    return onSnapshot(collection(db, 'storageZones'), snap => setCount(snap.size));
-  }, []);
+    if (!uid) { setCount(0); return; }
+    return onSnapshot(collection(db, col.zones(uid)), snap => setCount(snap.size));
+  }, [uid]);
+
   return count;
 }
 
-// ─── CRUD ─────────────────────────────────────────────────────────────────────
+// ─── CRUD (all per-user) ──────────────────────────────────────────────────────
 
-export async function addWarehouse(data: Omit<ManagedWarehouse, 'id' | 'createdAt'>) {
-  return addDoc(collection(db, 'storageWarehouses'), { ...data, createdAt: Date.now() });
+export async function addWarehouse(uid: string, data: Omit<ManagedWarehouse, 'id' | 'createdAt'>) {
+  return addDoc(collection(db, col.warehouses(uid)), { ...data, createdAt: Date.now() });
 }
 
-export async function updateWarehouse(id: string, data: Partial<Omit<ManagedWarehouse, 'id' | 'createdAt'>>) {
-  return updateDoc(doc(db, 'storageWarehouses', id), data);
+export async function updateWarehouse(uid: string, id: string, data: Partial<Omit<ManagedWarehouse, 'id' | 'createdAt'>>) {
+  return updateDoc(doc(db, col.warehouses(uid), id), data);
 }
 
-export async function deleteWarehouse(id: string) {
+export async function deleteWarehouse(uid: string, id: string) {
   const batch = writeBatch(db);
-  const zonesSnap = await getDocs(query(collection(db, 'storageZones'), where('warehouseId', '==', id)));
+  const zonesSnap = await getDocs(query(collection(db, col.zones(uid)), where('warehouseId', '==', id)));
   for (const z of zonesSnap.docs) {
-    const sSnap = await getDocs(query(collection(db, 'storageSensors'), where('zoneId', '==', z.id)));
+    const sSnap = await getDocs(query(collection(db, col.sensors(uid)), where('zoneId', '==', z.id)));
     sSnap.forEach(s => batch.delete(s.ref));
     batch.delete(z.ref);
   }
-  batch.delete(doc(db, 'storageWarehouses', id));
+  batch.delete(doc(db, col.warehouses(uid), id));
   await batch.commit();
 }
 
-export async function addZone(data: Omit<ManagedZone, 'id' | 'createdAt'>) {
-  return addDoc(collection(db, 'storageZones'), { ...data, createdAt: Date.now() });
+export async function addZone(uid: string, data: Omit<ManagedZone, 'id' | 'createdAt'>) {
+  return addDoc(collection(db, col.zones(uid)), { ...data, createdAt: Date.now() });
 }
 
-export async function updateZone(id: string, data: Partial<Omit<ManagedZone, 'id' | 'createdAt'>>) {
-  return updateDoc(doc(db, 'storageZones', id), data);
+export async function updateZone(uid: string, id: string, data: Partial<Omit<ManagedZone, 'id' | 'createdAt'>>) {
+  return updateDoc(doc(db, col.zones(uid), id), data);
 }
 
-export async function deleteZone(id: string) {
+export async function deleteZone(uid: string, id: string) {
   const batch = writeBatch(db);
-  const sSnap = await getDocs(query(collection(db, 'storageSensors'), where('zoneId', '==', id)));
+  const sSnap = await getDocs(query(collection(db, col.sensors(uid)), where('zoneId', '==', id)));
   sSnap.forEach(s => batch.delete(s.ref));
-  batch.delete(doc(db, 'storageZones', id));
+  batch.delete(doc(db, col.zones(uid), id));
   await batch.commit();
 }
 
-export async function addSensor(data: Omit<ManagedSensor, 'id' | 'createdAt'>) {
-  return addDoc(collection(db, 'storageSensors'), { ...data, createdAt: Date.now() });
+export async function addSensor(uid: string, data: Omit<ManagedSensor, 'id' | 'createdAt'>) {
+  return addDoc(collection(db, col.sensors(uid)), { ...data, createdAt: Date.now() });
 }
 
-export async function updateSensor(id: string, data: Partial<Omit<ManagedSensor, 'id' | 'createdAt'>>) {
-  return updateDoc(doc(db, 'storageSensors', id), data);
+export async function updateSensor(uid: string, id: string, data: Partial<Omit<ManagedSensor, 'id' | 'createdAt'>>) {
+  return updateDoc(doc(db, col.sensors(uid), id), data);
 }
 
-export async function deleteSensor(id: string) {
-  return deleteDoc(doc(db, 'storageSensors', id));
-}
-
-// ─── Default seed ─────────────────────────────────────────────────────────────
-
-const DEFAULT_WHS = [
-  { name: 'Warehouse A', liveEngineId: 'WH-A', capacity: 2000, location: 'Block A', status: 'active'   as const },
-  { name: 'Warehouse B', liveEngineId: 'WH-B', capacity: 1800, location: 'Block B', status: 'active'   as const },
-  { name: 'Warehouse C', liveEngineId: 'WH-C', capacity: 1750, location: 'Block C', status: 'active'   as const },
-  { name: 'Warehouse D', liveEngineId: 'WH-D', capacity: 1600, location: 'Block D', status: 'active'   as const },
-  { name: 'Warehouse E', liveEngineId: 'WH-E', capacity: 1500, location: 'Block E', status: 'active'   as const },
-  { name: 'Warehouse F', liveEngineId: 'WH-F', capacity: 1400, location: 'Block F', status: 'active'   as const },
-  { name: 'Warehouse G', liveEngineId: 'WH-G', capacity: 1200, location: 'Block G', status: 'active'   as const },
-  { name: 'Warehouse H', liveEngineId: 'WH-H', capacity: 1200, location: 'Block H', status: 'inactive' as const },
-];
-
-const DEFAULT_ACTIVE_ZONES  = ['Zone 1', 'Zone 2', 'Zone 3', 'Zone 4', 'Ambient'];
-const DEFAULT_INACTIVE_ZONES = ['Zone 1', 'Zone 2'];
-const DEFAULT_SENSORS: Array<{ type: SensorType; name: string }> = [
-  { type: 'temperature', name: 'Temperature Sensor' },
-  { type: 'humidity',    name: 'Humidity Sensor'    },
-  { type: 'moisture',    name: 'Moisture Sensor'    },
-];
-
-export async function seedDefaultStorageIfEmpty(): Promise<void> {
-  try {
-    const metaRef = doc(db, 'meta', 'storageSeeded');
-    const metaSnap = await getDoc(metaRef);
-    if (metaSnap.exists()) return;
-
-    const batch = writeBatch(db);
-    let ts = Date.now();
-
-    for (const wh of DEFAULT_WHS) {
-      const whRef = doc(collection(db, 'storageWarehouses'));
-      batch.set(whRef, { ...wh, createdAt: ts++ });
-
-      const zoneNames = wh.status === 'inactive' ? DEFAULT_INACTIVE_ZONES : DEFAULT_ACTIVE_ZONES;
-      for (const zoneName of zoneNames) {
-        const zRef = doc(collection(db, 'storageZones'));
-        batch.set(zRef, { warehouseId: whRef.id, name: zoneName, status: wh.status, createdAt: ts++ });
-
-        if (wh.status === 'active') {
-          for (const s of DEFAULT_SENSORS) {
-            const sRef = doc(collection(db, 'storageSensors'));
-            batch.set(sRef, { zoneId: zRef.id, warehouseId: whRef.id, ...s, status: 'active', createdAt: ts++ });
-          }
-        }
-      }
-    }
-
-    batch.set(metaRef, { seededAt: Date.now() });
-    await batch.commit();
-  } catch (err) {
-    console.warn('[storage] seed skipped:', err);
-  }
+export async function deleteSensor(uid: string, id: string) {
+  return deleteDoc(doc(db, col.sensors(uid), id));
 }

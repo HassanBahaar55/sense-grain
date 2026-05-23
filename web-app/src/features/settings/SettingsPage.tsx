@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { cn } from '@/lib/utils';
+import { useLiveData } from '@/contexts/LiveDataContext';
 import {
   useWarehouses, useZones, useSensorsForWarehouse,
   addWarehouse, updateWarehouse, deleteWarehouse,
@@ -1203,6 +1204,7 @@ type WizardStep = 1 | 2 | 3;
 interface WizardZone { name: string; }
 
 function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
+  const { uid } = useLiveData();
   const [step, setStep]     = useState<WizardStep>(1);
   const [saving, setSaving] = useState(false);
   const [createErr, setCreateErr] = useState('');
@@ -1225,6 +1227,7 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0);
 
   async function create() {
+    if (!uid) return;
     setCreateErr('');
     setSaving(true);
     try {
@@ -1241,13 +1244,13 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
       if (whLiveId.trim()) whPayload.liveEngineId = whLiveId.trim();
 
       // 1. Create warehouse
-      const whRef = await addWarehouse(whPayload);
+      const whRef = await addWarehouse(uid, whPayload);
       const whId  = whRef.id;
 
       // 2. Create zones (no sensors — user adds them manually per zone)
       for (const z of zones) {
         if (!z.name.trim()) continue;
-        await addZone({ warehouseId: whId, name: z.name.trim(), status: whStatus });
+        await addZone(uid, { warehouseId: whId, name: z.name.trim(), status: whStatus });
       }
       onClose();
     } catch (err) {
@@ -1423,6 +1426,7 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
 // ── Edit Warehouse Modal ────────────────────────────────────────────────────
 
 function EditWarehouseModal({ wh, onClose }: { wh: ManagedWarehouse; onClose: () => void }) {
+  const { uid } = useLiveData();
   const [name,   setName]   = useState(wh.name);
   const [cap,    setCap]    = useState(String(wh.capacity));
   const [loc,    setLoc]    = useState(wh.location);
@@ -1431,9 +1435,9 @@ function EditWarehouseModal({ wh, onClose }: { wh: ManagedWarehouse; onClose: ()
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !uid) return;
     setSaving(true);
-    await updateWarehouse(wh.id, { name: name.trim(), capacity: Number(cap) || 1000, location: loc.trim(), status, liveEngineId: liveId.trim() || undefined });
+    await updateWarehouse(uid, wh.id, { name: name.trim(), capacity: Number(cap) || 1000, location: loc.trim(), status, liveEngineId: liveId.trim() || undefined });
     setSaving(false);
     onClose();
   };
@@ -1458,15 +1462,16 @@ function EditWarehouseModal({ wh, onClose }: { wh: ManagedWarehouse; onClose: ()
 // ── Zone modal ──────────────────────────────────────────────────────────────
 
 function ZoneFormModal({ zone, warehouseId, onClose }: { zone?: ManagedZone; warehouseId: string; onClose: () => void }) {
+  const { uid } = useLiveData();
   const [name,   setName]   = useState(zone?.name   ?? '');
   const [status, setStatus] = useState<ManagedStatus>(zone?.status ?? 'active');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !uid) return;
     setSaving(true);
-    if (zone) await updateZone(zone.id, { name: name.trim(), status });
-    else      await addZone({ warehouseId, name: name.trim(), status });
+    if (zone) await updateZone(uid, zone.id, { name: name.trim(), status });
+    else      await addZone(uid, { warehouseId, name: name.trim(), status });
     setSaving(false);
     onClose();
   };
@@ -1488,16 +1493,17 @@ function ZoneFormModal({ zone, warehouseId, onClose }: { zone?: ManagedZone; war
 function SensorFormModal({ sensor, zoneId, warehouseId, onClose }: {
   sensor?: ManagedSensor; zoneId: string; warehouseId: string; onClose: () => void;
 }) {
+  const { uid } = useLiveData();
   const [name,   setName]   = useState(sensor?.name   ?? '');
   const [type,   setType]   = useState<SensorType>(sensor?.type   ?? 'temperature');
   const [status, setStatus] = useState<SensorStatus>(sensor?.status ?? 'active');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !uid) return;
     setSaving(true);
-    if (sensor) await updateSensor(sensor.id, { name: name.trim(), type, status });
-    else        await addSensor({ zoneId, warehouseId, name: name.trim(), type, status });
+    if (sensor) await updateSensor(uid, sensor.id, { name: name.trim(), type, status });
+    else        await addSensor(uid, { zoneId, warehouseId, name: name.trim(), type, status });
     setSaving(false);
     onClose();
   };
@@ -1564,6 +1570,7 @@ function InfraDeleteConfirm({ title, desc, onConfirm, onClose }: {
 // ── Zone row with sensors ────────────────────────────────────────────────────
 
 function ZoneRow({ zone, warehouseId }: { zone: ManagedZone; warehouseId: string }) {
+  const { uid } = useLiveData();
   const sensors = useSensorsForWarehouse(warehouseId);
   const zoneSensors = sensors.filter(s => s.zoneId === zone.id);
   const [expanded, setExpanded] = useState(false);
@@ -1583,7 +1590,7 @@ function ZoneRow({ zone, warehouseId }: { zone: ManagedZone; warehouseId: string
         <InfraDeleteConfirm
           title={`Delete ${zone.name}?`}
           desc={`All ${zoneSensors.length} sensor(s) in this zone will also be permanently removed.`}
-          onConfirm={() => deleteZone(zone.id)}
+          onConfirm={async () => { if (uid) await deleteZone(uid, zone.id); }}
           onClose={() => setModal(null)}
         />
       )}
@@ -1595,7 +1602,7 @@ function ZoneRow({ zone, warehouseId }: { zone: ManagedZone; warehouseId: string
         <InfraDeleteConfirm
           title={`Remove ${modal.sensor.name}?`}
           desc="The sensor and its readings link will be permanently deleted."
-          onConfirm={() => deleteSensor(modal.sensor.id)}
+          onConfirm={async () => { if (uid) await deleteSensor(uid, modal.sensor.id); }}
           onClose={() => setModal(null)}
         />
       )}
@@ -1677,6 +1684,7 @@ function ZoneRow({ zone, warehouseId }: { zone: ManagedZone; warehouseId: string
 // ── Warehouse accordion card ─────────────────────────────────────────────────
 
 function WarehouseCard({ wh }: { wh: ManagedWarehouse }) {
+  const { uid } = useLiveData();
   const [expanded, setExpanded] = useState(false);
   const { zones } = useZones(expanded ? wh.id : null);
   const [modal, setModal] = useState<
@@ -1693,7 +1701,7 @@ function WarehouseCard({ wh }: { wh: ManagedWarehouse }) {
         <InfraDeleteConfirm
           title={`Delete ${wh.name}?`}
           desc="All zones and sensors inside will be permanently removed."
-          onConfirm={() => deleteWarehouse(wh.id)}
+          onConfirm={async () => { if (uid) await deleteWarehouse(uid, wh.id); }}
           onClose={() => setModal(null)}
         />
       )}

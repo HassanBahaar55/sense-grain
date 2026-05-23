@@ -42,6 +42,9 @@ firebase/.runtimeconfig.json
 firebase/emulator-data/
 firebase/functions/lib/
 
+# Client documents and data files
+mobile-app/Cliant Data/
+
 # React Native
 mobile-app/.gradle/
 mobile-app/.bundle/

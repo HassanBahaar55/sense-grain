@@ -4,12 +4,16 @@ import { useState, useMemo } from 'react';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { PredictionForecastChart } from '@/components/charts/PredictionForecastChart';
-import {
-  forecastSeries,
-  type TrendDir,
-  type RiskLevel,
-  type Timeframe,
-} from './mockData';
+import { type TrendDir, type RiskLevel } from '@/lib/dataEngine';
+
+type Timeframe = '24H' | '3D' | '7D' | '14D' | '30D';
+
+const forecastSeries = [
+  { hist: 'temp'     as const, fore: 'tempF'     as const, color: '#f59e0b', label: 'Temperature' },
+  { hist: 'humidity' as const, fore: 'humidityF' as const, color: '#3b82f6', label: 'Humidity'    },
+  { hist: 'moisture' as const, fore: 'moistureF' as const, color: '#10b981', label: 'Moisture'    },
+  { hist: 'co2'      as const, fore: 'co2F'      as const, color: '#8b5cf6', label: 'CO₂'         },
+];
 import { type ParamForecastCard } from '@/lib/dataEngine';
 import { useFirestorePredictions as usePredictionsData, useSensorHistory } from '@/lib/useFirestoreData';
 import { useLiveData } from '@/contexts/LiveDataContext';

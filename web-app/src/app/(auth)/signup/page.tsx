@@ -4,8 +4,21 @@ import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getAuth, signInWithPopup, createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider } from 'firebase/auth';
+import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { isTestEmail } from '@/lib/accountDb';
+
+const db = getFirestore(firebaseApp);
+
+async function writeUserDocs(uid: string, email: string, displayName: string) {
+  const status = isTestEmail(email) ? 'approved' : 'pending';
+  const now    = Date.now();
+  await Promise.all([
+    setDoc(doc(db, 'users', uid), { uid, email, displayName, approvalStatus: status, createdAt: now }, { merge: true }),
+    setDoc(doc(db, 'userRequests', uid), { uid, email, displayName, requestedAt: now, status }, { merge: true }),
+  ]);
+}
 
 function validateEmail(v: string) {
   if (!v.trim()) return 'Email is required';
@@ -117,7 +130,11 @@ export default function SignupPage() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
-      console.log('[Google Sign-Up] Success:', result.user.email);
+      await writeUserDocs(
+        result.user.uid,
+        result.user.email ?? '',
+        result.user.displayName ?? result.user.email?.split('@')[0] ?? 'User',
+      );
       router.replace('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';
@@ -152,6 +169,7 @@ export default function SignupPage() {
       const auth = getAuth(firebaseApp);
       const { user: newUser } = await createUserWithEmailAndPassword(auth, email.trim(), password);
       await updateProfile(newUser, { displayName: name.trim() });
+      await writeUserDocs(newUser.uid, email.trim(), name.trim());
       router.replace('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code ?? '';

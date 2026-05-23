@@ -3,14 +3,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { ParameterTrendsChart } from '@/components/charts/ParameterTrendsChart';
-import {
-  monitorWarehouses,
-  trendSeries,
-  realtimeMetrics,
-  type WarehouseOnlineStatus,
-  type ZoneStatus,
-  type ZoneReading,
-} from './mockData';
+// ─── Local types (removed mockData dependency) ────────────────────────────────
+type WarehouseOnlineStatus = 'online' | 'warning' | 'alert' | 'offline';
+type ZoneStatus = 'good' | 'normal' | 'warning' | 'critical' | 'offline';
+interface ZoneReading {
+  id: string; label: string; bay: string;
+  temp: number | null; humidity: number | null; moisture: number | null;
+  co2: number | null; aqi: number | null;
+  status: ZoneStatus;
+}
+
+const trendSeries = [
+  { key: 'temp'     as const, label: 'Temperature', color: '#f59e0b', unit: '°C',   threshold: 35   },
+  { key: 'humidity' as const, label: 'Humidity',    color: '#3b82f6', unit: '%',    threshold: 80   },
+  { key: 'moisture' as const, label: 'Moisture',    color: '#22c55e', unit: '%',    threshold: 15   },
+  { key: 'co2'      as const, label: 'CO₂',         color: '#8b5cf6', unit: ' ppm', threshold: 1000 },
+  { key: 'aqi'      as const, label: 'AQI',         color: '#10b981', unit: '',     threshold: 100  },
+];
 import {
   useWarehouses,
   useZones,
@@ -171,35 +180,28 @@ type DropdownEntry = {
   canSelect: boolean;
 };
 
-function buildDropdownList(firestoreWarehouses: ManagedWarehouse[]): DropdownEntry[] {
-  // Mock warehouses — replaced by Firestore name if a warehouse is linked to them
-  const entries: DropdownEntry[] = monitorWarehouses.map(mw => {
-    const fsWh = firestoreWarehouses.find(fw => fw.liveEngineId === mw.id);
+function buildDropdownList(
+  firestoreWarehouses: ManagedWarehouse[],
+  readings: Record<string, LiveSensorReading>,
+): DropdownEntry[] {
+  return firestoreWarehouses.map(fw => {
+    const engineId   = fw.liveEngineId ?? fw.id;
+    const liveData   = readings[engineId];
+    const hasData    = !!liveData;
+    const whStatus: WarehouseOnlineStatus = !hasData ? 'offline'
+      : liveData.status === 'high'   ? 'alert'
+      : liveData.status === 'medium' ? 'warning'
+      : 'online';
     return {
-      id: mw.id,
-      fsId: fsWh?.id ?? null,
-      name: fsWh?.name ?? mw.name,
-      status: mw.status,
-      isUserWarehouse: !!fsWh,
-      hasData: true,
-      canSelect: mw.status !== 'offline',
+      id:              fw.liveEngineId ?? fw.id,
+      fsId:            fw.id,
+      name:            fw.name,
+      status:          whStatus,
+      isUserWarehouse: true,
+      hasData,
+      canSelect:       true,
     };
   });
-
-  // Firestore warehouses with no liveEngineId — separate from mock list
-  for (const fw of firestoreWarehouses.filter(fw => !fw.liveEngineId)) {
-    entries.push({
-      id: fw.id,
-      fsId: fw.id,
-      name: fw.name,
-      status: 'offline',
-      isUserWarehouse: true,
-      hasData: false,
-      canSelect: true,
-    });
-  }
-
-  return entries;
 }
 
 // ─── Live clock ───────────────────────────────────────────────────────────────
@@ -224,9 +226,10 @@ function WarehouseDropdown({
   onSelect: (id: string) => void;
   firestoreWarehouses: ManagedWarehouse[];
 }) {
+  const { readings } = useLiveData();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const entries     = buildDropdownList(firestoreWarehouses);
+  const entries     = buildDropdownList(firestoreWarehouses, readings);
   const current     = entries.find(e => e.id === selected);
   const cfg         = whCfg[current?.status ?? 'online'];
   const displayName = current?.name ?? selected;
@@ -429,7 +432,7 @@ export default function RealtimeMonitorPage() {
   const { readings } = useLiveData();
 
   // Build the dropdown entries list (also used in WarehouseDropdown internally)
-  const dropdownEntries = buildDropdownList(firestoreWarehouses);
+  const dropdownEntries = buildDropdownList(firestoreWarehouses, readings);
   const currentEntry    = dropdownEntries.find(e => e.id === selectedWH);
 
   // fsId = Firestore warehouse document ID for the selected entry
@@ -455,7 +458,6 @@ export default function RealtimeMonitorPage() {
   // Build zone cards from Firestore zones + live data
   const zones: ZoneReading[] = buildZoneReadings(fsZones, fsSensors, liveReading);
 
-  const wh          = monitorWarehouses.find(w => w.id === effectiveMockId);
   const displayName = currentEntry?.name ?? selectedWH;
   const hasNoLink   = currentEntry?.hasData === false; // no liveEngineId
 
@@ -562,12 +564,12 @@ export default function RealtimeMonitorPage() {
             {!hasNoLink && (
               <span className={cn(
                 'text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0',
-                wh?.status === 'alert'   ? 'bg-red-50 text-red-700'     :
-                wh?.status === 'warning' ? 'bg-amber-50 text-amber-700' :
-                wh?.status === 'offline' ? 'bg-gray-100 text-gray-400'  :
+                currentEntry?.status === 'alert'   ? 'bg-red-50 text-red-700'     :
+                currentEntry?.status === 'warning' ? 'bg-amber-50 text-amber-700' :
+                currentEntry?.status === 'offline' ? 'bg-gray-100 text-gray-400'  :
                 'bg-green-50 text-green-700'
               )}>
-                {whCfg[wh?.status ?? 'online'].label}
+                {whCfg[currentEntry?.status ?? 'online'].label}
               </span>
             )}
             {hasNoLink && (
@@ -667,10 +669,17 @@ export default function RealtimeMonitorPage() {
 
           <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 pt-3 border-t border-gray-100">
             {trendSeries.map(s => {
-              const metric = realtimeMetrics.find(m => m.id === s.key);
-              const displayValue = (s.key === 'temp' && metric)
-                ? convertTemp(parseFloat(metric.value), tempUnit)
-                : metric ? `${metric.value}${s.unit}` : '—';
+              const raw: Record<string, number | null> = {
+                temp:     avgTemp,
+                humidity: avgHumidity,
+                moisture: avgMoisture,
+                co2:      liveReading?.co2 ?? null,
+                aqi:      liveReading?.aqi ?? null,
+              };
+              const v = raw[s.key];
+              const displayValue = v === null ? '—'
+                : s.key === 'temp' ? convertTemp(v, tempUnit)
+                : `${s.key === 'moisture' ? v.toFixed(1) : Math.round(v)}${s.unit}`;
               return (
                 <div key={s.key} className="flex items-center gap-2">
                   <span className="w-5 h-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />

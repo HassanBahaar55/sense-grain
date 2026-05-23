@@ -3,82 +3,55 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    match /devices/{deviceId} {
-      allow read: if request.auth != null;
-      allow write: if false;
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'hammadtahir@gmail.com';
     }
 
-    match /grainReadings/{readingId} {
-      allow read: if request.auth != null;
-      allow write: if false;
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    match /storageBins/{storageBinId} {
-      allow read: if request.auth != null;
-      allow write: if false;
+    function isApproved(uid) {
+      return isAdmin() ||
+        get(/databases/$(database)/documents/users/$(uid)).data.approvalStatus == 'approved';
     }
 
-    // Sensor simulation writes from authenticated web client
-    match /warehouseReadings/{warehouseId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
+    // ─── User profiles ────────────────────────────────────────────────────────
+
+    match /users/{uid} {
+      allow read:   if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isAdmin() ||
+        (isOwner(uid) &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['displayName', 'updatedAt']));
+      allow delete: if isAdmin();
     }
 
-    // Alerts written by authenticated web client
-    match /alerts/{alertId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
+    // ─── Registration requests ────────────────────────────────────────────────
+
+    match /userRequests/{requestId} {
+      allow create: if isSignedIn() && request.auth.uid == requestId;
+      allow read:   if isAdmin() || (isSignedIn() && request.auth.uid == requestId);
+      allow update, delete: if isAdmin();
     }
 
-    // Historical sensor snapshots (seeded on first login, appended daily)
-    match /sensorHistory/{dateKey} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
+    // ─── Per-user account data ────────────────────────────────────────────────
+    // Each user's data lives under /accounts/{uid}/...
+    // Only that user (if approved) or admin can access it.
+
+    match /accounts/{uid}/{document=**} {
+      allow read, write: if (isOwner(uid) && isApproved(uid)) || isAdmin();
     }
 
-    // Reports written by authenticated user or seeder
-    match /reports/{reportId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
-
-    // Report metadata (stats, trend, type breakdown)
-    match /reportsMeta/{docId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
-
-    // Permanent alert audit log — written on alert fire/resolve, kept 7 days
-    match /alertHistory/{alertId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
-
-    // Seeding marker — prevents re-seeding on every login
-    match /meta/{docId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
-
-    // Storage management — warehouses, zones, sensors (user-managed)
-    match /storageWarehouses/{docId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
-
-    match /storageZones/{docId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
-
-    match /storageSensors/{docId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null;
-    }
+    // ─── Catch-all deny ───────────────────────────────────────────────────────
 
     match /{document=**} {
       allow read, write: if false;

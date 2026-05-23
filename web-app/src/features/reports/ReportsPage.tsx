@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { type ReportType } from './mockData';
+import { type ReportType } from '@/lib/dataEngine';
 import { type ReportItem } from '@/lib/dataEngine';
 import { useFirestoreReports as useReportsData } from '@/lib/useFirestoreData';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,8 @@ import {
   collection, query, orderBy, where, getDocs,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
+import { col } from '@/lib/accountDb';
+import { useLiveData } from '@/contexts/LiveDataContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,7 @@ interface SensorHistoryRow {
 }
 
 async function generateCsv(
+  uid: string,
   reportId: string,
   reportTitle: string,
   warehouse: string,
@@ -61,7 +64,7 @@ async function generateCsv(
   let histRows: SensorHistoryRow[] = [];
   try {
     const q = query(
-      collection(db, 'sensorHistory'),
+      collection(db, col.sensorHistory(uid)),
       where('date', '>=', sinceStr),
       orderBy('date', 'asc'),
     );
@@ -262,6 +265,7 @@ function GenerateModal({
 export default function ReportsPage() {
   const { toggle: toggleSidebar } = useSidebar();
   const { recentReports } = useReportsData();
+  const { uid } = useLiveData();
 
   const [showGenerate, setShowGenerate]       = useState(false);
   const [localReports, setLocalReports]       = useState<ReportItem[]>([]);
@@ -301,13 +305,13 @@ export default function ReportsPage() {
     setGeneratingId(newId);
 
     try {
-      const csv = await generateCsv(newId, title, warehouse, dateRange, type);
+      const csv = await generateCsv(uid ?? '', newId, title, warehouse, dateRange, type);
       const size = csvSizeLabel(csv);
       triggerDownload(csv, `${newId}-${type}.csv`);
 
-      // Save to Firestore
+      // Save to Firestore (per-user)
       const db = getFirestore(firebaseApp);
-      await setDoc(doc(db, 'reports', newId), {
+      await setDoc(doc(db, uid ? col.reports(uid) : 'reports', newId), {
         ...newReport,
         status: 'ready',
         size,
@@ -333,7 +337,7 @@ export default function ReportsPage() {
     setDownloadingId(report.id);
     try {
       const whId = Object.entries(WH_NAMES).find(([, v]) => v === report.warehouse)?.[0] ?? 'all';
-      const csv = await generateCsv(report.id, report.title, whId, '30d', report.type);
+      const csv = await generateCsv(uid ?? '', report.id, report.title, whId, '30d', report.type);
       triggerDownload(csv, `${report.id}-${report.type}.csv`);
       setDownloadedIds(prev => new Set([...prev, report.id]));
       setTimeout(() => setDownloadedIds(prev => { const s = new Set(prev); s.delete(report.id); return s; }), 2500);
