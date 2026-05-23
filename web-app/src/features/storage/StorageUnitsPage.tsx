@@ -294,6 +294,15 @@ export default function StorageUnitsPage() {
           {/* Left: Warehouse list */}
           <div className="lg:w-64 xl:w-72 flex-shrink-0 flex flex-col min-h-0 bg-white rounded-2xl ring-1 ring-black/[0.05] shadow-sm overflow-hidden">
             <div className="p-3 border-b border-gray-100 space-y-2 flex-shrink-0">
+              <Link
+                href="/settings"
+                className="w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-[#1f5135] hover:bg-green-50 py-1.5 rounded-xl border border-[#1f5135]/20 transition-all duration-150"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+                </svg>
+                Manage in Settings
+              </Link>
               <div className="relative">
                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input
@@ -326,19 +335,6 @@ export default function StorageUnitsPage() {
                   onSelect={() => setSelectedWhId(wh.id)}
                 />
               ))}
-            </div>
-
-            {/* Manage link */}
-            <div className="p-2.5 border-t border-gray-100 flex-shrink-0">
-              <Link
-                href="/settings"
-                className="w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-[#1f5135] hover:bg-green-50 py-2 rounded-xl border border-[#1f5135]/20 transition-all duration-150"
-              >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
-                </svg>
-                Manage in Settings
-              </Link>
             </div>
           </div>
 

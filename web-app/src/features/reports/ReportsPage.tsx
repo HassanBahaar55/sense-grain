@@ -817,8 +817,40 @@ export default function ReportsPage() {
           </Card>
           </div>
 
-          {/* Scheduled Reports */}
+          {/* Right sidebar */}
           <div className="flex flex-col gap-4 min-w-0" ref={scheduledRef}>
+
+            {/* Quick Actions card — top */}
+            <Card className="p-5">
+              <h2 className="text-[13px] font-bold text-gray-900 mb-3 tracking-tight">Quick Actions</h2>
+              <div className="space-y-2">
+                {/* Export All */}
+                <button
+                  onClick={handleExportAllZip}
+                  disabled={exportingZip}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-semibold transition-all duration-150 text-left text-[#1f5135] bg-green-50 hover:bg-green-100 disabled:opacity-60"
+                >
+                  {exportingZip ? (
+                    <svg className="w-3.5 h-3.5 flex-shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9" /></svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                  )}
+                  {exportingZip ? 'Preparing export...' : 'Export All as CSV'}
+                </button>
+                {/* Schedule New Report */}
+                <button
+                  onClick={() => setShowGenerate(true)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-semibold transition-all duration-150 text-left text-purple-600 bg-purple-50 hover:bg-purple-100"
+                >
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Schedule New Report
+                </button>
+              </div>
+            </Card>
+
+            {/* Scheduled Reports card */}
             <Card className="p-5">
               <SectionHeader
                 title="Scheduled Reports"
@@ -881,36 +913,6 @@ export default function ReportsPage() {
                 </svg>
                 Create Schedule
               </button>
-            </Card>
-
-            {/* Quick Actions card */}
-            <Card className="p-5">
-              <h2 className="text-[13px] font-bold text-gray-900 mb-3 tracking-tight">Quick Actions</h2>
-              <div className="space-y-2">
-                {/* Export All */}
-                <button
-                  onClick={handleExportAllZip}
-                  disabled={exportingZip}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-semibold transition-all duration-150 text-left text-[#1f5135] bg-green-50 hover:bg-green-100 disabled:opacity-60"
-                >
-                  {exportingZip ? (
-                    <svg className="w-3.5 h-3.5 flex-shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9" /></svg>
-                  ) : (
-                    <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-                  )}
-                  {exportingZip ? 'Preparing export...' : 'Export All as CSV'}
-                </button>
-                {/* Schedule New Report */}
-                <button
-                  onClick={() => setShowGenerate(true)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-semibold transition-all duration-150 text-left text-purple-600 bg-purple-50 hover:bg-purple-100"
-                >
-                  <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Schedule New Report
-                </button>
-              </div>
             </Card>
 
           </div>
