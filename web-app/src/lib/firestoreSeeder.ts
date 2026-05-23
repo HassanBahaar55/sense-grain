@@ -181,7 +181,7 @@ export async function cleanupOldAlerts(): Promise<void> {
   try {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-    // Delete alertHistory docs older than 7 days
+    // 1. Delete alertHistory docs older than 7 days
     const historyQ = query(
       collection(db, 'alertHistory'),
       orderBy('triggeredAt'),
@@ -190,19 +190,14 @@ export async function cleanupOldAlerts(): Promise<void> {
     const historySnap = await getDocs(historyQ);
     await Promise.all(historySnap.docs.map(d => deleteDoc(doc(db, 'alertHistory', d.id))));
 
-    // Delete resolved alerts in the live alerts collection older than 7 days
-    // Single-field filter only (avoids composite index requirement)
-    const alertsQ = query(
-      collection(db, 'alerts'),
-      where('timestamp', '<', cutoff),
-    );
-    const alertsSnap = await getDocs(alertsQ);
-    // Only delete if resolved (filter in JS to keep active old alerts safe)
-    const toDelete = alertsSnap.docs.filter(d => d.data().resolved === true);
-    await Promise.all(toDelete.map(d => deleteDoc(doc(db, 'alerts', d.id))));
+    // 2. Delete ALL resolved alerts from the live `alerts` collection.
+    //    Resolved alerts must not persist here — they belong only in alertHistory.
+    const resolvedQ = query(collection(db, 'alerts'), where('resolved', '==', true));
+    const resolvedSnap = await getDocs(resolvedQ);
+    await Promise.all(resolvedSnap.docs.map(d => deleteDoc(doc(db, 'alerts', d.id))));
 
-    if (historySnap.size + toDelete.length > 0) {
-      console.info(`[cleanup] Deleted ${historySnap.size} alertHistory + ${toDelete.length} resolved alerts older than 7 days`);
+    if (historySnap.size + resolvedSnap.size > 0) {
+      console.info(`[cleanup] Deleted ${historySnap.size} old alertHistory + ${resolvedSnap.size} resolved alerts from live collection`);
     }
   } catch {
     // Non-fatal — cleanup will retry on next app startup

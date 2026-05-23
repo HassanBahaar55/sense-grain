@@ -289,10 +289,11 @@ export class LiveEngine {
 
   private async syncToFirestore() {
     try {
-      const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { getFirestore, doc, setDoc, deleteDoc, serverTimestamp } = await import('firebase/firestore');
       const firebaseApp = (await import('@/config/firebase')).default;
       const db = getFirestore(firebaseApp);
 
+      // Sensor readings
       const writes = Object.values(this.readings).map(r =>
         setDoc(doc(db, 'warehouseReadings', r.warehouseId), {
           ...r,
@@ -300,15 +301,19 @@ export class LiveEngine {
         }),
       );
 
-      // Current alert state — stable doc ID per WH/param/severity
-      const alertWrites = this.alerts.map(a =>
-        setDoc(doc(db, 'alerts', `${a.warehouseId}_${a.param}_${a.severity}`), {
-          ...a,
-          updatedAt: serverTimestamp(),
-        }),
+      // Active alerts → upsert into `alerts` collection
+      const active   = this.alerts.filter(a => !a.resolved);
+      const resolved = this.alerts.filter(a =>  a.resolved);
+
+      const alertWrites  = active.map(a =>
+        setDoc(doc(db, 'alerts', a.id), { ...a, updatedAt: serverTimestamp() }),
+      );
+      // Resolved alerts → DELETE from `alerts` (they live in alertHistory already)
+      const alertDeletes = resolved.map(a =>
+        deleteDoc(doc(db, 'alerts', a.id)),
       );
 
-      await Promise.all([...writes, ...alertWrites]);
+      await Promise.all([...writes, ...alertWrites, ...alertDeletes]);
     } catch (err) {
       if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] Firestore sync skipped:', err);
     }

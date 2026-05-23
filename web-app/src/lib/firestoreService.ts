@@ -9,6 +9,8 @@
 import {
   getFirestore,
   collection,
+  query,
+  where,
   onSnapshot,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -98,9 +100,10 @@ export function subscribeToReadings(cb: ReadingsCallback): Unsubscribe {
   });
 }
 
-/** Subscribe to all alerts. Returns unsubscribe function. */
+/** Subscribe to active (unresolved) alerts only. Returns unsubscribe function. */
 export function subscribeToAlerts(cb: AlertsCallback): Unsubscribe {
-  return onSnapshot(collection(db, 'alerts'), (snap) => {
+  const q = query(collection(db, 'alerts'), where('resolved', '==', false));
+  return onSnapshot(q, (snap) => {
     const alerts: LiveAlert[] = [];
     snap.forEach((doc) => {
       alerts.push(toAlert(doc.id, doc.data() as FirestoreAlertDoc));
