@@ -84,13 +84,15 @@ function circadian(): number {
 // ─── Engine ───────────────────────────────────────────────────────────────────
 
 export class LiveEngine {
-  private readings:    Record<string, LiveSensorReading> = {};
-  private alerts:      LiveAlert[] = [];
-  private listeners:   Set<Listener> = new Set();
-  private timer:       ReturnType<typeof setInterval> | null = null;
-  private syncTimer:   ReturnType<typeof setInterval> | null = null;
-  private alertSeq   = 1;
-  private tickCount  = 0;
+  private readings:      Record<string, LiveSensorReading> = {};
+  private alerts:        LiveAlert[] = [];
+  private listeners:     Set<Listener> = new Set();
+  private timer:         ReturnType<typeof setInterval> | null = null;
+  private syncTimer:     ReturnType<typeof setInterval> | null = null;
+  private alertSeq     = 1;
+  private tickCount    = 0;
+  private alertCooldown: Map<string, number> = new Map();
+  private readonly COOLDOWN_MS = 8 * 60 * 1000; // 8 min cooldown after resolve
 
   constructor() {
     // Seed initial state from base configs
@@ -214,24 +216,28 @@ export class LiveEngine {
     ];
 
     for (const c of checks) {
-      // Only one active alert per warehouse+param+severity
+      const cooldownKey = `${whId}:${c.param}:${c.sev}`;
       const dup = this.alerts.find(a => !a.resolved && a.warehouseId === whId && a.param === c.param && a.severity === c.sev);
 
       if (c.value > c.thr && !dup) {
-        this.alerts.push({
-          id: `live-${this.alertSeq++}`,
-          warehouseId: whId, param: c.param,
-          value: c.value, unit: c.unit, threshold: c.thr,
-          severity: c.sev, message: c.msg,
-          timestamp: Date.now(), resolved: false,
-        });
+        const lastResolved = this.alertCooldown.get(cooldownKey) ?? 0;
+        if (Date.now() - lastResolved >= this.COOLDOWN_MS) {
+          this.alerts.push({
+            id: `live-${this.alertSeq++}`,
+            warehouseId: whId, param: c.param,
+            value: c.value, unit: c.unit, threshold: c.thr,
+            severity: c.sev, message: c.msg,
+            timestamp: Date.now(), resolved: false,
+          });
+        }
       }
 
-      // Auto-resolve if back below 95% of threshold
+      // Auto-resolve if back below 95% of threshold; start cooldown
       if (c.value < c.thr * 0.95 && dup) {
         this.alerts = this.alerts.map(a =>
           a.id === dup.id ? { ...a, resolved: true } : a,
         );
+        this.alertCooldown.set(cooldownKey, Date.now());
       }
     }
 
