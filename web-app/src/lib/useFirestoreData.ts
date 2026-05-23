@@ -39,6 +39,9 @@ const db = getFirestore(firebaseApp);
 
 // ─── Static warehouse metadata (capacity doesn't change) ─────────────────────
 
+const WH_ACTIVE_IDS = ['WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G'];
+const SENSORS_PER_WH = 5; // temp, humidity, moisture, CO₂, AQI
+
 const WH_META: Record<string, { capacity: number; baseUsed: number }> = {
   'WH-A': { capacity: 2000, baseUsed: 1450 },
   'WH-B': { capacity: 1800, baseUsed: 1210 },
@@ -158,6 +161,31 @@ function useFirestoreReportsRaw(): { items: ReportItem[]; meta: ReportsMetaDoc |
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC HOOKS — drop-in replacements for dataEngine hooks
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Sensor Performance ───────────────────────────────────────────────────────
+
+export interface SensorPerformanceItem {
+  warehouse: string;
+  online:    number; // currently active sensors (0 or SENSORS_PER_WH)
+  total:     number; // always SENSORS_PER_WH
+  uptime:    number; // % of selected period warehouse was online
+}
+
+export function useSensorPerformance(days: 7 | 14 | 30): SensorPerformanceItem[] {
+  const history  = useSensorHistory(days);
+  const { readings } = useLiveData();
+
+  return useMemo(() => {
+    return WH_ACTIVE_IDS.map(whId => {
+      const isOnline   = readings[whId] != null;
+      const daysOnline = history.filter(h => (h.stability[whId] ?? 0) > 0).length;
+      const uptime     = history.length > 0
+        ? +(daysOnline / history.length * 100).toFixed(1)
+        : isOnline ? 100.0 : 0.0;
+      return { warehouse: whId, online: isOnline ? SENSORS_PER_WH : 0, total: SENSORS_PER_WH, uptime };
+    });
+  }, [history, readings]);
+}
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -357,35 +385,77 @@ export function useFirestoreAlertsData(): AlertsData {
 
 export function useFirestoreAnalytics(): AnalyticsData {
   const { readings } = useLiveData();
-  const history = useSensorHistory(14);
+  const history30 = useSensorHistory(30);
 
   return useMemo(() => {
     const warehouses = readingsToWarehouses(readings);
-    const active = warehouses.filter(w => w.temp !== null);
-    const goodPct = warehouses.length > 0 ? (warehouses.filter(w => w.status === 'good').length / warehouses.length) * 100 : 80;
+    const active     = warehouses.filter(w => w.temp !== null);
 
+    // ── Live metrics ────────────────────────────────────────────────────────
     const avgTemp = active.length ? active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length : 27;
-    const avgHum  = active.length ? active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length : 62;
+    const avgHum  = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 62;
+    const avgCap  = active.length ? Math.round(active.reduce((s, w) => s + (w.usedPct ?? 0), 0) / active.length) : 68;
 
+    // Spoilage from live readings via status distribution
+    const goodPct  = warehouses.length > 0 ? (warehouses.filter(w => w.status === 'good').length / warehouses.length) * 100 : 80;
+    const spoilRisk = +(Math.max(1, Math.min(30, 30 - goodPct / 4)).toFixed(1));
+
+    // ── Stability from live readings (real-time score) ───────────────────────
     const tempStability = Math.max(50, Math.round(100 - Math.max(0, avgTemp - 25) * 5));
-    const humStability  = Math.max(50, Math.round(100 - Math.max(0, avgHum - 60) * 2.5));
-    const spoilRisk     = +(Math.max(1, Math.min(15, 15 - goodPct / 10)).toFixed(1));
+    const humStability  = Math.max(50, Math.round(100 - Math.max(0, avgHum  - 60) * 2.5));
 
-    const avgCap = active.length
-      ? Math.round(active.reduce((s, w) => s + (w.usedPct ?? 0), 0) / active.length)
-      : 68;
+    // ── Delta: compare last 15 history docs vs previous 15 ──────────────────
+    const tempSafeThr = 29;
+    const humSafeThr  = 65;
+    let tempDelta = '+0.0%';
+    let humDelta  = '+0.0%';
+    let capDelta  = '+1.3%';
 
+    if (history30.length >= 4) {
+      const half   = Math.floor(history30.length / 2);
+      const recent = history30.slice(half);
+      const older  = history30.slice(0, half);
+
+      const recentTempSafe = recent.filter(h => h.averages.temperature < tempSafeThr).length;
+      const olderTempSafe  = older.filter(h => h.averages.temperature < tempSafeThr).length;
+      const recentTempStab = Math.round(recentTempSafe / recent.length * 100);
+      const olderTempStab  = older.length > 0 ? Math.round(olderTempSafe / older.length * 100) : recentTempStab;
+      const td = recentTempStab - olderTempStab;
+      tempDelta = `${td >= 0 ? '+' : ''}${td.toFixed(1)}%`;
+
+      const recentHumSafe = recent.filter(h => h.averages.humidity < humSafeThr).length;
+      const olderHumSafe  = older.filter(h => h.averages.humidity < humSafeThr).length;
+      const recentHumStab = Math.round(recentHumSafe / recent.length * 100);
+      const olderHumStab  = older.length > 0 ? Math.round(olderHumSafe / older.length * 100) : recentHumStab;
+      const hd = recentHumStab - olderHumStab;
+      humDelta = `${hd >= 0 ? '+' : ''}${hd.toFixed(1)}%`;
+
+      // Capacity delta: recent avg vs older avg from sensorHistory averages
+      // (We don't store capacity in sensorHistory so we approximate from warehouseStatus)
+      const recentGood = recent.reduce((s, h) => s + h.warehouseStatus.good, 0) / recent.length;
+      const olderGood  = older.length > 0 ? older.reduce((s, h) => s + h.warehouseStatus.good, 0) / older.length : recentGood;
+      const cd = recentGood - olderGood;
+      capDelta = `${cd >= 0 ? '+' : ''}${cd.toFixed(1)}`;
+    }
+
+    // ── Sensor health from live readings ─────────────────────────────────────
+    const onlineWHs    = WH_ACTIVE_IDS.filter(id => readings[id] != null).length;
+    const sensorHealth = Math.round(onlineWHs / WH_ACTIVE_IDS.length * 100);
+    const sensorDelta  = sensorHealth === 100 ? '+0.0%' : `-${(100 - sensorHealth).toFixed(1)}%`;
+
+    // ── KPIs ─────────────────────────────────────────────────────────────────
     const kpis: AnalyticsKPI[] = [
-      { label: 'Temp Stability',      value: tempStability, unit: '%', delta: `${tempStability > 80 ? '+' : ''}${(tempStability - 78).toFixed(1)}%`, trend: tempStability > 80 ? 'up' : 'down',   colorKey: 'amber'  },
-      { label: 'Humidity Stability',  value: humStability,  unit: '%', delta: '+1.2%', trend: humStability > 80 ? 'up' : 'stable', colorKey: 'blue'   },
-      { label: 'Capacity Utilization', value: avgCap,        unit: '%', delta: '+1.3%', trend: 'up',                               colorKey: 'green'  },
-      { label: 'Spoilage Risk',        value: spoilRisk,     unit: '%', delta: '-0.8%', trend: 'down', invertedTrend: true,        colorKey: 'red'    },
-      { label: 'Sensor Health',        value: 92,            unit: '%', delta: '+0.5%', trend: 'up',                               colorKey: 'teal'   },
+      { label: 'Temp Stability',       value: tempStability, unit: '%', delta: tempDelta, trend: tempDelta.startsWith('-') ? 'down' : 'up',  colorKey: 'amber',  invertedTrend: false },
+      { label: 'Humidity Stability',   value: humStability,  unit: '%', delta: humDelta,  trend: humDelta.startsWith('-')  ? 'down' : 'up',   colorKey: 'blue',   invertedTrend: false },
+      { label: 'Capacity Utilization', value: avgCap,        unit: '%', delta: capDelta,  trend: 'up',                                        colorKey: 'green',  invertedTrend: false },
+      { label: 'Spoilage Risk',        value: spoilRisk,     unit: '%', delta: '-0.8%',   trend: 'down', invertedTrend: true,                 colorKey: 'red'  },
+      { label: 'Sensor Health',        value: sensorHealth,  unit: '%', delta: sensorDelta, trend: sensorHealth === 100 ? 'stable' : 'down',  colorKey: 'teal',   invertedTrend: false },
     ];
 
+    // ── Env trend from history ────────────────────────────────────────────────
     const today = new Date();
-    const envTrendData: EnvTrendPoint[] = history.length > 0
-      ? history.map(h => ({
+    const envTrendData: EnvTrendPoint[] = history30.slice(-14).length > 0
+      ? history30.slice(-14).map(h => ({
           day:         dayLabel(new Date(h.date + 'T00:00:00')),
           Temperature: Math.max(40, Math.round(100 - Math.max(0, h.averages.temperature - 24) * 5)),
           Humidity:    Math.max(40, Math.round(100 - Math.max(0, h.averages.humidity - 55) * 2.5)),
@@ -393,27 +463,29 @@ export function useFirestoreAnalytics(): AnalyticsData {
           CO2:         Math.min(98, Math.max(60, Math.round(88 - Math.max(0, h.averages.co2 - 500) * 0.1))),
           AQI:         Math.min(98, Math.max(60, Math.round(90 - Math.max(0, h.averages.aqi - 40) * 0.5))),
         }))
-      : Array.from({ length: 14 }, (_, i) => ({
-          day: dayLabel(addDays(today, i - 13)),
-          Temperature: 75, Humidity: 70, Moisture: 72, CO2: 88, AQI: 90,
-        }));
+      : Array.from({ length: 14 }, (_, i) => ({ day: dayLabel(addDays(today, i - 13)), Temperature: 75, Humidity: 70, Moisture: 72, CO2: 88, AQI: 90 }));
 
-    const whPerformanceData: WHPerformancePoint[] = warehouses
-      .filter(w => w.temp !== null)
-      .map(wh => ({
-        warehouse:   wh.id,
-        Efficiency:  Math.max(40, Math.round(100 - (wh.status === 'high' ? 30 : wh.status === 'medium' ? 15 : 5))),
-        Stability:   Math.max(40, Math.round(100 - (wh.status === 'high' ? 35 : wh.status === 'medium' ? 18 : 6))),
-        Utilization: wh.usedPct,
-      }));
+    // ── WH performance from live ──────────────────────────────────────────────
+    const whPerformanceData: WHPerformancePoint[] = Object.values(readings)
+      .map(r => ({
+        warehouse:   r.warehouseId,
+        Efficiency:  Math.max(20, Math.round(r.health)),
+        Stability:   Math.max(20, Math.round(Math.max(0, 100 - r.spoilageRisk))),
+        Utilization: Math.round(r.capacity),
+      }))
+      .sort((a, b) => a.warehouse.localeCompare(b.warehouse));
 
-    const best  = whPerformanceData.length ? whPerformanceData.reduce((a, b) => a.Efficiency + a.Stability > b.Efficiency + b.Stability ? a : b) : { warehouse: 'WH-C', Efficiency: 90, Stability: 88, Utilization: 72 };
-    const worst = whPerformanceData.length ? whPerformanceData.reduce((a, b) => a.Efficiency + a.Stability < b.Efficiency + b.Stability ? a : b) : { warehouse: 'WH-D', Efficiency: 60, Stability: 55, Utilization: 61 };
+    // ── Best/worst WH ─────────────────────────────────────────────────────────
+    const ranked = whPerformanceData.slice().sort((a, b) => (b.Efficiency + b.Stability) - (a.Efficiency + a.Stability));
+    const best   = ranked[0] ?? { warehouse: 'WH-A', Efficiency: 90, Stability: 88, Utilization: 72 };
+    const worst  = ranked[ranked.length - 1] ?? { warehouse: 'WH-C', Efficiency: 60, Stability: 55, Utilization: 61 };
     const bestWH  = warehouses.find(w => w.id === best.warehouse);
     const worstWH = warehouses.find(w => w.id === worst.warehouse);
 
     return {
-      kpis, envTrendData, whPerformanceData,
+      kpis,
+      envTrendData,
+      whPerformanceData,
       topWarehouse: {
         name:   best.warehouse,
         detail: bestWH ? `${bestWH.temp?.toFixed(1)}°C · ${bestWH.humidity}% RH · ${bestWH.usedPct}% capacity` : 'Optimal conditions',
@@ -422,17 +494,17 @@ export function useFirestoreAnalytics(): AnalyticsData {
       worstWarehouse: {
         name:   worst.warehouse,
         detail: worstWH ? `${worstWH.temp?.toFixed(1)}°C · ${worstWH.humidity}% RH · status: ${worstWH.status}` : 'Needs attention',
-        score:  15,
+        score:  worst.Efficiency,
       },
       overallStability: Math.round((tempStability + humStability) / 2),
       sensorSummary: {
-        online:  active.length * 4,
-        offline: 1,
-        warning: warehouses.filter(w => w.status !== 'good' && w.status !== 'inactive').length * 2,
-        total:   active.length * 4 + 3,
+        online:  onlineWHs * SENSORS_PER_WH,
+        offline: (WH_ACTIVE_IDS.length - onlineWHs) * SENSORS_PER_WH,
+        warning: warehouses.filter(w => w.status !== 'good' && w.status !== 'inactive').length,
+        total:   WH_ACTIVE_IDS.length * SENSORS_PER_WH,
       },
     };
-  }, [readings, history]);
+  }, [readings, history30]);
 }
 
 // ─── Predictions ──────────────────────────────────────────────────────────────
@@ -592,14 +664,16 @@ export function useFirestoreEnvTrend(): EnvTrendPoint[] {
 
 export function useFirestoreWhPerformance(): WHPerformancePoint[] {
   const { readings } = useLiveData();
-  return useMemo(() => readingsToWarehouses(readings)
-    .filter(w => w.temp !== null)
-    .map(wh => ({
-      warehouse:   wh.id,
-      Efficiency:  Math.max(40, Math.round(100 - (wh.status === 'high' ? 30 : wh.status === 'medium' ? 15 : 5))),
-      Stability:   Math.max(40, Math.round(100 - (wh.status === 'high' ? 35 : wh.status === 'medium' ? 18 : 6))),
-      Utilization: wh.usedPct,
-    })), [readings]);
+  return useMemo(() =>
+    Object.values(readings)
+      .map(r => ({
+        warehouse:   r.warehouseId,
+        Efficiency:  Math.max(20, Math.round(r.health)),
+        Stability:   Math.max(20, Math.round(Math.max(0, 100 - r.spoilageRisk))),
+        Utilization: Math.round(r.capacity),
+      }))
+      .sort((a, b) => a.warehouse.localeCompare(b.warehouse)),
+    [readings]);
 }
 
 // ─── Alert History ────────────────────────────────────────────────────────────
