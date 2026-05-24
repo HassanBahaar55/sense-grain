@@ -8,8 +8,9 @@
 import { useState, useEffect } from 'react';
 import {
   getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
-  query, where, writeBatch, getDocs, getDoc,
+  query, where, writeBatch, getDocs, getDoc, setDoc,
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import firebaseApp from '@/config/firebase';
 import { col } from '@/lib/accountDb';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,7 +21,7 @@ const db = getFirestore(firebaseApp);
 
 export type ManagedStatus = 'active' | 'inactive';
 export type SensorType    = 'temperature' | 'humidity' | 'moisture' | 'co2' | 'aqi' | 'multi';
-export type SensorStatus  = 'active' | 'inactive' | 'faulty';
+export type SensorStatus  = 'active' | 'inactive' | 'faulty' | 'pending_approval' | 'rejected';
 
 export interface ManagedWarehouse {
   id:            string;
@@ -185,7 +186,33 @@ export async function deleteZone(uid: string, id: string) {
 }
 
 export async function addSensor(uid: string, data: Omit<ManagedSensor, 'id' | 'createdAt'>) {
-  return addDoc(collection(db, col.sensors(uid)), { ...data, createdAt: Date.now() });
+  const user = getAuth(firebaseApp).currentUser;
+  const now  = Date.now();
+
+  const ref = await addDoc(collection(db, col.sensors(uid)), {
+    ...data,
+    status:    'pending_approval',
+    createdAt: now,
+  });
+
+  // Create a resource request so admin can approve this sensor activation
+  const requestId = `${uid}_${ref.id}`;
+  await setDoc(doc(db, 'resourceRequests', requestId), {
+    id:          requestId,
+    uid,
+    userEmail:   user?.email        ?? '',
+    userName:    user?.displayName  ?? user?.email ?? '',
+    type:        'sensor_activation',
+    status:      'pending',
+    sensorId:    ref.id,
+    sensorName:  data.name,
+    sensorType:  data.type,
+    zoneId:      data.zoneId,
+    warehouseId: data.warehouseId,
+    createdAt:   now,
+  });
+
+  return ref;
 }
 
 export async function updateSensor(uid: string, id: string, data: Partial<Omit<ManagedSensor, 'id' | 'createdAt'>>) {

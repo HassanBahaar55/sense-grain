@@ -20,7 +20,10 @@ import type { LiveSensorReading } from './liveEngine';
 
 const db = getFirestore(firebaseApp);
 
-const SEED_VERSION = 1;
+const SEED_VERSION = 2;
+// All new users start with empty accounts — no warehouse/zone/sensor data.
+// test user (testing@gmail.com) gets full demo data from 2026-05-01 to today.
+const TEST_SEED_START = new Date('2026-05-01T00:00:00');
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -157,12 +160,12 @@ const ALERT_TEMPLATES = [
   { param: 'AQI',         unit: '',   threshold: 50, severity: 'high' as const,   baseValue: 57 },
 ];
 
-function buildAlerts(today: Date) {
+function buildAlerts(today: Date, daysBack: number) {
   const active: object[]  = [];
   const history: object[] = [];
 
   let count = 0;
-  for (let daysAgo = 29; daysAgo >= 0; daysAgo--) {
+  for (let daysAgo = daysBack - 1; daysAgo >= 0; daysAgo--) {
     const day  = addDays(today, -daysAgo);
     const dKey = dateKey(day);
     const alertsThisDay = seededInt(dKey, 13, 0, 3);
@@ -283,7 +286,7 @@ export async function seedUserData(uid: string, email: string): Promise<void> {
     if (isTest) {
       await seedTestUser(uid, today, now, metaRef);
     } else {
-      await seedRegularUser(uid, today, now, metaRef);
+      await seedRegularUser(uid, now, metaRef);
     }
 
     console.info(`[seeder] Seeded ${isTest ? 'test' : 'regular'} user ${uid}`);
@@ -295,6 +298,10 @@ export async function seedUserData(uid: string, email: string): Promise<void> {
 // ─── Test user seeding ────────────────────────────────────────────────────────
 
 async function seedTestUser(uid: string, today: Date, now: number, metaRef: ReturnType<typeof doc>) {
+  const daysBack = Math.max(1, Math.floor(
+    (today.getTime() - TEST_SEED_START.getTime()) / (24 * 3600 * 1000)
+  ) + 1);
+
   const batch1 = writeBatch(db);
 
   // ── Warehouses ───────────────────────────────────────────────────────────────
@@ -349,9 +356,9 @@ async function seedTestUser(uid: string, today: Date, now: number, metaRef: Retu
 
   await batch1.commit();
 
-  // ── sensorHistory (30 days) — split into batch2 ───────────────────────────────
+  // ── sensorHistory — from TEST_SEED_START to today ─────────────────────────────
   const batch2 = writeBatch(db);
-  for (let i = 29; i >= 0; i--) {
+  for (let i = daysBack - 1; i >= 0; i--) {
     const day     = addDays(today, -i);
     const dKey    = dateKey(day);
     const snapshot = buildDaySnapshot(dKey, TEST_WAREHOUSES);
@@ -360,7 +367,7 @@ async function seedTestUser(uid: string, today: Date, now: number, metaRef: Retu
   await batch2.commit();
 
   // ── Alerts ────────────────────────────────────────────────────────────────────
-  const { active, history } = buildAlerts(today);
+  const { active, history } = buildAlerts(today, daysBack);
   const batch3 = writeBatch(db);
   for (const a of active) {
     batch3.set(doc(db, col.alerts(uid), (a as { id: string }).id), a);
@@ -387,60 +394,12 @@ async function seedTestUser(uid: string, today: Date, now: number, metaRef: Retu
   await batch4.commit();
 }
 
-// ─── Regular user seeding (minimal skeleton) ──────────────────────────────────
+// ─── Regular user seeding (empty — no data, no warehouses) ───────────────────
+// New users start with an empty account. They add warehouses/zones/sensors
+// themselves; sensors require admin approval before generating data.
 
-async function seedRegularUser(uid: string, today: Date, now: number, metaRef: ReturnType<typeof doc>) {
-  const batch = writeBatch(db);
-
-  // 4 warehouses
-  for (const wh of TEST_WAREHOUSES) {
-    batch.set(doc(db, col.warehouses(uid), wh.id), {
-      id:           wh.id,
-      name:         wh.name,
-      capacity:     wh.capacity,
-      location:     wh.location,
-      status:       'active',
-      liveEngineId: wh.id,
-      createdAt:    now,
-    });
-
-    // 1 zone per warehouse
-    const zoneId = `${wh.id}-Z1`;
-    batch.set(doc(db, col.zones(uid), zoneId), {
-      id:          zoneId,
-      warehouseId: wh.id,
-      name:        'Zone Alpha',
-      status:      'active',
-      createdAt:   now,
-    });
-
-    // 1 sensor per zone
-    batch.set(doc(db, col.sensors(uid), `${zoneId}-temp`), {
-      id:          `${zoneId}-temp`,
-      zoneId,
-      warehouseId: wh.id,
-      name:        'Temperature Sensor',
-      type:        'temperature',
-      status:      'active',
-      createdAt:   now,
-    });
-
-    // Current reading
-    const reading = buildReading(wh);
-    batch.set(doc(db, col.warehouseReadings(uid), wh.id), {
-      ...reading,
-      updatedAt: { seconds: Math.floor(now / 1000), nanoseconds: 0 },
-    });
-  }
-
-  // 7 days sensorHistory
-  for (let i = 6; i >= 0; i--) {
-    const dKey = dateKey(addDays(today, -i));
-    batch.set(doc(db, col.sensorHistory(uid), dKey), buildDaySnapshot(dKey, TEST_WAREHOUSES));
-  }
-
-  batch.set(metaRef, { version: SEED_VERSION, seededAt: now, email: 'regular' });
-  await batch.commit();
+async function seedRegularUser(uid: string, now: number, metaRef: ReturnType<typeof doc>): Promise<void> {
+  await setDoc(metaRef, { version: SEED_VERSION, seededAt: now, email: 'regular' });
 }
 
 // ─── Daily snapshot append (called by liveEngine) ─────────────────────────────

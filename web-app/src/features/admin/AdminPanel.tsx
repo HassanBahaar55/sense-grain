@@ -2,11 +2,20 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getFirestore, collection, query, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  getFirestore, collection, doc, query, onSnapshot,
+  updateDoc, serverTimestamp,
+} from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import {
+  subscribeToResourceRequests, fetchUserDetail,
+  approveResourceRequest, rejectResourceRequest,
+  adminDeleteSensor, adminDeleteWarehouse, adminDeleteUser, adminToggleSensor,
+  type ResourceRequest, type AdminUserDetail,
+} from '@/lib/adminService';
 
 const db = getFirestore(firebaseApp);
 
@@ -15,11 +24,11 @@ const db = getFirestore(firebaseApp);
 type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 
 interface UserRequest {
-  uid:         string;
-  email:       string;
-  displayName: string;
-  requestedAt: number;
-  status:      ApprovalStatus;
+  uid:             string;
+  email:           string;
+  displayName:     string;
+  requestedAt:     number;
+  status:          ApprovalStatus;
   rejectedReason?: string;
 }
 
@@ -37,7 +46,6 @@ interface UserProfile {
 function useUserRequests() {
   const [requests, setRequests] = useState<UserRequest[]>([]);
   const [loading,  setLoading]  = useState(true);
-
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'userRequests'), snap => {
       const docs = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserRequest));
@@ -47,14 +55,12 @@ function useUserRequests() {
     });
     return unsub;
   }, []);
-
   return { requests, loading };
 }
 
 function useUserProfiles() {
   const [users,   setUsers]   = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'users'), snap => {
       const docs = snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile));
@@ -64,8 +70,20 @@ function useUserProfiles() {
     });
     return unsub;
   }, []);
-
   return { users, loading };
+}
+
+function useResourceRequests() {
+  const [requests, setRequests] = useState<ResourceRequest[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  useEffect(() => {
+    const unsub = subscribeToResourceRequests(reqs => {
+      setRequests(reqs);
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+  return { requests, loading };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,6 +92,10 @@ function fmtDate(ts: number) {
   const d = new Date(ts);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' +
     d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function fmtShort(ts: number) {
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function initials(name: string) {
@@ -99,6 +121,19 @@ function StatusBadge({ status }: { status: ApprovalStatus }) {
   );
 }
 
+function ReqStatusBadge({ status }: { status: 'pending' | 'approved' | 'rejected' }) {
+  const s = {
+    pending:  'bg-amber-50 text-amber-700 ring-amber-200',
+    approved: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    rejected: 'bg-red-50 text-red-700 ring-red-200',
+  }[status];
+  return (
+    <span className={cn('inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ring-1', s)}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
 function Avatar({ name }: { name: string }) {
   return (
     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center flex-shrink-0">
@@ -116,17 +151,11 @@ function Spinner() {
   );
 }
 
-// ─── Reject modal ─────────────────────────────────────────────────────────────
+// ─── Reject modal (account) ───────────────────────────────────────────────────
 
-function RejectModal({
-  user,
-  onConfirm,
-  onClose,
-}: {
-  user: UserRequest;
-  onConfirm: (reason: string) => void;
-  onClose: () => void;
-}) {
+function RejectAccountModal({
+  user, onConfirm, onClose,
+}: { user: UserRequest; onConfirm: (reason: string) => void; onClose: () => void }) {
   const [reason, setReason] = useState('');
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
@@ -134,13 +163,45 @@ function RejectModal({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="text-[14px] font-bold text-gray-900">Reject Account</h3>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100">
-            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-[12px] text-gray-500">Rejecting <strong className="text-gray-800">{user.displayName}</strong> ({user.email}).</p>
+          <textarea
+            className="w-full h-24 px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-800 placeholder:text-gray-400 resize-none outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            placeholder="Reason for rejection (optional)"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button onClick={() => onConfirm(reason.trim())} className="flex-1 h-9 rounded-xl bg-red-600 text-[12px] font-semibold text-white hover:bg-red-700">Confirm Reject</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reject modal (sensor request) ───────────────────────────────────────────
+
+function RejectSensorModal({
+  req, onConfirm, onClose,
+}: { req: ResourceRequest; onConfirm: (reason: string) => void; onClose: () => void }) {
+  const [reason, setReason] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="text-[14px] font-bold text-gray-900">Reject Sensor Request</h3>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100">
+            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
         <div className="p-5 space-y-3">
           <p className="text-[12px] text-gray-500">
-            Rejecting <strong className="text-gray-800">{user.displayName}</strong> ({user.email}).
-            Optionally provide a reason.
+            Rejecting sensor <strong className="text-gray-800">{req.sensorName}</strong> for <strong>{req.userName}</strong>.
           </p>
           <textarea
             className="w-full h-24 px-3 py-2 rounded-xl border border-gray-200 text-[12px] text-gray-800 placeholder:text-gray-400 resize-none outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
@@ -149,14 +210,39 @@ function RejectModal({
             onChange={e => setReason(e.target.value)}
           />
           <div className="flex gap-2">
-            <button onClick={onClose} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50">
-              Cancel
-            </button>
-            <button
-              onClick={() => onConfirm(reason.trim())}
-              className="flex-1 h-9 rounded-xl bg-red-600 text-[12px] font-semibold text-white hover:bg-red-700"
-            >
-              Confirm Reject
+            <button onClick={onClose} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button onClick={() => onConfirm(reason.trim())} className="flex-1 h-9 rounded-xl bg-red-600 text-[12px] font-semibold text-white hover:bg-red-700">Confirm Reject</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete confirm modal ─────────────────────────────────────────────────────
+
+function DeleteConfirmModal({
+  title, desc, onConfirm, onClose,
+}: { title: string; desc: string; onConfirm: () => Promise<void>; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const handle = async () => {
+    setBusy(true);
+    await onConfirm();
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08]" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="text-[14px] font-bold text-red-600">{title}</h3>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-[12px] text-gray-500 leading-relaxed">{desc} <strong className="text-gray-700">This cannot be undone.</strong></p>
+          <div className="flex gap-2">
+            <button onClick={onClose} disabled={busy} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+            <button onClick={handle} disabled={busy} className="flex-1 h-9 rounded-xl bg-red-600 text-[12px] font-semibold text-white hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
+              {busy ? <Spinner /> : null}
+              Delete
             </button>
           </div>
         </div>
@@ -165,9 +251,215 @@ function RejectModal({
   );
 }
 
-// ─── Pending requests tab ─────────────────────────────────────────────────────
+// ─── User detail modal ────────────────────────────────────────────────────────
 
-function PendingTab() {
+function UserDetailModal({
+  profile, onClose,
+}: { profile: UserProfile; onClose: () => void }) {
+  const [detail,  setDetail]  = useState<AdminUserDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [confirm, setConfirm] = useState<{
+    type: 'user' | 'warehouse' | 'sensor';
+    label: string;
+    action: () => Promise<void>;
+  } | null>(null);
+
+  useEffect(() => {
+    fetchUserDetail(profile.uid).then(d => { setDetail(d); setLoading(false); });
+  }, [profile.uid]);
+
+  const refresh = () => {
+    setLoading(true);
+    fetchUserDetail(profile.uid).then(d => { setDetail(d); setLoading(false); });
+  };
+
+  const sensorStatusDot = (status: string) => {
+    if (status === 'active')           return 'bg-green-500';
+    if (status === 'pending_approval') return 'bg-amber-400';
+    if (status === 'rejected')         return 'bg-red-400';
+    if (status === 'faulty')           return 'bg-red-500';
+    return 'bg-gray-300';
+  };
+
+  const sensorStatusLabel = (status: string) => {
+    if (status === 'active')           return 'Active';
+    if (status === 'pending_approval') return 'Pending';
+    if (status === 'rejected')         return 'Rejected';
+    if (status === 'faulty')           return 'Faulty';
+    return 'Offline';
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
+        <div
+          className="w-full max-w-lg bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] max-h-[85vh] flex flex-col"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0">
+            <Avatar name={profile.displayName} />
+            <div className="flex-1 min-w-0">
+              <p className="text-[14px] font-bold text-gray-900 truncate">{profile.displayName}</p>
+              <p className="text-[11px] text-gray-500 truncate">{profile.email}</p>
+            </div>
+            <StatusBadge status={profile.approvalStatus} />
+            <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100 ml-1">
+              <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {loading ? (
+              <div className="flex justify-center py-8"><Spinner /></div>
+            ) : !detail ? (
+              <p className="text-center text-[12px] text-gray-400 py-8">Failed to load user data.</p>
+            ) : (
+              <>
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Warehouses', val: detail.warehouses.length, color: 'text-blue-600',   bg: 'bg-blue-50'   },
+                    { label: 'Zones',      val: detail.zones.length,      color: 'text-purple-600', bg: 'bg-purple-50' },
+                    { label: 'Sensors',    val: detail.sensors.length,    color: 'text-emerald-600',bg: 'bg-emerald-50'},
+                  ].map(s => (
+                    <div key={s.label} className={cn('rounded-xl p-3 text-center', s.bg)}>
+                      <p className={cn('text-[20px] font-bold', s.color)}>{s.val}</p>
+                      <p className="text-[10px] text-gray-600 font-medium">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Warehouses + their sensors */}
+                {detail.warehouses.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-[12px] text-gray-400">No warehouses yet.</p>
+                    <p className="text-[10px] text-gray-300 mt-1">User has not created any warehouses.</p>
+                  </div>
+                ) : (
+                  detail.warehouses.map(wh => {
+                    const whSensors = detail.sensors.filter(s => s.warehouseId === wh.id);
+                    const whZones   = detail.zones.filter(z => z.warehouseId === wh.id);
+                    return (
+                      <div key={wh.id} className="rounded-2xl border border-gray-100 overflow-hidden">
+                        {/* Warehouse header */}
+                        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-gray-50">
+                          <div className="w-6 h-6 rounded-lg bg-[#1f5135]/10 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-[#1f5135]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-bold text-gray-800 truncate">{wh.name}</p>
+                            <p className="text-[10px] text-gray-400">{wh.location || '—'} · {whZones.length} zones · {whSensors.length} sensors</p>
+                          </div>
+                          <button
+                            onClick={() => setConfirm({
+                              type: 'warehouse',
+                              label: wh.name,
+                              action: async () => { await adminDeleteWarehouse(profile.uid, wh.id); refresh(); },
+                            })}
+                            className="w-6 h-6 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors"
+                            title="Delete warehouse"
+                          >
+                            <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                          </button>
+                        </div>
+
+                        {/* Sensors */}
+                        {whSensors.length === 0 ? (
+                          <div className="px-4 py-2.5 text-center">
+                            <p className="text-[10px] text-gray-400">No sensors in this warehouse.</p>
+                          </div>
+                        ) : (
+                          whSensors.map(s => (
+                            <div key={s.id} className="flex items-center gap-2.5 px-4 py-2 border-t border-gray-50 group hover:bg-gray-50/60">
+                              <span className={cn('w-2 h-2 rounded-full flex-shrink-0', sensorStatusDot(s.status))} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-semibold text-gray-800 truncate">{s.name}</p>
+                                <p className="text-[10px] text-gray-400">{s.type} · <span className={s.status === 'active' ? 'text-green-600' : 'text-gray-400'}>{sensorStatusLabel(s.status)}</span></p>
+                              </div>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {s.status === 'active' && (
+                                  <button
+                                    onClick={() => adminToggleSensor(profile.uid, s.id, false).then(refresh)}
+                                    className="h-5 px-2 rounded-md border border-amber-200 text-[9px] font-semibold text-amber-600 hover:bg-amber-50 transition-colors"
+                                    title="Disable sensor"
+                                  >
+                                    Disable
+                                  </button>
+                                )}
+                                {s.status === 'inactive' && (
+                                  <button
+                                    onClick={() => adminToggleSensor(profile.uid, s.id, true).then(refresh)}
+                                    className="h-5 px-2 rounded-md border border-emerald-200 text-[9px] font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                    title="Enable sensor"
+                                  >
+                                    Enable
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => setConfirm({
+                                    type: 'sensor',
+                                    label: s.name,
+                                    action: async () => { await adminDeleteSensor(profile.uid, s.id); refresh(); },
+                                  })}
+                                  className="w-5 h-5 rounded-md hover:bg-red-50 flex items-center justify-center transition-colors"
+                                  title="Delete sensor"
+                                >
+                                  <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Footer — delete account */}
+          <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
+            <button
+              onClick={() => setConfirm({
+                type: 'user',
+                label: profile.displayName,
+                action: async () => { await adminDeleteUser(profile.uid); onClose(); },
+              })}
+              className="w-full h-9 rounded-xl border border-red-200 text-[12px] font-semibold text-red-600 hover:bg-red-50 transition-colors"
+            >
+              Delete Account &amp; All Data
+            </button>
+            <p className="text-center text-[10px] text-gray-400 mt-1.5">
+              Removes all warehouses, sensors, readings, and alerts from Firestore.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {confirm && (
+        <DeleteConfirmModal
+          title={`Delete ${confirm.type === 'user' ? 'Account' : confirm.type === 'warehouse' ? 'Warehouse' : 'Sensor'}?`}
+          desc={
+            confirm.type === 'user'
+              ? `All data for "${confirm.label}" will be permanently deleted.`
+              : confirm.type === 'warehouse'
+              ? `Warehouse "${confirm.label}" and all its zones and sensors will be deleted.`
+              : `Sensor "${confirm.label}" will be permanently removed.`
+          }
+          onConfirm={confirm.action}
+          onClose={() => setConfirm(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Tab: Account requests (pending approval) ─────────────────────────────────
+
+function AccountRequestsTab() {
   const { requests, loading } = useUserRequests();
   const pending = requests.filter(r => r.status === 'pending');
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -181,9 +473,7 @@ function PendingTab() {
         updateDoc(doc(db, 'userRequests', uid), { status: 'approved', approvedAt: now }),
         updateDoc(doc(db, 'users', uid), { approvalStatus: 'approved', approvedAt: now, updatedAt: serverTimestamp() }),
       ]);
-    } finally {
-      setProcessingId(null);
-    }
+    } finally { setProcessingId(null); }
   }, []);
 
   const reject = useCallback(async (uid: string, reason: string) => {
@@ -193,10 +483,7 @@ function PendingTab() {
         updateDoc(doc(db, 'userRequests', uid), { status: 'rejected', rejectedReason: reason, rejectedAt: Date.now() }),
         updateDoc(doc(db, 'users', uid), { approvalStatus: 'rejected', rejectedReason: reason, updatedAt: serverTimestamp() }),
       ]);
-    } finally {
-      setProcessingId(null);
-      setRejectTarget(null);
-    }
+    } finally { setProcessingId(null); setRejectTarget(null); }
   }, []);
 
   if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
@@ -205,10 +492,10 @@ function PendingTab() {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-          <svg className="w-6 h-6 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg className="w-6 h-6 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <p className="text-[13px] font-semibold text-gray-700">All requests handled</p>
-        <p className="text-[11px] text-gray-400 mt-1">No pending approval requests right now.</p>
+        <p className="text-[11px] text-gray-400 mt-1">No pending account approvals.</p>
       </div>
     );
   }
@@ -228,14 +515,14 @@ function PendingTab() {
               <button
                 onClick={() => setRejectTarget(req)}
                 disabled={processingId === req.uid}
-                className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
                 Reject
               </button>
               <button
                 onClick={() => approve(req.uid)}
                 disabled={processingId === req.uid}
-                className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5"
               >
                 {processingId === req.uid ? <Spinner /> : null}
                 Approve
@@ -246,7 +533,7 @@ function PendingTab() {
       </div>
 
       {rejectTarget && (
-        <RejectModal
+        <RejectAccountModal
           user={rejectTarget}
           onConfirm={(reason) => reject(rejectTarget.uid, reason)}
           onClose={() => setRejectTarget(null)}
@@ -256,74 +543,203 @@ function PendingTab() {
   );
 }
 
-// ─── Active users tab ─────────────────────────────────────────────────────────
+// ─── Tab: Sensor requests ─────────────────────────────────────────────────────
+
+function SensorRequestsTab() {
+  const { requests, loading } = useResourceRequests();
+  const [filter,       setFilter]       = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<ResourceRequest | null>(null);
+
+  const filtered = filter === 'all' ? requests : requests.filter(r => r.status === filter);
+
+  const approve = async (req: ResourceRequest) => {
+    setProcessingId(req.id);
+    try { await approveResourceRequest(req.id, req.uid, req.sensorId); }
+    finally { setProcessingId(null); }
+  };
+
+  const reject = async (req: ResourceRequest, reason: string) => {
+    setProcessingId(req.id);
+    try { await rejectResourceRequest(req.id, req.uid, req.sensorId, reason); }
+    finally { setProcessingId(null); setRejectTarget(null); }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 pb-3 flex-wrap">
+        {(['pending', 'approved', 'rejected', 'all'] as const).map(f => {
+          const count = f === 'all' ? requests.length : requests.filter(r => r.status === f).length;
+          return (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                'h-7 px-3 rounded-xl text-[11px] font-semibold transition-colors',
+                filter === f ? 'bg-[#1f5135] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              )}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3">
+            <svg className="w-6 h-6 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <p className="text-[13px] font-semibold text-gray-700">No sensor requests</p>
+          <p className="text-[11px] text-gray-400 mt-1">No {filter === 'all' ? '' : filter} sensor activation requests.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(req => (
+            <div key={req.id} className="p-4 rounded-2xl border border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.071 4.929l-1.414 1.414M5.343 18.657l-1.414 1.414M4.929 4.929l1.414 1.414M18.657 18.657l1.414-1.414M21 12h-2M5 12H3M12 19v2M12 3V1"/></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[13px] font-bold text-gray-900">{req.sensorName}</p>
+                    <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{req.sensorType}</span>
+                    <ReqStatusBadge status={req.status} />
+                  </div>
+                  <p className="text-[11px] text-gray-600 mt-0.5">
+                    <span className="font-medium">{req.userName}</span> · {req.userEmail}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Warehouse: <code className="text-gray-600">{req.warehouseId}</code> · Zone: <code className="text-gray-600">{req.zoneId}</code>
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Submitted: {fmtShort(req.createdAt)}</p>
+                  {req.rejectedReason && (
+                    <p className="text-[10px] text-red-500 mt-1">Reason: {req.rejectedReason}</p>
+                  )}
+                </div>
+                {req.status === 'pending' && (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => setRejectTarget(req)}
+                      disabled={processingId === req.id}
+                      className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => approve(req)}
+                      disabled={processingId === req.id}
+                      className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {processingId === req.id ? <Spinner /> : null}
+                      Approve
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {rejectTarget && (
+        <RejectSensorModal
+          req={rejectTarget}
+          onConfirm={(reason) => reject(rejectTarget, reason)}
+          onClose={() => setRejectTarget(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Tab: All users ───────────────────────────────────────────────────────────
 
 function UsersTab() {
   const { users, loading } = useUserProfiles();
-  const [filter, setFilter] = useState<ApprovalStatus | 'all'>('all');
+  const [filter,   setFilter]   = useState<ApprovalStatus | 'all'>('all');
+  const [selected, setSelected] = useState<UserProfile | null>(null);
 
   const filtered = filter === 'all' ? users : users.filter(u => u.approvalStatus === filter);
 
   if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 pb-1">
-        {(['all', 'approved', 'pending', 'rejected'] as const).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              'h-7 px-3 rounded-xl text-[11px] font-semibold transition-colors',
-              filter === f
-                ? 'bg-[#1f5135] text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-            )}
-          >
-            {f === 'all' ? `All (${users.length})` : `${f.charAt(0).toUpperCase() + f.slice(1)} (${users.filter(u => u.approvalStatus === f).length})`}
-          </button>
+    <>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 pb-1 flex-wrap">
+          {(['all', 'approved', 'pending', 'rejected'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                'h-7 px-3 rounded-xl text-[11px] font-semibold transition-colors',
+                filter === f ? 'bg-[#1f5135] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+              )}
+            >
+              {f === 'all' ? `All (${users.length})` : `${f.charAt(0).toUpperCase() + f.slice(1)} (${users.filter(u => u.approvalStatus === f).length})`}
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 && (
+          <p className="text-center text-[12px] text-gray-400 py-8">No users in this category.</p>
+        )}
+
+        {filtered.map(u => (
+          <div key={u.uid} className="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
+            <Avatar name={u.displayName} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-[13px] font-semibold text-gray-900 truncate">{u.displayName}</p>
+                <StatusBadge status={u.approvalStatus} />
+              </div>
+              <p className="text-[11px] text-gray-500 truncate">{u.email}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Joined: {fmtDate(u.createdAt)}</p>
+            </div>
+            <button
+              onClick={() => setSelected(u)}
+              className="h-8 px-3 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-600 hover:border-[#1f5135] hover:text-[#1f5135] hover:bg-green-50 transition-colors flex-shrink-0"
+            >
+              Details
+            </button>
+          </div>
         ))}
       </div>
 
-      {filtered.length === 0 && (
-        <p className="text-center text-[12px] text-gray-400 py-8">No users in this category.</p>
+      {selected && (
+        <UserDetailModal
+          profile={selected}
+          onClose={() => setSelected(null)}
+        />
       )}
-
-      {filtered.map(u => (
-        <div key={u.uid} className="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 bg-white">
-          <Avatar name={u.displayName} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-[13px] font-semibold text-gray-900 truncate">{u.displayName}</p>
-              <StatusBadge status={u.approvalStatus} />
-            </div>
-            <p className="text-[11px] text-gray-500 truncate">{u.email}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">Joined: {fmtDate(u.createdAt)}</p>
-          </div>
-        </div>
-      ))}
-    </div>
+    </>
   );
 }
 
-// ─── Overview tab ─────────────────────────────────────────────────────────────
+// ─── Tab: Overview ────────────────────────────────────────────────────────────
 
 function OverviewTab() {
-  const { requests, loading: rLoading } = useUserRequests();
-  const { users,    loading: uLoading } = useUserProfiles();
+  const { requests: accountReqs, loading: aLoading } = useUserRequests();
+  const { users,                  loading: uLoading } = useUserProfiles();
+  const { requests: sensorReqs,   loading: sLoading } = useResourceRequests();
 
-  const pending  = requests.filter(r => r.status === 'pending').length;
+  const pendingAccounts = accountReqs.filter(r => r.status === 'pending').length;
+  const pendingSensors  = sensorReqs.filter(r => r.status === 'pending').length;
   const approved = users.filter(u => u.approvalStatus === 'approved').length;
   const rejected = users.filter(u => u.approvalStatus === 'rejected').length;
 
   const stats = [
-    { label: 'Total Registered', value: users.length,  color: 'text-blue-600',    bg: 'bg-blue-50'    },
-    { label: 'Approved Users',   value: approved,       color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Pending Approval', value: pending,        color: 'text-amber-600',   bg: 'bg-amber-50'   },
-    { label: 'Rejected',         value: rejected,       color: 'text-red-600',     bg: 'bg-red-50'     },
+    { label: 'Total Users',       value: users.length,   color: 'text-blue-600',    bg: 'bg-blue-50'    },
+    { label: 'Approved',          value: approved,        color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Pending Accounts',  value: pendingAccounts, color: 'text-amber-600',   bg: 'bg-amber-50'   },
+    { label: 'Pending Sensors',   value: pendingSensors,  color: 'text-purple-600',  bg: 'bg-purple-50'  },
   ];
 
-  if (rLoading || uLoading) return <div className="flex justify-center py-12"><Spinner /></div>;
+  if (aLoading || uLoading || sLoading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   return (
     <div className="space-y-4">
@@ -339,7 +755,7 @@ function OverviewTab() {
       <div className="p-4 rounded-2xl bg-white border border-gray-100">
         <h4 className="text-[12px] font-bold text-gray-900 mb-3">Recent Registrations</h4>
         <div className="space-y-2">
-          {requests.slice(0, 8).map(r => (
+          {accountReqs.slice(0, 8).map(r => (
             <div key={r.uid} className="flex items-center gap-2">
               <Avatar name={r.displayName} />
               <div className="flex-1 min-w-0">
@@ -351,6 +767,15 @@ function OverviewTab() {
           ))}
         </div>
       </div>
+
+      {sensorReqs.filter(r => r.status === 'pending').length > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
+          <h4 className="text-[12px] font-bold text-amber-800 mb-1">
+            {pendingSensors} sensor {pendingSensors === 1 ? 'request' : 'requests'} awaiting approval
+          </h4>
+          <p className="text-[11px] text-amber-600">Go to the &ldquo;Sensor Requests&rdquo; tab to review them.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -358,9 +783,10 @@ function OverviewTab() {
 // ─── AdminPanel ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'pending',  label: 'Pending Requests' },
-  { id: 'users',    label: 'All Users'        },
-  { id: 'overview', label: 'Overview'         },
+  { id: 'overview',    label: 'Overview'          },
+  { id: 'accounts',   label: 'Account Requests'  },
+  { id: 'sensors',    label: 'Sensor Requests'   },
+  { id: 'users',      label: 'All Users'         },
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
@@ -368,9 +794,12 @@ type TabId = typeof TABS[number]['id'];
 export default function AdminPanel() {
   const { isAdmin, loading } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>('pending');
-  const { requests } = useUserRequests();
-  const pendingCount = requests.filter(r => r.status === 'pending').length;
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  const { requests: accountReqs } = useUserRequests();
+  const { requests: sensorReqs  } = useResourceRequests();
+  const pendingAccounts = accountReqs.filter(r => r.status === 'pending').length;
+  const pendingSensors  = sensorReqs.filter(r  => r.status === 'pending').length;
 
   useEffect(() => {
     if (!loading && !isAdmin) router.replace('/dashboard');
@@ -380,35 +809,39 @@ export default function AdminPanel() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <DashboardHeader title="Admin Portal" subtitle="User management and system overview" />
+      <DashboardHeader title="Admin Portal" subtitle="User management and sensor approval" />
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
         <Card className="p-4">
-          <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-4">
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'relative h-8 px-3.5 rounded-xl text-[12px] font-semibold transition-colors',
-                  activeTab === tab.id
-                    ? 'bg-[#1f5135] text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100',
-                )}
-              >
-                {tab.label}
-                {tab.id === 'pending' && pendingCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center px-1">
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="flex items-center gap-1 border-b border-gray-100 pb-3 mb-4 flex-wrap">
+            {TABS.map(tab => {
+              const badge = tab.id === 'accounts' ? pendingAccounts
+                          : tab.id === 'sensors'  ? pendingSensors
+                          : 0;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'relative h-8 px-3.5 rounded-xl text-[12px] font-semibold transition-colors',
+                    activeTab === tab.id ? 'bg-[#1f5135] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100',
+                  )}
+                >
+                  {tab.label}
+                  {badge > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center px-1">
+                      {badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {activeTab === 'pending'  && <PendingTab />}
-          {activeTab === 'users'    && <UsersTab />}
-          {activeTab === 'overview' && <OverviewTab />}
+          {activeTab === 'overview'  && <OverviewTab />}
+          {activeTab === 'accounts'  && <AccountRequestsTab />}
+          {activeTab === 'sensors'   && <SensorRequestsTab />}
+          {activeTab === 'users'     && <UsersTab />}
         </Card>
       </div>
     </div>

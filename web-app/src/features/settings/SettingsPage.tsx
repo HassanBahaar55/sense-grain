@@ -1132,9 +1132,11 @@ const SENSOR_TYPE_LABELS: Record<SensorType, string> = {
   co2: 'CO₂', aqi: 'AQI', multi: 'Multi-param',
 };
 const SENSOR_STATUS_CFG: Record<SensorStatus, { dot: string; label: string; text: string }> = {
-  active:   { dot: 'bg-green-500', label: 'Active',  text: 'text-green-600' },
-  inactive: { dot: 'bg-gray-300',  label: 'Offline', text: 'text-gray-400'  },
-  faulty:   { dot: 'bg-red-500',   label: 'Faulty',  text: 'text-red-500'   },
+  active:           { dot: 'bg-green-500',  label: 'Active',           text: 'text-green-600'  },
+  inactive:         { dot: 'bg-gray-300',   label: 'Offline',          text: 'text-gray-400'   },
+  faulty:           { dot: 'bg-red-500',    label: 'Faulty',           text: 'text-red-500'    },
+  pending_approval: { dot: 'bg-amber-400',  label: 'Awaiting Approval', text: 'text-amber-600' },
+  rejected:         { dot: 'bg-red-400',    label: 'Rejected',         text: 'text-red-500'    },
 };
 
 const INPUT_CLS  = 'w-full px-3 py-2 text-[12px] bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 focus:border-[#1f5135] transition-colors placeholder:text-gray-400';
@@ -1499,32 +1501,52 @@ function SensorFormModal({ sensor, zoneId, warehouseId, onClose }: {
   const [status, setStatus] = useState<SensorStatus>(sensor?.status ?? 'active');
   const [saving, setSaving] = useState(false);
 
+  const isNew            = !sensor;
+  const isPendingOrRejected = sensor?.status === 'pending_approval' || sensor?.status === 'rejected';
+
   const save = async () => {
     if (!name.trim() || !uid) return;
     setSaving(true);
     if (sensor) await updateSensor(uid, sensor.id, { name: name.trim(), type, status });
-    else        await addSensor(uid, { zoneId, warehouseId, name: name.trim(), type, status });
+    else        await addSensor(uid, { zoneId, warehouseId, name: name.trim(), type, status: 'pending_approval' });
     setSaving(false);
     onClose();
   };
 
   return (
-    <InfraModal title={sensor ? 'Edit Sensor' : 'Add Sensor'} onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label={sensor ? 'Save' : 'Add Sensor'} />}>
+    <InfraModal title={sensor ? 'Edit Sensor' : 'Add Sensor'} onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label={sensor ? 'Save' : 'Submit Request'} />}>
       <InfraField label="Sensor Name *"><input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Temperature Sensor 1" autoFocus /></InfraField>
       <InfraField label="Type">
-        <select className={SELECT_CLS} value={type} onChange={e => setType(e.target.value as SensorType)}>
+        <select className={SELECT_CLS} value={type} onChange={e => setType(e.target.value as SensorType)} disabled={isPendingOrRejected}>
           {(Object.keys(SENSOR_TYPE_LABELS) as SensorType[]).map(t => (
             <option key={t} value={t}>{SENSOR_TYPE_LABELS[t]}</option>
           ))}
         </select>
       </InfraField>
-      <InfraField label="Status">
-        <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as SensorStatus)}>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="faulty">Faulty</option>
-        </select>
-      </InfraField>
+      {isNew ? (
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 mt-1">
+          <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <p className="text-[11px] text-amber-700 leading-snug">
+            Sensor activation requires <strong>admin approval</strong>. A request will be sent automatically. You can track its status in the Infrastructure tab.
+          </p>
+        </div>
+      ) : isPendingOrRejected ? (
+        <InfraField label="Status">
+          <span className={cn('text-[11px] font-semibold px-2.5 py-1.5 rounded-lg inline-block',
+            sensor?.status === 'pending_approval' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700',
+          )}>
+            {sensor?.status === 'pending_approval' ? 'Awaiting Admin Approval' : 'Rejected by Admin'}
+          </span>
+        </InfraField>
+      ) : (
+        <InfraField label="Status">
+          <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as SensorStatus)}>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="faulty">Faulty</option>
+          </select>
+        </InfraField>
+      )}
     </InfraModal>
   );
 }

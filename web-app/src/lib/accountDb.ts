@@ -52,6 +52,23 @@ export interface UserRequest {
   rejectedReason?: string; // set by admin on rejection
 }
 
+export interface ResourceRequest {
+  id:              string;
+  uid:             string;
+  userEmail:       string;
+  userName:        string;
+  type:            'sensor_activation';
+  status:          'pending' | 'approved' | 'rejected';
+  sensorId:        string;
+  sensorName:      string;
+  sensorType:      string;
+  zoneId:          string;
+  warehouseId:     string;
+  createdAt:       number;
+  reviewedAt?:     number;
+  rejectedReason?: string;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function isAdminEmail(email: string | null | undefined): boolean {

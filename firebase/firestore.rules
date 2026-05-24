@@ -43,6 +43,15 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ─── Sensor / resource activation requests ───────────────────────────────
+    // Users create requests only for their own uid. Admin can read/update/delete all.
+
+    match /resourceRequests/{requestId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read:   if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
     // ─── Per-user account data ────────────────────────────────────────────────
     // Each user's data lives under /accounts/{uid}/...
     // Only that user (if approved) or admin can access it.
