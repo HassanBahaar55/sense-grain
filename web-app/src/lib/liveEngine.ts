@@ -1,13 +1,20 @@
 /**
  * Live sensor simulation engine.
- * Physics-based model with realistic correlations between metrics.
- * Runs in the browser; writes to Firestore so all data persists permanently.
  *
- * Per-user architecture: call setUid(uid) after login.
- * All Firestore writes go to /accounts/{uid}/... so no two users share data.
+ * RUNTIME MODES:
+ *   1. Cloud Function mode (production target):
+ *      `simulateSensorData` runs every minute on Firebase's servers and writes
+ *      to `accounts/{uid}/warehouseReadings`. The UI listens via onSnapshot.
+ *      In this mode the client engine should be left stopped — Firestore is
+ *      the single source of truth and sensors keep running 24/7.
  *
- * Alerts: stored permanently in alertHistory — never auto-deleted.
- * Active (unresolved) alerts also live in /accounts/{uid}/alerts/.
+ *   2. Client-side fallback (current default until Blaze plan is enabled):
+ *      The engine ticks in the browser and mirrors readings to Firestore so
+ *      the user still sees live data. When the browser closes, no new data
+ *      is generated — this is the limitation that Cloud Functions removes.
+ *
+ * Alerts written through this module always land in alertHistory permanently.
+ * Active alerts in `accounts/{uid}/alerts/` are removed only when resolved.
  */
 
 export interface LiveSensorReading {
@@ -90,8 +97,8 @@ export class LiveEngine {
   private syncTimer:     ReturnType<typeof setInterval> | null = null;
   private tickCount    = 0;
   private alertCooldown: Map<string, number> = new Map();
-  private readonly COOLDOWN_MS      = 20 * 60 * 1000; // 20 min between same alert
-  private readonly ALERT_CHECK_EVERY = 6;              // check every 6th tick (~60s)
+  private readonly COOLDOWN_MS      = 20 * 60 * 1000;
+  private readonly ALERT_CHECK_EVERY = 6;
   lastTickAt = 0;
 
   constructor() {
@@ -119,15 +126,12 @@ export class LiveEngine {
     }
   }
 
-  /** Set the current user uid — all Firestore writes go to /accounts/{uid}/... */
   setUid(uid: string | null) {
     this.uid = uid;
   }
 
-  /** Replace the warehouse configs (called when user's warehouses load from Firestore) */
   setWarehouseConfigs(configs: typeof DEFAULT_WH_CONFIGS) {
     this.whConfigs = configs.length > 0 ? configs : [...DEFAULT_WH_CONFIGS];
-    // Add any new warehouse IDs to readings map without resetting existing ones
     for (const cfg of this.whConfigs) {
       if (!this.readings[cfg.id]) {
         this.readings[cfg.id] = {
@@ -147,14 +151,11 @@ export class LiveEngine {
         this.recalcDerived(cfg.id);
       }
     }
-    // Remove readings for warehouses no longer in configs
     const validIds = new Set(this.whConfigs.map(c => c.id));
     for (const id of Object.keys(this.readings)) {
       if (!validIds.has(id)) delete this.readings[id];
     }
   }
-
-  // ── Physics tick ────────────────────────────────────────────────────────────
 
   private tick() {
     this.tickCount++;
@@ -214,8 +215,6 @@ export class LiveEngine {
     this.notify();
   }
 
-  // ── Derived metrics ─────────────────────────────────────────────────────────
-
   private recalcDerived(id: string) {
     const s = this.readings[id];
     if (!s) return;
@@ -233,8 +232,6 @@ export class LiveEngine {
         : 'good';
     s.lastUpdate = Date.now();
   }
-
-  // ── Alert generation ────────────────────────────────────────────────────────
 
   private checkAlerts(whId: string, s: LiveSensorReading) {
     const checks: Array<{ param: string; value: number; unit: string; thr: number; sev: LiveAlert['severity']; msg: string }> = [
@@ -273,13 +270,11 @@ export class LiveEngine {
         const resolvedAt = Date.now();
         this.alerts = this.alerts.map(a => a.id === dup.id ? { ...a, resolved: true } : a);
         this.alertCooldown.set(cooldownKey, resolvedAt);
-        // Update alertHistory with resolvedAt, remove from active alerts
         this.writeAlertHistory({ ...dup, resolved: true }, resolvedAt);
         this.deleteActiveAlert(dup.id);
       }
     }
 
-    // Keep only last 100 alerts in memory
     if (this.alerts.length > 100) this.alerts = this.alerts.slice(-100);
   }
 
@@ -287,13 +282,9 @@ export class LiveEngine {
     this.listeners.forEach(fn => fn({ ...this.readings }, [...this.alerts], this.tickCount));
   }
 
-  // ── Firestore path helper ────────────────────────────────────────────────────
-
   private get basePath(): string {
     return this.uid ? `accounts/${this.uid}` : '__no_uid__';
   }
-
-  // ── Immediate alertHistory write (permanent — never deleted) ─────────────────
 
   private async writeAlertHistory(alert: LiveAlert, resolvedAt: number | undefined) {
     if (!this.uid) return;
@@ -319,7 +310,7 @@ export class LiveEngine {
       const { getFirestore, doc, setDoc, serverTimestamp } = await import('firebase/firestore');
       const app = (await import('@/config/firebase')).default;
       const db  = getFirestore(app);
-      await setDoc(doc(db, `${this.basePath}/alerts`, alert.id), { ...alert, updatedAt: serverTimestamp() });
+      await setDoc(doc(db, `${this.basePath}/alerts`, alert.id), { ...alert, status: 'active', updatedAt: serverTimestamp() }, { merge: true });
     } catch (err) {
       console.warn('[liveEngine] writeActiveAlert failed:', err);
     }
@@ -331,12 +322,9 @@ export class LiveEngine {
       const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
       const app = (await import('@/config/firebase')).default;
       const db  = getFirestore(app);
-      // Remove from active alerts (they are already permanently in alertHistory)
       await deleteDoc(doc(db, `${this.basePath}/alerts`, alertId));
     } catch { /* non-fatal */ }
   }
-
-  // ── Firestore sync (readings + active alerts every 2 min) ───────────────────
 
   private async syncToFirestore() {
     if (!this.uid) return;
@@ -354,9 +342,8 @@ export class LiveEngine {
       const resolved = this.alerts.filter(a =>  a.resolved);
 
       const alertWrites  = active.map(a =>
-        setDoc(doc(db, `${base}/alerts`, a.id), { ...a, updatedAt: serverTimestamp() }),
+        setDoc(doc(db, `${base}/alerts`, a.id), { ...a, status: 'active', updatedAt: serverTimestamp() }, { merge: true }),
       );
-      // Resolved → remove from active alerts (still in alertHistory permanently)
       const alertDeletes = resolved.map(a =>
         deleteDoc(doc(db, `${base}/alerts`, a.id)),
       );
@@ -366,8 +353,6 @@ export class LiveEngine {
       if (process.env.NODE_ENV === 'development') console.warn('[liveEngine] sync skipped:', err);
     }
   }
-
-  // ── Public API ──────────────────────────────────────────────────────────────
 
   start(uiIntervalMs = 10000, syncIntervalMs = 120000) {
     if (this.timer) return;
@@ -420,5 +405,4 @@ export class LiveEngine {
   }
 }
 
-// Singleton — one engine per app session
 export const liveEngine = new LiveEngine();

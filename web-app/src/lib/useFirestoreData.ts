@@ -300,8 +300,12 @@ function liveAlertToAlert(a: LiveAlert, idx: number): Alert {
   const time = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
     d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
+  // idx kept for backwards compatibility with the function signature, but the
+  // returned Alert now uses the real Firestore document id so UI actions can
+  // write status changes back to /accounts/{uid}/alerts/{id}.
+  void idx;
   return {
-    id: `A-${String(idx + 1).padStart(3, '0')}`,
+    id: a.id,
     severity: sev,
     title: a.message,
     warehouse: a.warehouseId,

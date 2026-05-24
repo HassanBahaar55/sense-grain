@@ -8,9 +8,12 @@
 import {
   getFirestore,
   collection,
+  doc,
   query,
   where,
   onSnapshot,
+  setDoc,
+  serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
@@ -110,3 +113,32 @@ export function subscribeToAlerts(uid: string, cb: AlertsCallback): Unsubscribe 
     cb(alerts);
   });
 }
+
+// ─── Alert status writes ──────────────────────────────────────────────────────
+// Acknowledge / resolve never delete from alertHistory — the permanent record
+// stays in `accounts/{uid}/alertHistory/{id}` forever. The `alerts/` collection
+// only holds active alerts (resolved == false), so once status flips to
+// resolved the next onSnapshot tick drops it from the active query.
+
+type AlertActionStatus = 'acknowledged' | 'resolved';
+
+export async function setAlertStatusInFirestore(
+  uid: string,
+  alertId: string,
+  status: AlertActionStatus,
+): Promise<void> {
+  const now      = Date.now();
+  const resolved = status === 'resolved';
+  const payload  = {
+    status,
+    resolved,
+    ...(resolved ? { resolvedAt: now } : { acknowledgedAt: now }),
+    updatedAt: serverTimestamp(),
+  };
+
+  await Promise.all([
+    setDoc(doc(db, col.alerts(uid),        alertId), payload, { merge: true }),
+    setDoc(doc(db, col.alertHistory(uid),  alertId), payload, { merge: true }),
+  ]);
+}
+

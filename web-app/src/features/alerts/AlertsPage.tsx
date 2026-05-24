@@ -7,6 +7,7 @@ import { AlertsTrendChart } from '@/components/charts/AlertsTrendChart';
 import { type Alert, type AlertSeverity, type AlertStatus, type AlertParamType } from '@/lib/dataEngine';
 import { useFirestoreAlertsData as useAlertsData, useAlertHistory, type AlertHistoryItem } from '@/lib/useFirestoreData';
 import { useLiveData } from '@/contexts/LiveDataContext';
+import { setAlertStatusInFirestore } from '@/lib/firestoreService';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
@@ -639,8 +640,16 @@ export default function AlertsPage() {
   const [showSettings, setShowSettings]   = useState(false);
   const [showHistory, setShowHistory]     = useState(false);
 
+  const { uid, tick } = useLiveData();
+
   function setAlertStatus(id: string, status: AlertStatus) {
+    // Optimistic UI — flip immediately, then persist to Firestore
     setStatusOverrides(prev => ({ ...prev, [id]: status }));
+    if (uid && (status === 'acknowledged' || status === 'resolved')) {
+      setAlertStatusInFirestore(uid, id, status).catch(err => {
+        console.error('[alerts] failed to persist status change', err);
+      });
+    }
   }
 
   const effectiveAlerts: Alert[] = alerts.map(a => ({
@@ -675,8 +684,7 @@ export default function AlertsPage() {
   const [search, setSearch]   = useState('');
   const [filters, setFilters] = useState<{ severity: string; type: string; status: string }>({ severity: 'all', type: 'all', status: 'active' });
   const [page, setPage]       = useState(1);
-  // "Last checked" status — updates every second based on liveEngine tick
-  const { tick } = useLiveData();
+  // "Last checked" status — updates every second based on Firestore tick
   const [lastCheckedAt, setLastCheckedAt] = useState(Date.now());
   const [elapsedSec, setElapsedSec] = useState(0);
   useEffect(() => { setLastCheckedAt(Date.now()); }, [tick]);
