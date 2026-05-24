@@ -293,7 +293,7 @@ export default function StorageUnitsPage() {
           <div className="lg:w-64 xl:w-72 flex-shrink-0 flex flex-col min-h-0 bg-white rounded-2xl ring-1 ring-black/[0.05] shadow-sm overflow-hidden">
             <div className="p-3 border-b border-gray-100 space-y-2 flex-shrink-0">
               <Link
-                href="/settings"
+                href="/settings?tab=infrastructure"
                 className="w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-[#1f5135] hover:bg-green-50 py-1.5 rounded-xl border border-[#1f5135]/20 transition-all duration-150"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

@@ -21,9 +21,9 @@ import type { LiveSensorReading } from './liveEngine';
 const db = getFirestore(firebaseApp);
 
 const SEED_VERSION = 2;
-// All new users start with empty accounts — no warehouse/zone/sensor data.
-// test user (testing@gmail.com) gets full demo data from 2026-05-01 to today.
-const TEST_SEED_START = new Date('2026-05-01T00:00:00');
+// Regular accounts: version-based one-time seed (just writes meta, no data).
+// Test account:     permanent 'test_seeded' flag — seeded once, never again.
+//                   Always seeds last 30 days so charts always have recent data.
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -272,24 +272,32 @@ function buildReports(today: Date) {
 // PUBLIC API
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Called from LiveDataContext on every login — idempotent via meta/seeded doc. */
+/** Called from LiveDataContext on every login — idempotent. */
 export async function seedUserData(uid: string, email: string): Promise<void> {
   try {
-    const metaRef  = doc(db, col.meta(uid), 'seeded');
-    const metaSnap = await getDoc(metaRef);
-    if (metaSnap.exists() && (metaSnap.data()?.version ?? 0) >= SEED_VERSION) return;
-
-    const isTest = isTestEmail(email);
-    const today  = new Date();
-    const now    = Date.now();
-
-    if (isTest) {
-      await seedTestUser(uid, today, now, metaRef);
+    if (isTestEmail(email)) {
+      // Test account uses a permanent key — seeded exactly once, no re-seed ever.
+      // If only the legacy 'seeded' key exists, we migrate the flag without touching data.
+      const testRef   = doc(db, col.meta(uid), 'test_seeded');
+      const [testSnap, legacySnap] = await Promise.all([
+        getDoc(testRef),
+        getDoc(doc(db, col.meta(uid), 'seeded')),
+      ]);
+      if (testSnap.exists()) return;
+      if (legacySnap.exists()) {
+        // Migrate: create permanent flag, keep existing data as-is
+        await setDoc(testRef, { seededAt: Date.now(), migratedAt: Date.now() });
+        return;
+      }
+      await seedTestUser(uid, new Date(), Date.now(), testRef);
+      console.info('[seeder] Seeded test user', uid);
     } else {
-      await seedRegularUser(uid, now, metaRef);
+      const metaRef  = doc(db, col.meta(uid), 'seeded');
+      const metaSnap = await getDoc(metaRef);
+      if (metaSnap.exists() && (metaSnap.data()?.version ?? 0) >= SEED_VERSION) return;
+      await seedRegularUser(uid, Date.now(), metaRef);
+      console.info('[seeder] Seeded regular user', uid);
     }
-
-    console.info(`[seeder] Seeded ${isTest ? 'test' : 'regular'} user ${uid}`);
   } catch (err) {
     console.warn('[seeder] Seeding failed (non-fatal):', err);
   }
@@ -298,9 +306,7 @@ export async function seedUserData(uid: string, email: string): Promise<void> {
 // ─── Test user seeding ────────────────────────────────────────────────────────
 
 async function seedTestUser(uid: string, today: Date, now: number, metaRef: ReturnType<typeof doc>) {
-  const daysBack = Math.max(1, Math.floor(
-    (today.getTime() - TEST_SEED_START.getTime()) / (24 * 3600 * 1000)
-  ) + 1);
+  const daysBack = 30; // always last 30 days, no matter when the seeder runs
 
   const batch1 = writeBatch(db);
 

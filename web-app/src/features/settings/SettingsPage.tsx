@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { cn } from '@/lib/utils';
 import { useLiveData } from '@/contexts/LiveDataContext';
@@ -1856,7 +1857,12 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('general');
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const param = searchParams.get('tab') as Tab | null;
+    const valid: Tab[] = ['general','notifications','sensors','security','appearance','infrastructure'];
+    return param && valid.includes(param) ? param : 'general';
+  });
   const [theme, setThemeState] = useState<ThemeChoice>('light');
 
   useEffect(() => {
