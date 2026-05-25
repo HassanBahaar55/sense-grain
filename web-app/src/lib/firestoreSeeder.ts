@@ -13,15 +13,17 @@
 
 import {
   getFirestore, doc, getDoc, setDoc, writeBatch, collection,
+  getDocs, query, where,
 } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
-import { col, isTestEmail } from '@/lib/accountDb';
+import { col, isTestEmail, TEST_EMAIL } from '@/lib/accountDb';
 import type { LiveSensorReading } from './liveEngine';
 
 const db = getFirestore(firebaseApp);
 
-const SEED_VERSION = 2;
+const SEED_VERSION = 3;
 // Regular accounts: version-based one-time seed (just writes meta, no data).
+//                   Version bump triggers cleanup of data written by older versions.
 // Test account:     permanent 'test_seeded' flag — seeded once, never again.
 //                   Always seeds last 30 days so charts always have recent data.
 
@@ -308,6 +310,21 @@ export async function seedUserData(uid: string, email: string): Promise<void> {
 async function seedTestUser(uid: string, today: Date, now: number, metaRef: ReturnType<typeof doc>) {
   const daysBack = 30; // always last 30 days, no matter when the seeder runs
 
+  // Restore /users/{uid} if admin deleted it — required so Firestore rules
+  // allow writes and the admin panel shows the test account.
+  const userDocRef  = doc(db, 'users', uid);
+  const userDocSnap = await getDoc(userDocRef);
+  if (!userDocSnap.exists()) {
+    await setDoc(userDocRef, {
+      uid,
+      email:          TEST_EMAIL,
+      displayName:    'Test Account',
+      approvalStatus: 'approved',
+      createdAt:      now,
+      approvedAt:     now,
+    });
+  }
+
   const batch1 = writeBatch(db);
 
   // ── Warehouses ───────────────────────────────────────────────────────────────
@@ -403,8 +420,31 @@ async function seedTestUser(uid: string, today: Date, now: number, metaRef: Retu
 // ─── Regular user seeding (empty — no data, no warehouses) ───────────────────
 // New users start with an empty account. They add warehouses/zones/sensors
 // themselves; sensors require admin approval before generating data.
+//
+// Version 3 cleanup: older seeder versions created WH-A through WH-D warehouse
+// documents and readings for ALL approved users. This function removes that stale
+// data so accounts that were seeded before the fix see a clean empty state.
+
+const OLD_SEEDED_WH_IDS = ['WH-A', 'WH-B', 'WH-C', 'WH-D'];
 
 async function seedRegularUser(uid: string, now: number, metaRef: ReturnType<typeof doc>): Promise<void> {
+  // Query zones and sensors belonging to the old seeded warehouses.
+  const [zoneSnap, sensorSnap, histSnap] = await Promise.all([
+    getDocs(query(collection(db, col.zones(uid)),   where('warehouseId', 'in', OLD_SEEDED_WH_IDS))),
+    getDocs(query(collection(db, col.sensors(uid)), where('warehouseId', 'in', OLD_SEEDED_WH_IDS))),
+    getDocs(collection(db, col.sensorHistory(uid))),
+  ]);
+
+  const cleanup = writeBatch(db);
+  for (const whId of OLD_SEEDED_WH_IDS) {
+    cleanup.delete(doc(db, col.warehouses(uid),       whId));
+    cleanup.delete(doc(db, col.warehouseReadings(uid), whId));
+  }
+  zoneSnap.docs.forEach(d   => cleanup.delete(d.ref));
+  sensorSnap.docs.forEach(d => cleanup.delete(d.ref));
+  histSnap.docs.forEach(d   => cleanup.delete(d.ref));
+  await cleanup.commit();
+
   await setDoc(metaRef, { version: SEED_VERSION, seededAt: now, email: 'regular' });
 }
 

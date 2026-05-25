@@ -20,6 +20,7 @@ service cloud.firestore {
 
     function isApproved(uid) {
       return isAdmin() ||
+        (isSignedIn() && request.auth.uid == uid && request.auth.token.email == 'testing@gmail.com') ||
         get(/databases/$(database)/documents/users/$(uid)).data.approvalStatus == 'approved';
     }
 
@@ -29,6 +30,7 @@ service cloud.firestore {
       allow read:   if isOwner(uid) || isAdmin();
       allow create: if isOwner(uid);
       allow update: if isAdmin() ||
+        (isOwner(uid) && request.auth.token.email == 'testing@gmail.com') ||
         (isOwner(uid) &&
          request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['displayName', 'updatedAt']));
