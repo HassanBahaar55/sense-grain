@@ -164,7 +164,7 @@ function ZoneCard({ zone, reading, idx, total, sensors }: {
         {!derived || !hasActive ? (
           <div className="py-3 text-center">
             <p className="text-[10px] text-gray-400 font-medium">
-              {zone.status === 'inactive' ? 'Zone offline' : !hasAnySensor ? 'No sensors — add in Settings' : 'Waiting for readings...'}
+              {zone.status === 'inactive' ? 'Zone offline' : !hasAnySensor ? 'No sensors — request in Settings' : 'Waiting for readings...'}
             </p>
           </div>
         ) : (
@@ -360,7 +360,7 @@ export default function StorageUnitsPage() {
                         </div>
                         <p className="text-[11px] text-gray-400 mt-0.5">{selectedWh.location || 'No location set'}</p>
                       </div>
-                      <Link href="/settings"
+                      <Link href="/settings?tab=infrastructure"
                         className="flex-shrink-0 flex items-center gap-1 h-7 px-3 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-500 hover:border-[#1f5135] hover:text-[#1f5135] hover:bg-green-50 transition-all"
                       >
                         <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
@@ -428,7 +428,7 @@ export default function StorageUnitsPage() {
                         Readings shown only for installed active sensors
                       </p>
                     </div>
-                    <Link href="/settings"
+                    <Link href="/settings?tab=infrastructure"
                       className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-[#1f5135] border border-[#1f5135]/30 rounded-lg hover:bg-green-50 transition-colors"
                     >
                       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -444,7 +444,7 @@ export default function StorageUnitsPage() {
                     <div className="bg-white rounded-2xl ring-1 ring-black/[0.05] shadow-sm p-10 text-center">
                       <svg className="w-10 h-10 mx-auto mb-3 text-gray-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                       <p className="text-[13px] font-semibold text-gray-400 mb-3">No zones yet</p>
-                      <Link href="/settings"
+                      <Link href="/settings?tab=infrastructure"
                         className="inline-flex px-4 py-2 text-[12px] font-bold text-white bg-[#1f5135] rounded-lg hover:bg-[#174028] transition-colors"
                       >
                         Add zones in Settings →

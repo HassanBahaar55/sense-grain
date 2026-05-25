@@ -616,6 +616,143 @@ function AccountRequestsTab() {
   );
 }
 
+// ─── Resource request detail modal ───────────────────────────────────────────
+
+function RequestDetailModal({
+  req, onClose, onApprove, onReject, processing,
+}: {
+  req: ResourceRequest;
+  onClose: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  processing: boolean;
+}) {
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const typeLabel = req.type === 'warehouse_creation' ? 'Warehouse' : req.type === 'zone_creation' ? 'Zone' : 'Sensor';
+  const typeIcon = req.type === 'warehouse_creation'
+    ? <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    : req.type === 'zone_creation'
+    ? <svg className="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+    : <svg className="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>;
+
+  const title = req.type === 'warehouse_creation' ? req.warehouseName
+    : req.type === 'zone_creation' ? req.zoneName
+    : req.sensorName;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">{typeIcon}</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[14px] font-bold text-gray-900 truncate" title={title ?? ''}>{title ?? '—'}</p>
+            <p className="text-[11px] text-gray-500 truncate">{req.userName} · {req.userEmail}</p>
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 flex-shrink-0">{typeLabel}</span>
+          <ReqStatusBadge status={req.status} />
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl hover:bg-gray-100 ml-1 flex-shrink-0">
+            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Summary info */}
+          <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-[12px]">
+            {req.type === 'warehouse_creation' && (
+              <>
+                <div className="flex justify-between"><span className="text-gray-500">Capacity</span><span className="font-semibold text-gray-800">{req.warehouseCapacity ?? '?'} tons</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Location</span><span className="font-semibold text-gray-800">{req.warehouseLocation || 'Not specified'}</span></div>
+              </>
+            )}
+            {req.type === 'zone_creation' && req.warehouseId && (
+              <div className="flex justify-between"><span className="text-gray-500">Warehouse</span><span className="font-semibold text-gray-800">{req.warehouseId}</span></div>
+            )}
+            {req.type === 'sensor_activation' && (
+              <>
+                <div className="flex justify-between"><span className="text-gray-500">Type</span><span className="font-semibold text-gray-800">{req.sensorType}</span></div>
+                {req.zoneId && <div className="flex justify-between"><span className="text-gray-500">Zone</span><span className="font-semibold text-gray-800">{req.zoneId}</span></div>}
+              </>
+            )}
+            <div className="flex justify-between"><span className="text-gray-500">Submitted</span><span className="font-semibold text-gray-800">{fmtShort(req.createdAt)}</span></div>
+            {req.reviewedAt && <div className="flex justify-between"><span className="text-gray-500">Reviewed</span><span className="font-semibold text-gray-800">{fmtShort(req.reviewedAt)}</span></div>}
+          </div>
+
+          {/* Zone breakdown (compound warehouse request) */}
+          {req.type === 'warehouse_creation' && req.zones && req.zones.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wide">Zone Breakdown — {req.zones.length} zones</p>
+              {req.zones.map((z, i) => (
+                <div key={i} className="rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3.5 py-2 bg-gray-50/80">
+                    <svg className="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                    <p className="text-[12px] font-bold text-gray-800 truncate flex-1">{i + 1}. {z.name}</p>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{z.sensors.length} sensor{z.sensors.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {z.sensors.length === 0 ? (
+                    <p className="text-[10px] text-gray-300 italic px-4 py-2">No sensors in this zone</p>
+                  ) : z.sensors.map((s, si) => (
+                    <div key={si} className="flex items-center gap-2.5 px-4 py-2 border-t border-gray-50">
+                      <span className="w-2 h-2 rounded-full bg-amber-300 flex-shrink-0" />
+                      <p className="text-[11px] text-gray-700 truncate flex-1">{s.name}</p>
+                      <span className="text-[10px] text-gray-400 flex-shrink-0">{s.type}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {req.rejectedReason && (
+            <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-100">
+              <p className="text-[11px] text-red-700 font-medium">Rejected: {req.rejectedReason}</p>
+            </div>
+          )}
+
+          {/* Reject form */}
+          {rejectOpen && (
+            <div className="space-y-2">
+              <textarea
+                autoFocus
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                placeholder="Reason for rejection (optional)…"
+                rows={3}
+                className="w-full rounded-xl border border-red-200 bg-red-50/40 px-3 py-2 text-[12px] text-gray-700 resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setRejectOpen(false)} className="flex-1 h-9 rounded-xl border border-gray-200 text-[12px] font-semibold text-gray-500 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => onReject()} disabled={processing}
+                  className="flex-1 h-9 rounded-xl bg-red-500 text-[12px] font-semibold text-white hover:bg-red-600 disabled:opacity-50">
+                  {processing ? 'Rejecting…' : 'Confirm Reject'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {req.status === 'pending' && !rejectOpen && (
+          <div className="flex gap-2 px-5 py-4 border-t border-gray-100 flex-shrink-0">
+            <button onClick={() => setRejectOpen(true)} disabled={processing}
+              className="h-10 px-5 rounded-xl border border-red-200 text-[12px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
+              Reject
+            </button>
+            <button onClick={onApprove} disabled={processing}
+              className="flex-1 h-10 rounded-xl bg-emerald-600 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              {processing && <Spinner />}
+              Approve Request
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Tab: All resource requests (warehouses, zones, sensors) ─────────────────
 
 type ReqTypeFilter = 'all' | 'warehouse_creation' | 'zone_creation' | 'sensor_activation';
@@ -626,13 +763,7 @@ function ResourceRequestsTab() {
   const [typeFilter,   setTypeFilter]   = useState<ReqTypeFilter>('all');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<ResourceRequest | null>(null);
-  const [expandedIds,  setExpandedIds]  = useState<Set<string>>(new Set());
-
-  const toggleExpand = (id: string) => setExpandedIds(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  const [detailReq,    setDetailReq]    = useState<ResourceRequest | null>(null);
 
   const filtered = requests
     .filter(r => statusFilter === 'all' || r.status === statusFilter)
@@ -748,65 +879,43 @@ function ResourceRequestsTab() {
       ) : (
         <div className="space-y-3">
           {filtered.map(req => {
-            const hasZones   = req.type === 'warehouse_creation' && (req.zones?.length ?? 0) > 0;
-            const isExpanded = expandedIds.has(req.id);
             const title      = reqTitle(req);
+            const hasZones   = req.type === 'warehouse_creation' && (req.zones?.length ?? 0) > 0;
             return (
-              <div key={req.id} className="rounded-2xl border border-gray-100 bg-white overflow-hidden">
-                <div className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
-                      {typeIcon(req.type)}
+              <div key={req.id}
+                className="p-4 rounded-2xl border border-gray-100 bg-white hover:bg-gray-50/60 hover:border-gray-200 active:scale-[0.995] transition-all cursor-pointer"
+                onClick={() => setDetailReq(req)}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                    {typeIcon(req.type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-[13px] font-bold text-gray-900 truncate max-w-[180px]" title={title}>{title}</p>
+                      <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{typeLabel(req.type)}</span>
+                      <ReqStatusBadge status={req.status} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-[13px] font-bold text-gray-900 truncate max-w-[180px]" title={title}>{title}</p>
-                        <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{typeLabel(req.type)}</span>
-                        <ReqStatusBadge status={req.status} />
-                      </div>
-                      <p className="text-[11px] text-gray-600 mt-0.5 truncate max-w-[260px]">
-                        <span className="font-medium">{req.userName}</span> · {req.userEmail}
-                      </p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">{reqMeta(req)}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">Submitted: {fmtShort(req.createdAt)}</p>
-                      {req.rejectedReason && (
-                        <p className="text-[10px] text-red-500 mt-1 truncate max-w-[260px]">Reason: {req.rejectedReason}</p>
-                      )}
-                      {hasZones && (
-                        <button onClick={() => toggleExpand(req.id)}
-                          className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-[#1f5135] hover:underline">
-                          <svg className={cn('w-3 h-3 transition-transform', isExpanded && 'rotate-90')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                          {isExpanded ? 'Hide' : 'Show'} zone details ({req.zones!.length} zones)
-                        </button>
-                      )}
-                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[260px]">{req.userName} · {req.userEmail}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{reqMeta(req)}{hasZones ? ` · ${req.zones!.length} zones` : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     {req.status === 'pending' && (
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button onClick={() => setRejectTarget(req)} disabled={processingId === req.id}
+                      <>
+                        <button onClick={e => { e.stopPropagation(); setRejectTarget(req); }} disabled={processingId === req.id}
                           className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
                           Reject
                         </button>
-                        <button onClick={() => handleApprove(req)} disabled={processingId === req.id}
+                        <button onClick={e => { e.stopPropagation(); handleApprove(req); }} disabled={processingId === req.id}
                           className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
                           {processingId === req.id ? <Spinner /> : null}
                           Approve
                         </button>
-                      </div>
+                      </>
                     )}
+                    <svg className="w-4 h-4 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                   </div>
                 </div>
-                {/* Expandable zone breakdown */}
-                {hasZones && isExpanded && (
-                  <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-3 space-y-1.5">
-                    {req.zones!.map((z, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-gray-400 w-4 flex-shrink-0">{i + 1}.</span>
-                        <span className="text-[11px] font-semibold text-gray-700 truncate max-w-[200px]" title={z.name}>{z.name}</span>
-                        <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">{z.sensors.length} sensor{z.sensors.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -818,6 +927,16 @@ function ResourceRequestsTab() {
           req={rejectTarget}
           onConfirm={(reason) => handleReject(rejectTarget, reason)}
           onClose={() => setRejectTarget(null)}
+        />
+      )}
+
+      {detailReq && (
+        <RequestDetailModal
+          req={detailReq}
+          onClose={() => setDetailReq(null)}
+          processing={processingId === detailReq.id}
+          onApprove={() => { handleApprove(detailReq); setDetailReq(null); }}
+          onReject={() => { setRejectTarget(detailReq); setDetailReq(null); }}
         />
       )}
     </>
