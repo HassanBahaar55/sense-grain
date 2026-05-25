@@ -1366,8 +1366,12 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
                 </div>
                 {/* Sensors for this zone */}
                 {z.pendingSensors.map((s, si) => (
-                  <div key={si} className="flex items-center gap-1.5 pl-7">
-                    <select className={cn(SELECT_CLS, 'w-32 bg-white text-[11px] flex-shrink-0')} value={s.type} onChange={e => updateSensorType(zi, si, e.target.value as SensorType)}>
+                  <div key={si} className="grid gap-1.5 pl-7" style={{ gridTemplateColumns: '130px 1fr 24px' }}>
+                    <select
+                      value={s.type}
+                      onChange={e => updateSensorType(zi, si, e.target.value as SensorType)}
+                      className="px-2 py-1.5 text-[11px] bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 cursor-pointer"
+                    >
                       <option value="temperature">Temperature</option>
                       <option value="humidity">Humidity</option>
                       <option value="moisture">Moisture</option>
@@ -1376,12 +1380,12 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
                       <option value="multi">Multi</option>
                     </select>
                     <input
-                      className={cn(INPUT_CLS, 'flex-1 bg-white text-[11px]')}
                       value={s.name}
                       onChange={e => updateSensorName(zi, si, e.target.value)}
                       placeholder={SENSOR_LABEL[s.type]}
+                      className="px-2 py-1.5 text-[11px] bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 placeholder:text-gray-300 min-w-0"
                     />
-                    <button onClick={() => removeSensorFromZone(zi, si)} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
+                    <button onClick={() => removeSensorFromZone(zi, si)} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors">
                       <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </button>
                   </div>
