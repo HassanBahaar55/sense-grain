@@ -1,5 +1,5 @@
 /**
- * Scheduled Cloud Function — runs every 1 minute.
+ * Scheduled Cloud Function — runs every 10 minutes.
  *
  * Per-sensor architecture:
  *   For every approved user in `users/`, this function:
@@ -384,7 +384,7 @@ async function processUser(uid: string): Promise<void> {
 // ─── Scheduled function ───────────────────────────────────────────────────────
 
 export const simulateSensorData = onSchedule(
-  { schedule: 'every 1 minutes', region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
+  { schedule: 'every 10 minutes', region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
   async () => {
     const usersSnap = await db.collection('users').where('approvalStatus', '==', 'approved').get();
 
