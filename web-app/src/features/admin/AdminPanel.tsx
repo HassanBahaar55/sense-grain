@@ -16,6 +16,7 @@ import {
   approveWarehouseRequest, rejectWarehouseRequest,
   approveZoneRequest, rejectZoneRequest,
   adminDeleteSensor, adminDeleteWarehouse, adminDeleteUser, adminToggleSensor,
+  setUserTickInterval,
   type ResourceRequest, type AdminUserDetail,
 } from '@/lib/adminService';
 
@@ -258,8 +259,10 @@ function DeleteConfirmModal({
 function UserDetailModal({
   profile, onClose,
 }: { profile: UserProfile; onClose: () => void }) {
-  const [detail,  setDetail]  = useState<AdminUserDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [detail,        setDetail]        = useState<AdminUserDetail | null>(null);
+  const [loading,       setLoading]       = useState(true);
+  const [tickInterval,  setTickInterval]  = useState(600);
+  const [intervalSaved, setIntervalSaved] = useState(false);
   const [confirm, setConfirm] = useState<{
     type: 'user' | 'warehouse' | 'sensor';
     label: string;
@@ -267,13 +270,25 @@ function UserDetailModal({
   } | null>(null);
 
   useEffect(() => {
-    fetchUserDetail(profile.uid).then(d => { setDetail(d); setLoading(false); });
+    fetchUserDetail(profile.uid).then(d => {
+      setDetail(d);
+      setTickInterval(d.tickIntervalSeconds ?? 600);
+      setLoading(false);
+    });
   }, [profile.uid]);
 
   const refresh = () => {
     setLoading(true);
     fetchUserDetail(profile.uid).then(d => { setDetail(d); setLoading(false); });
   };
+
+  async function handleIntervalChange(seconds: number) {
+    setTickInterval(seconds);
+    setIntervalSaved(false);
+    await setUserTickInterval(profile.uid, seconds);
+    setIntervalSaved(true);
+    setTimeout(() => setIntervalSaved(false), 3000);
+  }
 
   const sensorStatusDot = (status: string) => {
     if (status === 'active')           return 'bg-green-500';
@@ -331,6 +346,30 @@ function UserDetailModal({
                       <p className="text-[10px] text-gray-600 font-medium">{s.label}</p>
                     </div>
                   ))}
+                </div>
+
+                {/* Data update interval */}
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[12px] font-bold text-gray-700">Data Update Interval</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">How often sensors update for this account</p>
+                    </div>
+                    <select
+                      value={tickInterval}
+                      onChange={e => handleIntervalChange(Number(e.target.value))}
+                      className="text-[11px] font-semibold border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20"
+                    >
+                      <option value={10}>10 seconds</option>
+                      <option value={30}>30 seconds</option>
+                      <option value={60}>1 minute</option>
+                      <option value={300}>5 minutes</option>
+                      <option value={600}>10 minutes (default)</option>
+                    </select>
+                  </div>
+                  {intervalSaved && (
+                    <p className="text-[10px] text-green-600 font-semibold mt-2">✓ Saved — takes effect within 1 minute</p>
+                  )}
                 </div>
 
                 {/* Warehouses + their sensors */}

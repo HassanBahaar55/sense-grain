@@ -11,55 +11,51 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() &&
-        request.auth.token.email == 'hammadtahir@gmail.com';
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isApproved() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approvalStatus == 'approved';
     }
 
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isApproved(uid) {
-      return isAdmin() ||
-        (isSignedIn() && request.auth.uid == uid && request.auth.token.email == 'testing@gmail.com') ||
-        get(/databases/$(database)/documents/users/$(uid)).data.approvalStatus == 'approved';
-    }
-
     // ─── User profiles ────────────────────────────────────────────────────────
 
     match /users/{uid} {
       allow read:   if isOwner(uid) || isAdmin();
-      allow create: if isOwner(uid);
+      // Users can create their own profile but cannot self-assign admin role
+      allow create: if isOwner(uid) && !('role' in request.resource.data);
+      // Only admin can set approvalStatus, role, or tickIntervalSeconds
       allow update: if isAdmin() ||
-        (isOwner(uid) && request.auth.token.email == 'testing@gmail.com') ||
-        (isOwner(uid) &&
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['displayName', 'updatedAt']));
+        (isOwner(uid) && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['displayName', 'updatedAt']));
       allow delete: if isAdmin();
     }
 
     // ─── Registration requests ────────────────────────────────────────────────
 
-    match /userRequests/{requestId} {
-      allow create: if isSignedIn() && request.auth.uid == requestId;
-      allow read:   if isAdmin() || (isSignedIn() && request.auth.uid == requestId);
+    match /userRequests/{uid} {
+      allow create: if isOwner(uid);
+      allow read:   if isOwner(uid) || isAdmin();
       allow update, delete: if isAdmin();
     }
 
-    // ─── Sensor / resource activation requests ───────────────────────────────
-    // Users create requests only for their own uid. Admin can read/update/delete all.
+    // ─── Resource requests (warehouse / zone / sensor) ────────────────────────
 
-    match /resourceRequests/{requestId} {
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+    match /resourceRequests/{reqId} {
+      allow create: if isApproved() && request.resource.data.uid == request.auth.uid;
       allow read:   if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
       allow update, delete: if isAdmin();
     }
 
     // ─── Per-user account data ────────────────────────────────────────────────
-    // Each user's data lives under /accounts/{uid}/...
-    // Only that user (if approved) or admin can access it.
 
     match /accounts/{uid}/{document=**} {
-      allow read, write: if (isOwner(uid) && isApproved(uid)) || isAdmin();
+      allow read, write: if (isOwner(uid) && isApproved()) || isAdmin();
     }
 
     // ─── Catch-all deny ───────────────────────────────────────────────────────

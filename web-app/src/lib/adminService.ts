@@ -6,7 +6,7 @@
  */
 
 import {
-  getFirestore, collection, doc, addDoc, getDocs, deleteDoc, updateDoc,
+  getFirestore, collection, doc, addDoc, getDoc, getDocs, deleteDoc, updateDoc,
   query, where, onSnapshot, writeBatch, orderBy,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -45,10 +45,11 @@ export interface AdminSensor {
 }
 
 export interface AdminUserDetail {
-  uid:        string;
-  warehouses: AdminWarehouse[];
-  zones:      AdminZone[];
-  sensors:    AdminSensor[];
+  uid:                 string;
+  warehouses:          AdminWarehouse[];
+  zones:               AdminZone[];
+  sensors:             AdminSensor[];
+  tickIntervalSeconds: number;
 }
 
 export interface ResourceRequest {
@@ -81,13 +82,16 @@ export interface ResourceRequest {
 // ─── Read user detail ─────────────────────────────────────────────────────────
 
 export async function fetchUserDetail(uid: string): Promise<AdminUserDetail> {
-  const [whSnap, zSnap, sSnap] = await Promise.all([
+  const [userSnap, whSnap, zSnap, sSnap] = await Promise.all([
+    getDoc(doc(db, 'users', uid)),
     getDocs(collection(db, col.warehouses(uid))),
     getDocs(collection(db, col.zones(uid))),
     getDocs(collection(db, col.sensors(uid))),
   ]);
+  const tickIntervalSeconds = (userSnap.data()?.tickIntervalSeconds as number) ?? 600;
   return {
     uid,
+    tickIntervalSeconds,
     warehouses: whSnap.docs.map(d => ({ id: d.id, ...d.data() } as AdminWarehouse)),
     zones:      zSnap.docs.map(d  => ({ id: d.id, ...d.data() } as AdminZone)),
     sensors:    sSnap.docs.map(d  => ({ id: d.id, ...d.data() } as AdminSensor)),
@@ -224,6 +228,10 @@ export async function adminDeleteWarehouse(uid: string, warehouseId: string): Pr
   }
   batch.delete(doc(db, col.warehouses(uid), warehouseId));
   await batch.commit();
+}
+
+export async function setUserTickInterval(uid: string, intervalSeconds: number): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { tickIntervalSeconds: intervalSeconds });
 }
 
 export async function adminDeleteUser(uid: string): Promise<void> {

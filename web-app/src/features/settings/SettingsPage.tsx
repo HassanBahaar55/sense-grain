@@ -1416,21 +1416,44 @@ function EditWarehouseModal({ wh, onClose }: { wh: ManagedWarehouse; onClose: ()
 
 function ZoneFormModal({ zone, warehouseId, onClose }: { zone?: ManagedZone; warehouseId: string; onClose: () => void }) {
   const { uid } = useLiveData();
-  const [name,   setName]   = useState(zone?.name   ?? '');
-  const [status, setStatus] = useState<ManagedStatus>(zone?.status ?? 'active');
-  const [saving, setSaving] = useState(false);
+  const [name,      setName]      = useState(zone?.name   ?? '');
+  const [status,    setStatus]    = useState<ManagedStatus>(zone?.status ?? 'active');
+  const [saving,    setSaving]    = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const save = async () => {
     if (!name.trim() || !uid) return;
     setSaving(true);
-    if (zone) await updateZone(uid, zone.id, { name: name.trim(), status });
-    else      await addZone(uid, { warehouseId, name: name.trim(), status });
-    setSaving(false);
-    onClose();
+    if (zone) {
+      await updateZone(uid, zone.id, { name: name.trim(), status });
+      setSaving(false);
+      onClose();
+    } else {
+      await addZone(uid, { warehouseId, name: name.trim(), status });
+      setSaving(false);
+      setSubmitted(true);
+      setTimeout(() => onClose(), 2000);
+    }
   };
 
+  if (submitted) {
+    return (
+      <InfraModal title="Zone Request Submitted" onClose={onClose}>
+        <div className="flex flex-col items-center gap-3 py-6">
+          <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
+            <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <p className="text-[13px] font-bold text-gray-800">Zone Request Submitted</p>
+          <p className="text-[11px] text-gray-400 text-center">Admin will review and approve your zone request shortly.</p>
+        </div>
+      </InfraModal>
+    );
+  }
+
   return (
-    <InfraModal title={zone ? 'Edit Zone' : 'Add Zone'} onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label={zone ? 'Save' : 'Add Zone'} />}>
+    <InfraModal title={zone ? 'Edit Zone' : 'Add Zone'} onClose={onClose} footer={<InfraFooter onClose={onClose} onSave={save} saving={saving} label={zone ? 'Save' : 'Submit Request'} />}>
       <InfraField label="Zone Name *"><input className={INPUT_CLS} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Zone 1, Ambient" autoFocus /></InfraField>
       <InfraField label="Status">
         <select className={SELECT_CLS} value={status} onChange={e => setStatus(e.target.value as ManagedStatus)}>

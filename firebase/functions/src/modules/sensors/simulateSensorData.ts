@@ -1,15 +1,21 @@
 /**
- * Scheduled Cloud Function — runs every 10 minutes.
+ * Scheduled Cloud Function — runs every 1 minute.
  *
- * Per-sensor architecture:
- *   For every approved user in `users/`, this function:
- *     1. Reads the user's active sensors from `accounts/{uid}/sensors`
- *     2. For each active sensor, reads its current reading from `accounts/{uid}/sensorReadings/{sensorId}`
- *     3. Applies one physics tick per sensor type
- *     4. Writes new reading back to `accounts/{uid}/sensorReadings/{sensorId}`
- *     5. Aggregates sensor readings to warehouse-level averages
- *     6. Writes computed cache to `accounts/{uid}/warehouseReadings/{whId}`
- *     7. Manages alerts based on warehouse averages
+ * Per-account interval support:
+ *   Each user's `users/{uid}.tickIntervalSeconds` (default 600) controls how
+ *   often their sensors are actually updated:
+ *     - interval >= 60s : check lastTickAt in accounts/{uid}/meta/tickConfig;
+ *                         skip if not enough time has elapsed; otherwise run once.
+ *     - interval < 60s  : run Math.round(60 / interval) iterations per minute
+ *                         (e.g. 10s → 6 iterations, 30s → 2 iterations).
+ *
+ *   Per-sensor architecture:
+ *     1. Reads active sensors from accounts/{uid}/sensors
+ *     2. Applies one physics tick per sensor type
+ *     3. Writes new reading to accounts/{uid}/sensorReadings/{sensorId}
+ *     4. Aggregates sensor readings to warehouse-level averages
+ *     5. Writes computed cache to accounts/{uid}/warehouseReadings/{whId}
+ *     6. Manages alerts based on warehouse averages
  */
 
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -326,26 +332,23 @@ async function syncAlertsForUser(
   }
 }
 
-// ─── Process one user ─────────────────────────────────────────────────────────
+// ─── One physics tick for a user ──────────────────────────────────────────────
 
-async function processUser(uid: string): Promise<void> {
+async function runOneTick(uid: string): Promise<void> {
   const sensorSnap = await db.collection(`accounts/${uid}/sensors`).where('status', '==', 'active').get();
   if (sensorSnap.empty) return;
 
-  // Load current readings in one getAll call
-  const readingRefs = sensorSnap.docs.map(d => db.doc(`accounts/${uid}/sensorReadings/${d.id}`));
+  const readingRefs  = sensorSnap.docs.map(d => db.doc(`accounts/${uid}/sensorReadings/${d.id}`));
   const readingSnaps = await db.getAll(...readingRefs);
   const prevReadings: Record<string, Partial<SensorReading>> = {};
   for (const snap of readingSnaps) {
     if (snap.exists) prevReadings[snap.id] = snap.data() as SensorReading;
   }
 
-  // Load previous warehouse aggregates for trend/capacity continuity
   const aggSnap = await db.collection(`accounts/${uid}/warehouseReadings`).get();
   const prevAggregates: Record<string, Partial<WarehouseAggregate>> = {};
   aggSnap.docs.forEach(d => { prevAggregates[d.id] = d.data() as WarehouseAggregate; });
 
-  // Apply physics tick to each sensor
   const updatedReadings: SensorReading[] = [];
   for (const sDoc of sensorSnap.docs) {
     const sensor = sDoc.data() as SensorDoc;
@@ -353,7 +356,6 @@ async function processUser(uid: string): Promise<void> {
     updatedReadings.push(next);
   }
 
-  // Write all sensor readings in batches (Firestore limit: 500 ops)
   const BATCH_SIZE = 400;
   for (let i = 0; i < updatedReadings.length; i += BATCH_SIZE) {
     const slice = updatedReadings.slice(i, i + BATCH_SIZE);
@@ -367,7 +369,6 @@ async function processUser(uid: string): Promise<void> {
     await batch.commit();
   }
 
-  // Compute warehouse aggregates then write them + alerts together
   const aggregates = computeWarehouseAggregates(updatedReadings, prevAggregates);
   const aggBatch   = db.batch();
   const alertTasks: Array<Promise<void>> = [];
@@ -381,10 +382,34 @@ async function processUser(uid: string): Promise<void> {
   await aggBatch.commit();
 }
 
+// ─── Per-account interval processing ─────────────────────────────────────────
+
+async function processUser(uid: string, userData: admin.firestore.DocumentData): Promise<void> {
+  const intervalSeconds = (userData.tickIntervalSeconds as number) ?? 600;
+  const tickConfigRef   = db.doc(`accounts/${uid}/meta/tickConfig`);
+
+  if (intervalSeconds >= 60) {
+    const tickConfigSnap = await tickConfigRef.get();
+    const lastTickAt     = (tickConfigSnap.data()?.lastTickAt as number) ?? 0;
+    const elapsed        = Date.now() - lastTickAt;
+    if (elapsed < intervalSeconds * 1000) return;
+
+    await runOneTick(uid);
+    await tickConfigRef.set({ lastTickAt: Date.now() }, { merge: true });
+  } else {
+    // Sub-minute: run multiple iterations within this function call
+    const iterations = Math.round(60 / intervalSeconds);
+    for (let i = 0; i < iterations; i++) {
+      await runOneTick(uid);
+      await tickConfigRef.set({ lastTickAt: Date.now() }, { merge: true });
+    }
+  }
+}
+
 // ─── Scheduled function ───────────────────────────────────────────────────────
 
 export const simulateSensorData = onSchedule(
-  { schedule: 'every 10 minutes', region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
+  { schedule: 'every 1 minutes', region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
   async () => {
     const usersSnap = await db.collection('users').where('approvalStatus', '==', 'approved').get();
 
@@ -396,17 +421,20 @@ export const simulateSensorData = onSchedule(
     let processed = 0;
     let failed    = 0;
 
-    const uids  = usersSnap.docs.map(d => d.id);
     const BATCH = 5;
-    for (let i = 0; i < uids.length; i += BATCH) {
-      const slice   = uids.slice(i, i + BATCH);
-      const results = await Promise.allSettled(slice.map(uid => processUser(uid)));
+    const docs   = usersSnap.docs;
+
+    for (let i = 0; i < docs.length; i += BATCH) {
+      const slice   = docs.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        slice.map(d => processUser(d.id, d.data())),
+      );
       for (const r of results) {
         if (r.status === 'fulfilled') processed++;
         else { failed++; console.error('[simulateSensorData]', r.reason); }
       }
     }
 
-    console.log(`[simulateSensorData] processed=${processed} failed=${failed} total=${uids.length}`);
+    console.log(`[simulateSensorData] processed=${processed} failed=${failed} total=${docs.length}`);
   },
 );
