@@ -19,11 +19,16 @@ import {
   createContext, useContext, useState, useEffect, useRef,
   type ReactNode,
 } from 'react';
+import { onSnapshot, collection, query, where, getFirestore } from 'firebase/firestore';
+import firebaseApp from '@/config/firebase';
+import { col } from '@/lib/accountDb';
 import { liveEngine, DEFAULT_WH_CONFIGS, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
 import { subscribeToWarehouses, subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
 import { seedUserData } from '@/lib/firestoreSeeder';
 import { useAuth } from '@/contexts/AuthContext';
+
+const db = getFirestore(firebaseApp);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,36 +75,71 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     let alertsBootstrapped   = false;
     let readingsBootstrapped = false;
 
-    // Subscribe to the user's warehouses so liveEngine simulates only THEIR
-    // actual warehouses (not the hardcoded defaults).
+    // ── Sensor-gated engine ──────────────────────────────────────────────────
+    // liveEngine only runs for warehouses that have at least one ACTIVE
+    // (admin-approved) sensor. Warehouses with no approved sensors should
+    // produce zero readings — showing fake data without real hardware is wrong.
+
     const DEFAULT_MAP = Object.fromEntries(DEFAULT_WH_CONFIGS.map(c => [c.id, c]));
-    const unsubWarehouses = subscribeToWarehouses(uid, (warehouses) => {
+
+    // Mutable state shared between the two subscriptions (warehouses + sensors).
+    // Using plain let-variables inside the closure avoids React ref overhead.
+    type WHShape = { id: string; status: string; liveEngineId?: string };
+    let currentWarehouses: WHShape[]   = [];
+    let activeSensorWhIds = new Set<string>(); // Firestore warehouse doc IDs with ≥1 active sensor
+
+    // liveEngineIds of warehouses that are ready (active + have active sensors)
+    const getReadyLiveIds = (): Set<string> =>
+      new Set(
+        currentWarehouses
+          .filter(w => w.status === 'active' && activeSensorWhIds.has(w.id))
+          .map(w => w.liveEngineId ?? w.id),
+      );
+
+    const applyEngineConfigs = () => {
       if (CLIENT_ENGINE_DISABLED) return;
-      const activeWarehouses = warehouses.filter(w => w.status === 'active');
-      const engineConfigs = activeWarehouses.map(wh => {
-        const engineId = wh.liveEngineId ?? wh.id;
-        return DEFAULT_MAP[engineId] ?? {
-          id: engineId,
-          baseTemp: 26.0, baseHum: 58, baseMoist: 11.0,
-          baseCO2: 500, baseAQI: 36, baseCap: 70, drift: 0.0,
-        };
-      });
-      liveEngine.setWarehouseConfigs(engineConfigs);
+      const readyIds = getReadyLiveIds();
+      const configs = currentWarehouses
+        .filter(w => w.status === 'active' && readyIds.has(w.liveEngineId ?? w.id))
+        .map(wh => {
+          const eid = wh.liveEngineId ?? wh.id;
+          return DEFAULT_MAP[eid] ?? {
+            id: eid, baseTemp: 26.0, baseHum: 58, baseMoist: 11.0,
+            baseCO2: 500, baseAQI: 36, baseCap: 70, drift: 0.0,
+          };
+        });
+      liveEngine.setWarehouseConfigs(configs);
+    };
+
+    const unsubWarehouses = subscribeToWarehouses(uid, (whs) => {
+      currentWarehouses = whs;
+      applyEngineConfigs();
     });
 
+    // Subscribe to active (approved) sensors to know which warehouses are "live"
+    const unsubSensors = onSnapshot(
+      query(collection(db, col.sensors(uid)), where('status', '==', 'active')),
+      (snap) => {
+        activeSensorWhIds = new Set(snap.docs.map(d => d.data().warehouseId as string));
+        applyEngineConfigs();
+      },
+    );
+
     // Start the client engine only if the Cloud Function is not yet deployed.
-    // Engine starts empty and is configured by the warehouse subscription above.
     let unsubLocal: (() => void) | null = null;
     if (!CLIENT_ENGINE_DISABLED) {
       liveEngine.setUid(uid);
       liveEngine.start(10000, 120000);
 
       unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
-        // Only use liveEngine readings before Firestore has sent its first snapshot.
-        // After that, Firestore is the single source of truth.
         if (!firestoreLoadedRef.current) {
-          setReadings({ ...newReadings });
-          setLiveOverride(newReadings);
+          // Filter engine readings to only include sensor-ready warehouses
+          const readyIds = getReadyLiveIds();
+          const filtered = readyIds.size > 0
+            ? Object.fromEntries(Object.entries(newReadings).filter(([id]) => readyIds.has(id)))
+            : {};
+          setReadings(filtered);
+          setLiveOverride(filtered);
         }
         setLiveAlerts(prev => {
           if (!alertsBootstrapped) return prev;
@@ -110,16 +150,19 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     }
 
     // Firestore subscriptions — always override liveEngine once data arrives.
-    // An empty snapshot ({}) correctly clears the dashboard for accounts with
-    // no warehouses; the old "length > 0" guard was causing fake WH-A…D to
-    // persist for every user.
+    // Filter to only warehouses with active sensors so stale readings from
+    // previously sensor-less warehouses don't bleed through.
     const unsubReadings = subscribeToReadings(uid, (firestoreReadings) => {
       firestoreLoadedRef.current = true;
-      setReadings(firestoreReadings);
+      const readyIds = getReadyLiveIds();
+      const filtered = readyIds.size > 0
+        ? Object.fromEntries(Object.entries(firestoreReadings).filter(([id]) => readyIds.has(id)))
+        : {};
+      setReadings(filtered);
       setTick(t => t + 1);
-      setLiveOverride(firestoreReadings);
+      setLiveOverride(filtered);
       if (!readingsBootstrapped) {
-        liveEngine.loadPersistedReadings(firestoreReadings);
+        liveEngine.loadPersistedReadings(filtered);
         readingsBootstrapped = true;
       }
     });
@@ -134,6 +177,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       unsubWarehouses();
+      unsubSensors();
       if (unsubLocal) unsubLocal();
       unsubReadings();
       unsubAlerts();

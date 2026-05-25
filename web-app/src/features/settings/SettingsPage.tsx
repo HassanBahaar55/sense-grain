@@ -1175,7 +1175,8 @@ function InfraFooter({ onClose, onSave, saving, label }: {
 // Step 3: Add sensors per zone + review
 
 type WizardStep = 1 | 2 | 3;
-interface WizardZone { name: string; }
+interface WizardSensor { name: string; type: SensorType; }
+interface WizardZone { name: string; pendingSensors: WizardSensor[]; }
 
 function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   const { uid } = useLiveData();
@@ -1191,11 +1192,14 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   const [whLiveId,   setWhLiveId]   = useState('');
 
   // Step 2 fields — zones
-  const [zones, setZones] = useState<WizardZone[]>([{ name: 'Zone 1' }, { name: 'Zone 2' }, { name: 'Zone 3' }]);
+  const [zones, setZones] = useState<WizardZone[]>([{ name: 'Zone 1', pendingSensors: [] }, { name: 'Zone 2', pendingSensors: [] }, { name: 'Zone 3', pendingSensors: [] }]);
 
-  const addZoneEntry   = () => setZones(z => [...z, { name: `Zone ${z.length + 1}` }]);
+  const addZoneEntry   = () => setZones(z => [...z, { name: `Zone ${z.length + 1}`, pendingSensors: [] }]);
   const removeZone     = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
-  const updateZoneName = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { name: v } : z2));
+  const updateZoneName = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { ...z2, name: v } : z2));
+  const addSensorToZone      = (zi: number) => setZones(z => z.map((z2, i) => i === zi ? { ...z2, pendingSensors: [...z2.pendingSensors, { name: '', type: 'temperature' as SensorType }] } : z2));
+  const removeSensorFromZone = (zi: number, si: number) => setZones(z => z.map((z2, i) => i === zi ? { ...z2, pendingSensors: z2.pendingSensors.filter((_, idx) => idx !== si) } : z2));
+  const updateZoneSensor     = (zi: number, si: number, field: keyof WizardSensor, value: string) => setZones(z => z.map((z2, i) => i === zi ? { ...z2, pendingSensors: z2.pendingSensors.map((s, idx) => idx === si ? { ...s, [field]: value } : s) } : z2));
 
   const canGoStep2 = whName.trim().length > 0;
   const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0);
@@ -1221,10 +1225,17 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
       const whRef = await addWarehouse(uid, whPayload);
       const whId  = whRef.id;
 
-      // 2. Create zones (no sensors — user adds them manually per zone)
+      // 2. Create zones then submit any pending sensors for approval
       for (const z of zones) {
         if (!z.name.trim()) continue;
-        await addZone(uid, { warehouseId: whId, name: z.name.trim(), status: whStatus });
+        const zRef = await addZone(uid, { warehouseId: whId, name: z.name.trim(), status: whStatus });
+        for (const s of z.pendingSensors) {
+          await addSensor(uid, {
+            warehouseId: whId, zoneId: zRef.id,
+            name: s.name.trim() || `${s.type} sensor`,
+            type: s.type, status: 'pending_approval',
+          });
+        }
       }
       onClose();
     } catch (err) {
@@ -1265,7 +1276,7 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
               disabled={saving}
               className="flex-1 h-9 rounded-xl bg-[#1f5135] text-white text-[12px] font-semibold hover:bg-[#174028] disabled:opacity-50 active:scale-[0.97] transition-all shadow-sm"
             >
-              {saving ? 'Creating…' : `Create ${zones.length > 0 ? `(${zones.length} zones)` : ''}`}
+              {saving ? 'Creating…' : `Create (${zones.length} zones, ${zones.reduce((n, z) => n + z.pendingSensors.length, 0)} sensors)`}
             </button>
           )}
         </div>
@@ -1314,14 +1325,14 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
             {[3, 5, 7].map(n => (
               <button
                 key={n}
-                onClick={() => setZones(Array.from({ length: n }, (_, i) => ({ name: `Zone ${i + 1}` })))}
+                onClick={() => setZones(Array.from({ length: n }, (_, i) => ({ name: `Zone ${i + 1}`, pendingSensors: [] })))}
                 className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-[#1f5135]/30 text-[#1f5135] hover:bg-green-50 transition-colors"
               >
                 {n} zones
               </button>
             ))}
             <button
-              onClick={() => setZones([...Array.from({ length: 4 }, (_, i) => ({ name: `Zone ${i + 1}` })), { name: 'Ambient' }])}
+              onClick={() => setZones([...Array.from({ length: 4 }, (_, i) => ({ name: `Zone ${i + 1}`, pendingSensors: [] })), { name: 'Ambient', pendingSensors: [] }])}
               className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-[#1f5135]/30 text-[#1f5135] hover:bg-green-50 transition-colors"
             >
               4 + Ambient
@@ -1357,32 +1368,71 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Step 3 — review */}
+      {/* Step 3 — sensors & review */}
       {step === 3 && (
         <div className="space-y-4">
-          {/* Review summary */}
-          <div className="bg-gray-50 rounded-xl p-4 space-y-3 text-[12px]">
-            <p className="font-bold text-gray-700 text-[13px]">Review</p>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <span className="text-gray-400">Warehouse</span>
-              <span className="font-semibold text-gray-800 truncate">{whName}</span>
-              <span className="text-gray-400">Capacity</span>
-              <span className="font-semibold text-gray-800">{Number(whCap).toLocaleString()} Tons</span>
-              {whLoc && <><span className="text-gray-400">Location</span><span className="font-semibold text-gray-800">{whLoc}</span></>}
-              {whLiveId && <><span className="text-gray-400">Live ID</span><span className="font-semibold text-gray-800">{whLiveId}</span></>}
-              <span className="text-gray-400">Status</span>
-              <span className={cn('font-semibold', whStatus === 'active' ? 'text-green-600' : 'text-gray-400')}>{whStatus}</span>
-              <span className="text-gray-400">Zones</span>
-              <span className="font-semibold text-gray-800">{zones.length} ({zones.map(z => z.name).join(', ')})</span>
-              <span className="text-gray-400">Sensors</span>
-              <span className="font-semibold text-gray-500">0 — add manually per zone after creation</span>
-            </div>
+          {/* Compact review strip */}
+          <div className="bg-gray-50 rounded-xl px-4 py-3 flex items-center justify-between text-[12px]">
+            <span className="font-bold text-gray-800 truncate">{whName}</span>
+            <span className="text-gray-400 flex-shrink-0 ml-2">{zones.length} zones · {Number(whCap).toLocaleString()} tons</span>
           </div>
 
-          {/* Hint */}
-          <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
-            <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            <p className="text-[11px] text-blue-700 leading-snug">After creating the warehouse, expand each zone in the Infrastructure tab and use <strong>+ Add Sensor</strong> to install sensors manually.</p>
+          {/* Per-zone sensor builder */}
+          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-0.5">
+            {zones.map((z, zi) => (
+              <div key={zi} className="rounded-xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50">
+                  <span className="text-[11px] font-bold text-gray-600 truncate">{z.name}</span>
+                  <button
+                    onClick={() => addSensorToZone(zi)}
+                    className="flex items-center gap-1 h-5 px-2 rounded-md bg-[#1f5135] text-white text-[9px] font-bold hover:bg-[#174028] transition-colors flex-shrink-0"
+                  >
+                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Sensor
+                  </button>
+                </div>
+                {z.pendingSensors.length === 0 ? (
+                  <p className="text-[10px] text-gray-400 text-center py-2.5">No sensors — optional, can add later</p>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {z.pendingSensors.map((s, si) => (
+                      <div key={si} className="flex items-center gap-2 px-3 py-1.5">
+                        <select
+                          className="text-[10px] font-semibold text-gray-700 bg-transparent border-0 outline-none cursor-pointer flex-shrink-0"
+                          value={s.type}
+                          onChange={e => updateZoneSensor(zi, si, 'type', e.target.value)}
+                        >
+                          <option value="temperature">Temperature</option>
+                          <option value="humidity">Humidity</option>
+                          <option value="moisture">Moisture</option>
+                          <option value="co2">CO2</option>
+                          <option value="aqi">AQI</option>
+                          <option value="multi">Multi</option>
+                        </select>
+                        <input
+                          className="flex-1 text-[10px] text-gray-600 bg-transparent border-b border-gray-200 outline-none py-0.5 placeholder:text-gray-300 min-w-0"
+                          value={s.name}
+                          onChange={e => updateZoneSensor(zi, si, 'name', e.target.value)}
+                          placeholder="sensor name (optional)"
+                        />
+                        <button
+                          onClick={() => removeSensorFromZone(zi, si)}
+                          className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-50 transition-colors flex-shrink-0"
+                        >
+                          <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Approval notice */}
+          <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-100">
+            <svg className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p className="text-[11px] text-amber-800 leading-snug">Sensors go to <strong>pending approval</strong> — an admin must approve them before live data appears.</p>
           </div>
 
           {createErr && (
@@ -1703,8 +1753,11 @@ function WarehouseCard({ wh }: { wh: ManagedWarehouse }) {
 
       <div className="bg-white rounded-2xl ring-1 ring-black/[0.05] shadow-sm overflow-hidden">
         {/* Warehouse header */}
-        <div className="flex items-center gap-3 px-4 py-3.5">
-          <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-3 flex-1 text-left min-w-0">
+        <div
+          className="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none"
+          onClick={() => setExpanded(v => !v)}
+        >
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors',
               wh.status === 'active' ? 'bg-[#1f5135]/10' : 'bg-gray-100',
             )}>
@@ -1723,12 +1776,12 @@ function WarehouseCard({ wh }: { wh: ManagedWarehouse }) {
               <p className="text-[10px] text-gray-400 mt-0.5">{wh.location || 'No location'} · {wh.capacity.toLocaleString()} tons</p>
             </div>
             <svg className={cn('w-4 h-4 text-gray-400 flex-shrink-0 transition-transform', expanded && 'rotate-180')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
+          </div>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => setModal({ type: 'edit' })} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors" title="Edit warehouse">
+            <button onClick={e => { e.stopPropagation(); setModal({ type: 'edit' }); }} className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors" title="Edit warehouse">
               <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
-            <button onClick={() => setModal({ type: 'delete' })} className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors" title="Delete warehouse">
+            <button onClick={e => { e.stopPropagation(); setModal({ type: 'delete' }); }} className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center transition-colors" title="Delete warehouse">
               <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
             </button>
           </div>

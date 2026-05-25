@@ -461,9 +461,14 @@ export function useFirestoreAnalytics(): AnalyticsData {
       : Array.from({ length: 14 }, (_, i) => ({ day: dayLabel(addDays(today, i - 13)), Temperature: 75, Humidity: 70, Moisture: 72, CO2: 88, AQI: 90 }));
 
     // ── WH performance from live ──────────────────────────────────────────────
+    // Map liveEngineId → human-readable warehouse name
+    const whNameMap = new Map(managedWarehouses.map(w => [w.liveEngineId ?? w.id, w.name]));
+    // Map warehouse name → liveEngineId (for reverse lookup)
+    const nameToLiveId = new Map(managedWarehouses.map(w => [w.name, w.liveEngineId ?? w.id]));
+
     const whPerformanceData: WHPerformancePoint[] = Object.values(readings)
       .map(r => ({
-        warehouse:   r.warehouseId,
+        warehouse:   whNameMap.get(r.warehouseId) ?? r.warehouseId,
         Efficiency:  Math.max(20, Math.round(r.health)),
         Stability:   Math.max(20, Math.round(Math.max(0, 100 - r.spoilageRisk))),
         Utilization: Math.round(r.capacity),
@@ -474,8 +479,9 @@ export function useFirestoreAnalytics(): AnalyticsData {
     const ranked = whPerformanceData.slice().sort((a, b) => (b.Efficiency + b.Stability) - (a.Efficiency + a.Stability));
     const best   = ranked[0] ?? null;
     const worst  = ranked.length > 0 ? ranked[ranked.length - 1] : null;
-    const bestWH  = best  ? warehouses.find(w => w.id === best.warehouse)  : null;
-    const worstWH = worst ? warehouses.find(w => w.id === worst.warehouse) : null;
+    // Resolve WarehouseReading by looking up name → liveEngineId → warehouses array entry
+    const bestWH  = best  ? warehouses.find(w => w.id === (nameToLiveId.get(best.warehouse) ?? best.warehouse))  : null;
+    const worstWH = worst ? warehouses.find(w => w.id === (nameToLiveId.get(worst.warehouse) ?? worst.warehouse)) : null;
 
     return {
       kpis,
