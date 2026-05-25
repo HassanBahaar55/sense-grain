@@ -124,7 +124,7 @@ function zoneStatus(temp: number | null, humidity: number | null, moisture: numb
 /**
  * Build ZoneReading cards from Firestore zones + live engine reading.
  * Works for any number of zones — ZONE_OFFSETS cycles via modulo.
- * If liveReading is null (no liveEngineId linked), zones show as offline.
+ * If liveReading is null (no active sensors or no data yet), zones show as offline.
  */
 function buildZoneReadings(
   fsZones: ManagedZone[],
@@ -185,15 +185,14 @@ function buildDropdownList(
   readings: Record<string, LiveSensorReading>,
 ): DropdownEntry[] {
   return firestoreWarehouses.map(fw => {
-    const engineId   = fw.liveEngineId ?? fw.id;
-    const liveData   = readings[engineId];
+    const liveData   = readings[fw.id];
     const hasData    = !!liveData;
     const whStatus: WarehouseOnlineStatus = !hasData ? 'offline'
       : liveData.status === 'high'   ? 'alert'
       : liveData.status === 'medium' ? 'warning'
       : 'online';
     return {
-      id:              fw.liveEngineId ?? fw.id,
+      id:              fw.id,
       fsId:            fw.id,
       name:            fw.name,
       status:          whStatus,
@@ -489,7 +488,7 @@ export default function RealtimeMonitorPage() {
   useEffect(() => {
     if (selectedWHs.length === 0 && firestoreWarehouses.length > 0) {
       const first = firestoreWarehouses[0];
-      setSelectedWHs([first.liveEngineId ?? first.id]);
+      setSelectedWHs([first.id]);
     }
   }, [firestoreWarehouses, selectedWHs.length]);
 
@@ -500,8 +499,7 @@ export default function RealtimeMonitorPage() {
   const fsWhId        = primaryEntry?.fsId ?? null;
   const primaryMockId = (() => {
     if (!primaryEntry?.hasData) return '';
-    const fsWh = firestoreWarehouses.find(fw => fw.id === primaryEntry.fsId);
-    return fsWh?.liveEngineId ?? primaryEntry.id;
+    return primaryEntry.id;
   })();
 
   // Load Firestore zones + sensors for the primary warehouse
@@ -517,9 +515,7 @@ export default function RealtimeMonitorPage() {
     .map(id => {
       const entry = dropdownEntries.find(e => e.id === id);
       if (!entry?.hasData) return null;
-      const fsWh = firestoreWarehouses.find(fw => fw.id === entry.fsId);
-      const mockId = fsWh?.liveEngineId ?? entry.id;
-      return readings[mockId] ?? null;
+      return readings[entry.id] ?? null;
     })
     .filter((r): r is LiveSensorReading => r !== null);
 

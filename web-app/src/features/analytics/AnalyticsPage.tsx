@@ -145,8 +145,8 @@ export default function AnalyticsPage() {
   }), [rawKpis, liveCapacity, liveSpoilage]);
 
   // ── Analytics table — user-created warehouses from storageWarehouses ────────
-  // Each managed warehouse has a liveEngineId that maps to warehouseReadings.
-  // If no liveEngineId or no live data → show as inactive row.
+  // warehouseReadings is keyed by warehouse Firestore doc ID.
+  // If no live data for this warehouse → show as inactive row.
   const liveTableRows = useMemo(() => {
     // If no managed warehouses yet, fall back to raw readings
     const source = managedWarehouses.length > 0 ? managedWarehouses : null;
@@ -165,8 +165,7 @@ export default function AnalyticsPage() {
     return source
       .filter(wh => wh.status === 'active')
       .map(wh => {
-        const liveId = wh.liveEngineId ?? wh.id; // map to liveEngine WH-X id
-        const r = readings[liveId];
+        const r = readings[wh.id];
         if (!r) {
           // Managed warehouse exists but no live reading — show inactive
           return {

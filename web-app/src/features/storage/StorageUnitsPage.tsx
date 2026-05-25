@@ -104,11 +104,6 @@ function WarehouseItem({ wh, selected, liveStatus, onSelect }: {
         <span className={cn('text-[12px] font-bold flex-1 truncate', selected ? 'text-white' : 'text-gray-800')}>
           {wh.name}
         </span>
-        {wh.liveEngineId && (
-          <span className={cn('text-[9px] font-bold flex-shrink-0', selected ? 'text-white/50' : 'text-gray-400')}>
-            {wh.liveEngineId}
-          </span>
-        )}
       </div>
       <div className="flex items-center justify-between mt-0.5 pl-[18px]">
         <span className={cn('text-[10px] font-medium', selected ? 'text-white/50' : 'text-gray-400')}>
@@ -231,12 +226,12 @@ export default function StorageUnitsPage() {
   }, [warehouses, selectedWhId]);
 
   const selectedWh  = warehouses.find(w => w.id === selectedWhId) ?? null;
-  const liveReading = selectedWh?.liveEngineId ? (readings[selectedWh.liveEngineId] ?? null) : null;
+  const liveReading = selectedWh ? (readings[selectedWh.id] ?? null) : null;
 
   const totals = useMemo(() => {
     const active = warehouses.filter(w => w.status === 'active');
     const liveOnes = active
-      .map(w => w.liveEngineId ? readings[w.liveEngineId] : null)
+      .map(w => readings[w.id] ?? null)
       .filter(Boolean) as LiveSensorReading[];
     const avgTemp  = liveOnes.length ? +(liveOnes.reduce((s, r) => s + r.temperature, 0) / liveOnes.length).toFixed(1) : null;
     const avgHum   = liveOnes.length ? Math.round(liveOnes.reduce((s, r) => s + r.humidity, 0) / liveOnes.length) : null;
@@ -329,7 +324,7 @@ export default function StorageUnitsPage() {
               ) : filteredWhs.map(wh => (
                 <WarehouseItem
                   key={wh.id} wh={wh} selected={wh.id === selectedWhId}
-                  liveStatus={wh.liveEngineId ? readings[wh.liveEngineId]?.status : undefined}
+                  liveStatus={readings[wh.id]?.status}
                   onSelect={() => setSelectedWhId(wh.id)}
                 />
               ))}
@@ -353,9 +348,6 @@ export default function StorageUnitsPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2.5 flex-wrap">
                           <h2 className="text-[16px] font-black text-gray-900">{selectedWh.name}</h2>
-                          {selectedWh.liveEngineId && (
-                            <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-md">{selectedWh.liveEngineId}</span>
-                          )}
                           <span className={cn('inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full',
                             STATUS_CFG[selectedWh.status === 'inactive' ? 'inactive' : (liveReading?.status ?? 'good')].badge,
                           )}>

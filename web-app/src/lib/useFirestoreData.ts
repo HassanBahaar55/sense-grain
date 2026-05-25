@@ -461,10 +461,8 @@ export function useFirestoreAnalytics(): AnalyticsData {
       : Array.from({ length: 14 }, (_, i) => ({ day: dayLabel(addDays(today, i - 13)), Temperature: 75, Humidity: 70, Moisture: 72, CO2: 88, AQI: 90 }));
 
     // ── WH performance from live ──────────────────────────────────────────────
-    // Map liveEngineId → human-readable warehouse name
-    const whNameMap = new Map(managedWarehouses.map(w => [w.liveEngineId ?? w.id, w.name]));
-    // Map warehouse name → liveEngineId (for reverse lookup)
-    const nameToLiveId = new Map(managedWarehouses.map(w => [w.name, w.liveEngineId ?? w.id]));
+    const whNameMap   = new Map(managedWarehouses.map(w => [w.id, w.name]));
+    const nameToLiveId = new Map(managedWarehouses.map(w => [w.name, w.id]));
 
     const whPerformanceData: WHPerformancePoint[] = Object.values(readings)
       .map(r => ({
