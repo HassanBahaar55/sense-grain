@@ -406,49 +406,59 @@ function UserDetailModal({
                           </button>
                         </div>
 
-                        {/* Sensors */}
-                        {whSensors.length === 0 ? (
+                        {/* Zones + sensors grouped */}
+                        {whZones.length === 0 && whSensors.length === 0 ? (
                           <div className="px-4 py-2.5 text-center">
-                            <p className="text-[10px] text-gray-400">No sensors in this warehouse.</p>
+                            <p className="text-[10px] text-gray-400">No zones or sensors yet.</p>
                           </div>
+                        ) : whZones.length > 0 ? (
+                          whZones.map(zone => {
+                            const zoneSensors = detail.sensors.filter(s => s.zoneId === zone.id);
+                            return (
+                              <div key={zone.id}>
+                                {/* Zone sub-header */}
+                                <div className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-50/80 border-t border-gray-100">
+                                  <svg className="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                  <p className="text-[10px] font-bold text-gray-500 truncate max-w-[180px]" title={zone.name}>{zone.name}</p>
+                                  <span className="text-[9px] text-gray-300 ml-auto flex-shrink-0">{zoneSensors.length} sensor{zoneSensors.length !== 1 ? 's' : ''}</span>
+                                </div>
+                                {zoneSensors.length === 0 ? (
+                                  <div className="px-4 py-1.5 border-t border-gray-50">
+                                    <p className="text-[10px] text-gray-300 italic">No sensors in this zone</p>
+                                  </div>
+                                ) : zoneSensors.map(s => (
+                                  <div key={s.id} className="flex items-center gap-2.5 px-4 py-2 border-t border-gray-50 group hover:bg-gray-50/60">
+                                    <span className={cn('w-2 h-2 rounded-full flex-shrink-0', sensorStatusDot(s.status))} />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[11px] font-semibold text-gray-800 truncate max-w-[160px]" title={s.name}>{s.name}</p>
+                                      <p className="text-[10px] text-gray-400">{s.type} · <span className={s.status === 'active' ? 'text-green-600' : 'text-gray-400'}>{sensorStatusLabel(s.status)}</span></p>
+                                    </div>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      {s.status === 'active' && (
+                                        <button onClick={() => adminToggleSensor(profile.uid, s.id, false).then(refresh)}
+                                          className="h-5 px-2 rounded-md border border-amber-200 text-[9px] font-semibold text-amber-600 hover:bg-amber-50 transition-colors">Disable</button>
+                                      )}
+                                      {s.status === 'inactive' && (
+                                        <button onClick={() => adminToggleSensor(profile.uid, s.id, true).then(refresh)}
+                                          className="h-5 px-2 rounded-md border border-emerald-200 text-[9px] font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors">Enable</button>
+                                      )}
+                                      <button onClick={() => setConfirm({ type: 'sensor', label: `${s.name} (${zone.name})`, action: async () => { await adminDeleteSensor(profile.uid, s.id); refresh(); } })}
+                                        className="w-5 h-5 rounded-md hover:bg-red-50 flex items-center justify-center transition-colors">
+                                        <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })
                         ) : (
                           whSensors.map(s => (
                             <div key={s.id} className="flex items-center gap-2.5 px-4 py-2 border-t border-gray-50 group hover:bg-gray-50/60">
                               <span className={cn('w-2 h-2 rounded-full flex-shrink-0', sensorStatusDot(s.status))} />
                               <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-semibold text-gray-800 truncate">{s.name}</p>
+                                <p className="text-[11px] font-semibold text-gray-800 truncate max-w-[160px]" title={s.name}>{s.name}</p>
                                 <p className="text-[10px] text-gray-400">{s.type} · <span className={s.status === 'active' ? 'text-green-600' : 'text-gray-400'}>{sensorStatusLabel(s.status)}</span></p>
-                              </div>
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {s.status === 'active' && (
-                                  <button
-                                    onClick={() => adminToggleSensor(profile.uid, s.id, false).then(refresh)}
-                                    className="h-5 px-2 rounded-md border border-amber-200 text-[9px] font-semibold text-amber-600 hover:bg-amber-50 transition-colors"
-                                    title="Disable sensor"
-                                  >
-                                    Disable
-                                  </button>
-                                )}
-                                {s.status === 'inactive' && (
-                                  <button
-                                    onClick={() => adminToggleSensor(profile.uid, s.id, true).then(refresh)}
-                                    className="h-5 px-2 rounded-md border border-emerald-200 text-[9px] font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors"
-                                    title="Enable sensor"
-                                  >
-                                    Enable
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => setConfirm({
-                                    type: 'sensor',
-                                    label: s.name,
-                                    action: async () => { await adminDeleteSensor(profile.uid, s.id); refresh(); },
-                                  })}
-                                  className="w-5 h-5 rounded-md hover:bg-red-50 flex items-center justify-center transition-colors"
-                                  title="Delete sensor"
-                                >
-                                  <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-                                </button>
                               </div>
                             </div>
                           ))
@@ -616,6 +626,13 @@ function ResourceRequestsTab() {
   const [typeFilter,   setTypeFilter]   = useState<ReqTypeFilter>('all');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<ResourceRequest | null>(null);
+  const [expandedIds,  setExpandedIds]  = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => setExpandedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   const filtered = requests
     .filter(r => statusFilter === 'all' || r.status === statusFilter)
@@ -730,52 +747,69 @@ function ResourceRequestsTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(req => (
-            <div key={req.id} className="p-4 rounded-2xl border border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
-                  {typeIcon(req.type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[13px] font-bold text-gray-900">{reqTitle(req)}</p>
-                    <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{typeLabel(req.type)}</span>
-                    <ReqStatusBadge status={req.status} />
-                  </div>
-                  <p className="text-[11px] text-gray-600 mt-0.5">
-                    <span className="font-medium">{req.userName}</span> · {req.userEmail}
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{reqMeta(req)}</p>
-                  {req.type === 'warehouse_creation' && req.zones && req.zones.length > 0 && (
-                    <div className="mt-1.5 space-y-0.5">
-                      {req.zones.map((z, i) => (
-                        <p key={i} className="text-[10px] text-gray-400">
-                          ↳ {z.name}{z.sensors.length > 0 ? ` (${z.sensors.map(s => s.type).join(', ')})` : ''}
-                        </p>
-                      ))}
+          {filtered.map(req => {
+            const hasZones   = req.type === 'warehouse_creation' && (req.zones?.length ?? 0) > 0;
+            const isExpanded = expandedIds.has(req.id);
+            const title      = reqTitle(req);
+            return (
+              <div key={req.id} className="rounded-2xl border border-gray-100 bg-white overflow-hidden">
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                      {typeIcon(req.type)}
                     </div>
-                  )}
-                  <p className="text-[10px] text-gray-400 mt-0.5">Submitted: {fmtShort(req.createdAt)}</p>
-                  {req.rejectedReason && (
-                    <p className="text-[10px] text-red-500 mt-1">Reason: {req.rejectedReason}</p>
-                  )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[13px] font-bold text-gray-900 truncate max-w-[180px]" title={title}>{title}</p>
+                        <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{typeLabel(req.type)}</span>
+                        <ReqStatusBadge status={req.status} />
+                      </div>
+                      <p className="text-[11px] text-gray-600 mt-0.5 truncate max-w-[260px]">
+                        <span className="font-medium">{req.userName}</span> · {req.userEmail}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{reqMeta(req)}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">Submitted: {fmtShort(req.createdAt)}</p>
+                      {req.rejectedReason && (
+                        <p className="text-[10px] text-red-500 mt-1 truncate max-w-[260px]">Reason: {req.rejectedReason}</p>
+                      )}
+                      {hasZones && (
+                        <button onClick={() => toggleExpand(req.id)}
+                          className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-[#1f5135] hover:underline">
+                          <svg className={cn('w-3 h-3 transition-transform', isExpanded && 'rotate-90')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                          {isExpanded ? 'Hide' : 'Show'} zone details ({req.zones!.length} zones)
+                        </button>
+                      )}
+                    </div>
+                    {req.status === 'pending' && (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => setRejectTarget(req)} disabled={processingId === req.id}
+                          className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
+                          Reject
+                        </button>
+                        <button onClick={() => handleApprove(req)} disabled={processingId === req.id}
+                          className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
+                          {processingId === req.id ? <Spinner /> : null}
+                          Approve
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {req.status === 'pending' && (
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={() => setRejectTarget(req)} disabled={processingId === req.id}
-                      className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
-                      Reject
-                    </button>
-                    <button onClick={() => handleApprove(req)} disabled={processingId === req.id}
-                      className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
-                      {processingId === req.id ? <Spinner /> : null}
-                      Approve
-                    </button>
+                {/* Expandable zone breakdown */}
+                {hasZones && isExpanded && (
+                  <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-3 space-y-1.5">
+                    {req.zones!.map((z, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray-400 w-4 flex-shrink-0">{i + 1}.</span>
+                        <span className="text-[11px] font-semibold text-gray-700 truncate max-w-[200px]" title={z.name}>{z.name}</span>
+                        <span className="text-[10px] text-gray-400 ml-auto flex-shrink-0">{z.sensors.length} sensor{z.sensors.length !== 1 ? 's' : ''}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

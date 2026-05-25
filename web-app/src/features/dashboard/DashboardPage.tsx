@@ -115,8 +115,9 @@ function MetricCard({ label, value, sub, icon, accentBar, iconWrap, iconCls, val
 
 // ─── Warehouse tile ───────────────────────────────────────────────────────────
 
-function WarehouseTile({ wh }: { wh: { id: string; status: WHStatus; temp: number | null; humidity: number | null; moisture: number | null } }) {
+function WarehouseTile({ wh }: { wh: { id: string; name: string; status: WHStatus; temp: number | null; humidity: number | null; moisture: number | null } }) {
   const cfg = statusCfg[wh.status];
+  const displayName = wh.name || wh.id;
   return (
     <div className={cn(
       'rounded-xl ring-1 ring-black/[0.07] overflow-hidden',
@@ -125,8 +126,8 @@ function WarehouseTile({ wh }: { wh: { id: string; status: WHStatus; temp: numbe
     )}>
       <div className={cn('h-[4px]', cfg.bar)} />
       <div className="p-3.5">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[13px] font-bold text-gray-900 tracking-tight">{wh.id}</span>
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <span className="text-[13px] font-bold text-gray-900 tracking-tight truncate max-w-[110px]" title={displayName}>{displayName}</span>
           <span className={cn('text-[9.5px] font-bold px-2 py-[3px] rounded-full ring-1 leading-none', cfg.badge)}>
             {cfg.label}
           </span>
@@ -473,7 +474,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {warehouseUnits.map((wh) => <WarehouseTile key={wh.id} wh={wh} />)}
+                  {warehouseUnits.map((wh) => <WarehouseTile key={wh.id} wh={{ ...wh, name: wh.name || wh.id }} />)}
                 </div>
               )}
             </div>
