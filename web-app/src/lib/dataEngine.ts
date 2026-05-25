@@ -590,8 +590,8 @@ export interface AnalyticsData {
   kpis: AnalyticsKPI[];
   envTrendData: EnvTrendPoint[];
   whPerformanceData: WHPerformancePoint[];
-  topWarehouse: WHHighlight;
-  worstWarehouse: WHHighlight;
+  topWarehouse: WHHighlight | null;
+  worstWarehouse: WHHighlight | null;
   overallStability: number;
   sensorSummary: { online: number; offline: number; warning: number; total: number };
 }

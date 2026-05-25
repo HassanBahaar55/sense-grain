@@ -385,17 +385,17 @@ export function useFirestoreAnalytics(): AnalyticsData {
     const active     = warehouses.filter(w => w.temp !== null);
 
     // ── Live metrics ────────────────────────────────────────────────────────
-    const avgTemp = active.length ? active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length : 27;
-    const avgHum  = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 62;
-    const avgCap  = active.length ? Math.round(active.reduce((s, w) => s + (w.usedPct ?? 0), 0) / active.length) : 68;
+    const avgTemp = active.length ? active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length : 0;
+    const avgHum  = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 0;
+    const avgCap  = active.length ? Math.round(active.reduce((s, w) => s + (w.usedPct ?? 0), 0) / active.length) : 0;
 
     // Spoilage from live readings via status distribution
-    const goodPct  = warehouses.length > 0 ? (warehouses.filter(w => w.status === 'good').length / warehouses.length) * 100 : 80;
-    const spoilRisk = +(Math.max(1, Math.min(30, 30 - goodPct / 4)).toFixed(1));
+    const goodPct  = warehouses.length > 0 ? (warehouses.filter(w => w.status === 'good').length / warehouses.length) * 100 : 100;
+    const spoilRisk = active.length ? +(Math.max(1, Math.min(30, 30 - goodPct / 4)).toFixed(1)) : 0;
 
     // ── Stability from live readings (real-time score) ───────────────────────
-    const tempStability = Math.max(50, Math.round(100 - Math.max(0, avgTemp - 25) * 5));
-    const humStability  = Math.max(50, Math.round(100 - Math.max(0, avgHum  - 60) * 2.5));
+    const tempStability = active.length ? Math.max(0, Math.round(100 - Math.max(0, avgTemp - 25) * 5)) : 0;
+    const humStability  = active.length ? Math.max(0, Math.round(100 - Math.max(0, avgHum  - 60) * 2.5)) : 0;
 
     // ── Delta: compare last 15 history docs vs previous 15 ──────────────────
     const tempSafeThr = 29;
@@ -472,25 +472,25 @@ export function useFirestoreAnalytics(): AnalyticsData {
 
     // ── Best/worst WH ─────────────────────────────────────────────────────────
     const ranked = whPerformanceData.slice().sort((a, b) => (b.Efficiency + b.Stability) - (a.Efficiency + a.Stability));
-    const best   = ranked[0] ?? { warehouse: 'WH-A', Efficiency: 90, Stability: 88, Utilization: 72 };
-    const worst  = ranked[ranked.length - 1] ?? { warehouse: 'WH-C', Efficiency: 60, Stability: 55, Utilization: 61 };
-    const bestWH  = warehouses.find(w => w.id === best.warehouse);
-    const worstWH = warehouses.find(w => w.id === worst.warehouse);
+    const best   = ranked[0] ?? null;
+    const worst  = ranked.length > 0 ? ranked[ranked.length - 1] : null;
+    const bestWH  = best  ? warehouses.find(w => w.id === best.warehouse)  : null;
+    const worstWH = worst ? warehouses.find(w => w.id === worst.warehouse) : null;
 
     return {
       kpis,
       envTrendData,
       whPerformanceData,
-      topWarehouse: {
+      topWarehouse: best ? {
         name:   best.warehouse,
         detail: bestWH ? `${bestWH.temp?.toFixed(1)}°C · ${bestWH.humidity}% RH · ${bestWH.usedPct}% capacity` : 'Optimal conditions',
         score:  best.Efficiency,
-      },
-      worstWarehouse: {
+      } : null,
+      worstWarehouse: worst ? {
         name:   worst.warehouse,
         detail: worstWH ? `${worstWH.temp?.toFixed(1)}°C · ${worstWH.humidity}% RH · status: ${worstWH.status}` : 'Needs attention',
         score:  worst.Efficiency,
-      },
+      } : null,
       overallStability: Math.round((tempStability + humStability) / 2),
       sensorSummary: {
         online:  onlineWHs * SENSORS_PER_WH,
