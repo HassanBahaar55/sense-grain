@@ -694,13 +694,23 @@ function RequestDetailModal({
                   </div>
                   {z.sensors.length === 0 ? (
                     <p className="text-[10px] text-gray-300 italic px-4 py-2">No sensors in this zone</p>
-                  ) : z.sensors.map((s, si) => (
-                    <div key={si} className="flex items-center gap-2.5 px-4 py-2 border-t border-gray-50">
-                      <span className="w-2 h-2 rounded-full bg-amber-300 flex-shrink-0" />
-                      <p className="text-[11px] text-gray-700 truncate flex-1">{s.name}</p>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0">{s.type}</span>
-                    </div>
-                  ))}
+                  ) : (() => {
+                    // Group sensors: if same name+type appears multiple times, collapse with ×N
+                    const groups: Array<{ name: string; type: string; count: number }> = [];
+                    for (const s of z.sensors) {
+                      const key = `${s.name}||${s.type}`;
+                      const existing = groups.find(g => `${g.name}||${g.type}` === key);
+                      if (existing) { existing.count++; } else { groups.push({ name: s.name, type: s.type, count: 1 }); }
+                    }
+                    return groups.map((g, gi) => (
+                      <div key={gi} className="flex items-center gap-2.5 px-4 py-2 border-t border-gray-50">
+                        <span className="w-2 h-2 rounded-full bg-amber-300 flex-shrink-0" />
+                        <p className="text-[11px] text-gray-700 truncate flex-1">{g.name}</p>
+                        {g.count > 1 && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full flex-shrink-0">×{g.count}</span>}
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">{g.type}</span>
+                      </div>
+                    ));
+                  })()}
                 </div>
               ))}
             </div>
