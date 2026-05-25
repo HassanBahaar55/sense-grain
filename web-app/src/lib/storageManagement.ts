@@ -162,9 +162,18 @@ export async function deleteWarehouse(uid: string, id: string) {
   const zonesSnap = await getDocs(query(collection(db, col.zones(uid)), where('warehouseId', '==', id)));
   for (const z of zonesSnap.docs) {
     const sSnap = await getDocs(query(collection(db, col.sensors(uid)), where('zoneId', '==', z.id)));
-    sSnap.forEach(s => batch.delete(s.ref));
+    sSnap.forEach(s => {
+      batch.delete(s.ref);
+      // Remove the admin resource request for this sensor
+      batch.delete(doc(db, 'resourceRequests', `${uid}_${s.id}`));
+    });
     batch.delete(z.ref);
   }
+  // Remove Firestore reading snapshot for this warehouse
+  batch.delete(doc(db, col.warehouseReadings(uid), id));
+  // Remove active alerts tied to this warehouse
+  const alertsSnap = await getDocs(query(collection(db, col.alerts(uid)), where('warehouseId', '==', id)));
+  alertsSnap.forEach(a => batch.delete(a.ref));
   batch.delete(doc(db, col.warehouses(uid), id));
   await batch.commit();
 }
@@ -180,7 +189,11 @@ export async function updateZone(uid: string, id: string, data: Partial<Omit<Man
 export async function deleteZone(uid: string, id: string) {
   const batch = writeBatch(db);
   const sSnap = await getDocs(query(collection(db, col.sensors(uid)), where('zoneId', '==', id)));
-  sSnap.forEach(s => batch.delete(s.ref));
+  sSnap.forEach(s => {
+    batch.delete(s.ref);
+    // Remove the admin resource request for this sensor
+    batch.delete(doc(db, 'resourceRequests', `${uid}_${s.id}`));
+  });
   batch.delete(doc(db, col.zones(uid), id));
   await batch.commit();
 }
@@ -220,5 +233,9 @@ export async function updateSensor(uid: string, id: string, data: Partial<Omit<M
 }
 
 export async function deleteSensor(uid: string, id: string) {
-  return deleteDoc(doc(db, col.sensors(uid), id));
+  const batch = writeBatch(db);
+  batch.delete(doc(db, col.sensors(uid), id));
+  // Remove the admin resource request created when this sensor was added
+  batch.delete(doc(db, 'resourceRequests', `${uid}_${id}`));
+  await batch.commit();
 }
