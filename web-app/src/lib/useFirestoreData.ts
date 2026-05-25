@@ -25,6 +25,7 @@ import firebaseApp from '@/config/firebase';
 import { useLiveData } from '@/contexts/LiveDataContext';
 import { useHeader } from '@/contexts/HeaderContext';
 import { col } from '@/lib/accountDb';
+import { useWarehouses, type ManagedWarehouse } from '@/lib/storageManagement';
 import type { LiveSensorReading, LiveAlert } from './liveEngine';
 import type {
   WarehouseReading, DashboardData, AlertsData, StorageData,
@@ -38,20 +39,7 @@ import type {
 
 const db = getFirestore(firebaseApp);
 
-// ─── Static warehouse metadata (capacity doesn't change) ─────────────────────
-
-const WH_ACTIVE_IDS = ['WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G'];
 const SENSORS_PER_WH = 5; // temp, humidity, moisture, CO₂, AQI
-
-const WH_META: Record<string, { capacity: number; baseUsed: number }> = {
-  'WH-A': { capacity: 2000, baseUsed: 1450 },
-  'WH-B': { capacity: 1800, baseUsed: 1210 },
-  'WH-C': { capacity: 1750, baseUsed: 1420 },
-  'WH-D': { capacity: 1600, baseUsed: 980  },
-  'WH-E': { capacity: 1500, baseUsed: 1050 },
-  'WH-F': { capacity: 1400, baseUsed: 1020 },
-  'WH-G': { capacity: 1200, baseUsed: 620  },
-};
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -67,14 +55,14 @@ function addDays(d: Date, n: number): Date {
 
 // ─── Live → WarehouseReading converter ───────────────────────────────────────
 
-function liveToWarehouse(r: LiveSensorReading): WarehouseReading {
-  const meta = WH_META[r.warehouseId] ?? { capacity: 1500, baseUsed: 900 };
-  const used = Math.round(meta.capacity * r.capacity / 100);
+function liveToWarehouse(r: LiveSensorReading, wh?: ManagedWarehouse): WarehouseReading {
+  const capacity = wh?.capacity ?? 1500;
+  const used = Math.round(capacity * r.capacity / 100);
   const trend: TrendDir = r.trend === 'up' ? 'up' : r.trend === 'down' ? 'down' : 'stable';
   const risk: RiskLevel = r.status === 'high' ? 'high' : r.status === 'medium' ? 'medium' : 'low';
   return {
     id:         r.warehouseId,
-    name:       `Warehouse ${r.warehouseId.slice(-1)}`,
+    name:       wh?.name ?? r.warehouseId,
     status:     r.status as WHStatus,
     risk,
     trend,
@@ -83,27 +71,18 @@ function liveToWarehouse(r: LiveSensorReading): WarehouseReading {
     moisture:   +r.moisture.toFixed(1),
     co2:        r.co2,
     aqi:        r.aqi,
-    capacity:   meta.capacity,
+    capacity,
     used,
     usedPct:    Math.round(r.capacity),
     lastUpdate: 'Live',
   };
 }
 
-// Inactive warehouse placeholder
-const WH_H_INACTIVE: WarehouseReading = {
-  id: 'WH-H', name: 'Warehouse H',
-  status: 'inactive', risk: 'inactive', trend: null,
-  temp: null, humidity: null, moisture: null, co2: null, aqi: null,
-  capacity: 1200, used: 0, usedPct: 0, lastUpdate: null,
-};
-
-function readingsToWarehouses(readings: Record<string, LiveSensorReading>): WarehouseReading[] {
-  const active = Object.values(readings).map(liveToWarehouse);
-  // Sort by warehouse ID
+function readingsToWarehouses(readings: Record<string, LiveSensorReading>, managedWhs: ManagedWarehouse[] = []): WarehouseReading[] {
+  const whMap = Object.fromEntries(managedWhs.map(w => [w.id, w]));
+  const active = Object.values(readings).map(r => liveToWarehouse(r, whMap[r.warehouseId]));
   active.sort((a, b) => a.id.localeCompare(b.id));
-  // Always include the inactive WH-H
-  return [...active, WH_H_INACTIVE];
+  return active;
 }
 
 // ─── sensorHistory subscription ───────────────────────────────────────────────
@@ -181,7 +160,11 @@ export function useSensorPerformance(days: 7 | 14 | 30): SensorPerformanceItem[]
   const { readings } = useLiveData();
 
   return useMemo(() => {
-    return WH_ACTIVE_IDS.map(whId => {
+    const allWhIds = [...new Set([
+      ...Object.keys(readings),
+      ...history.flatMap(h => Object.keys(h.stability)),
+    ])].sort();
+    return allWhIds.map(whId => {
       const isOnline   = readings[whId] != null;
       const daysOnline = history.filter(h => (h.stability[whId] ?? 0) > 0).length;
       const uptime     = history.length > 0
@@ -196,9 +179,10 @@ export function useSensorPerformance(days: 7 | 14 | 30): SensorPerformanceItem[]
 
 export function useFirestoreDashboard(): DashboardData {
   const { readings, liveAlerts } = useLiveData();
+  const { warehouses: managedWarehouses } = useWarehouses();
 
   return useMemo(() => {
-    const warehouses = readingsToWarehouses(readings);
+    const warehouses = readingsToWarehouses(readings, managedWarehouses);
 
     // Convert liveAlerts to DashboardData alert format (top 4)
     const alerts = liveAlerts
@@ -220,7 +204,7 @@ export function useFirestoreDashboard(): DashboardData {
     const offlineCount  = warehouses.filter(w => w.status === 'inactive').length;
 
     return { warehouses, alerts, goodCount, watchCount, criticalCount, offlineCount, activeCount: warehouses.length - offlineCount };
-  }, [readings, liveAlerts]);
+  }, [readings, liveAlerts, managedWarehouses]);
 }
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
@@ -228,9 +212,10 @@ export function useFirestoreDashboard(): DashboardData {
 export function useFirestoreStorage(): StorageData {
   const { readings } = useLiveData();
   const history = useSensorHistory(7);
+  const { warehouses: managedWarehouses } = useWarehouses();
 
   return useMemo(() => {
-    const warehouses = readingsToWarehouses(readings);
+    const warehouses = readingsToWarehouses(readings, managedWarehouses);
     const active = warehouses.filter(w => w.temp !== null);
 
     const totalCap     = warehouses.reduce((s, w) => s + w.capacity, 0);
@@ -238,20 +223,20 @@ export function useFirestoreStorage(): StorageData {
     const avgTemp      = active.length ? +(active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length).toFixed(1) : 0;
     const avgHumidity  = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 0;
 
-    // Stability chart from Firestore sensorHistory
+    // Stability chart from Firestore sensorHistory — dynamic warehouse keys
+    const whIds = Object.keys(readings).sort();
     const today = new Date();
     const stabilityData: StabilityPoint[] = history.length > 0
-      ? history.map(h => ({
-          day: dayLabel(new Date(h.date + 'T00:00:00')),
-          'WH-A': h.stability['WH-A'] ?? 75,
-          'WH-B': h.stability['WH-B'] ?? 70,
-          'WH-C': h.stability['WH-C'] ?? 80,
-          'WH-D': h.stability['WH-D'] ?? 65,
-        }))
-      : Array.from({ length: 7 }, (_, i) => ({
-          day: dayLabel(addDays(today, i - 6)),
-          'WH-A': 75, 'WH-B': 70, 'WH-C': 80, 'WH-D': 65,
-        }));
+      ? history.map(h => {
+          const point: StabilityPoint = { day: dayLabel(new Date(h.date + 'T00:00:00')) };
+          for (const id of whIds) point[id] = h.stability[id] ?? 75;
+          return point;
+        })
+      : Array.from({ length: 7 }, (_, i) => {
+          const point: StabilityPoint = { day: dayLabel(addDays(today, i - 6)) };
+          for (const id of whIds) point[id] = 75;
+          return point;
+        });
 
     const counts = {
       good:     warehouses.filter(w => w.status === 'good').length,
@@ -282,7 +267,7 @@ export function useFirestoreStorage(): StorageData {
       ],
       topCritical: warehouses.filter(w => w.status === 'high' || w.status === 'medium').slice(0, 4),
     };
-  }, [readings, history]);
+  }, [readings, history, managedWarehouses]);
 }
 
 // ─── Alerts ───────────────────────────────────────────────────────────────────
@@ -393,9 +378,10 @@ export function useFirestoreAlertsData(): AlertsData {
 export function useFirestoreAnalytics(): AnalyticsData {
   const { readings } = useLiveData();
   const history30 = useSensorHistory(30);
+  const { warehouses: managedWarehouses } = useWarehouses();
 
   return useMemo(() => {
-    const warehouses = readingsToWarehouses(readings);
+    const warehouses = readingsToWarehouses(readings, managedWarehouses);
     const active     = warehouses.filter(w => w.temp !== null);
 
     // ── Live metrics ────────────────────────────────────────────────────────
@@ -446,9 +432,11 @@ export function useFirestoreAnalytics(): AnalyticsData {
     }
 
     // ── Sensor health from live readings ─────────────────────────────────────
-    const onlineWHs    = WH_ACTIVE_IDS.filter(id => readings[id] != null).length;
-    const sensorHealth = Math.round(onlineWHs / WH_ACTIVE_IDS.length * 100);
-    const sensorDelta  = sensorHealth === 100 ? '+0.0%' : `-${(100 - sensorHealth).toFixed(1)}%`;
+    const activeManaged = managedWarehouses.filter(w => w.status === 'active');
+    const totalWHCount  = activeManaged.length || Object.keys(readings).length || 1;
+    const onlineWHs     = Object.keys(readings).length;
+    const sensorHealth  = Math.round(Math.min(onlineWHs / totalWHCount, 1) * 100);
+    const sensorDelta   = sensorHealth === 100 ? '+0.0%' : `-${(100 - sensorHealth).toFixed(1)}%`;
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const kpis: AnalyticsKPI[] = [
@@ -506,12 +494,12 @@ export function useFirestoreAnalytics(): AnalyticsData {
       overallStability: Math.round((tempStability + humStability) / 2),
       sensorSummary: {
         online:  onlineWHs * SENSORS_PER_WH,
-        offline: (WH_ACTIVE_IDS.length - onlineWHs) * SENSORS_PER_WH,
+        offline: Math.max(0, totalWHCount - onlineWHs) * SENSORS_PER_WH,
         warning: warehouses.filter(w => w.status !== 'good' && w.status !== 'inactive').length,
-        total:   WH_ACTIVE_IDS.length * SENSORS_PER_WH,
+        total:   Math.max(totalWHCount, onlineWHs) * SENSORS_PER_WH,
       },
     };
-  }, [readings, history30]);
+  }, [readings, history30, managedWarehouses]);
 }
 
 // ─── Predictions ──────────────────────────────────────────────────────────────
@@ -519,9 +507,10 @@ export function useFirestoreAnalytics(): AnalyticsData {
 export function useFirestorePredictions(): PredictionsData {
   const { readings } = useLiveData();
   const { selectedDate } = useHeader();
+  const { warehouses: managedWarehouses } = useWarehouses();
 
   return useMemo(() => {
-    const warehouses = readingsToWarehouses(readings);
+    const warehouses = readingsToWarehouses(readings, managedWarehouses);
     const active = warehouses.filter(w => w.temp !== null);
     const avgTemp  = active.length ? active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length : 27;
     const avgHum   = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 62;
@@ -583,7 +572,7 @@ export function useFirestorePredictions(): PredictionsData {
     });
 
     return { paramCards, forecastData, whPredTable, riskForecastData };
-  }, [readings, selectedDate]);
+  }, [readings, selectedDate, managedWarehouses]);
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
@@ -728,14 +717,23 @@ export function useAlertHistory(days: number): AlertHistoryItem[] {
 
 export function useFirestoreStability(days: number): StabilityPoint[] {
   const history = useSensorHistory(days);
+  const { readings } = useLiveData();
   const today = new Date();
-  return history.length > 0
-    ? history.map(h => ({
-        day:    dayLabel(new Date(h.date + 'T00:00:00')),
-        'WH-A': h.stability['WH-A'] ?? 75,
-        'WH-B': h.stability['WH-B'] ?? 70,
-        'WH-C': h.stability['WH-C'] ?? 80,
-        'WH-D': h.stability['WH-D'] ?? 65,
-      }))
-    : Array.from({ length: days }, (_, i) => ({ day: dayLabel(addDays(today, i - (days - 1))), 'WH-A': 75, 'WH-B': 70, 'WH-C': 80, 'WH-D': 65 }));
+
+  return useMemo(() => {
+    const whIds = Object.keys(readings).sort();
+    if (history.length > 0) {
+      return history.map(h => {
+        const point: StabilityPoint = { day: dayLabel(new Date(h.date + 'T00:00:00')) };
+        for (const id of whIds) point[id] = h.stability[id] ?? 75;
+        return point;
+      });
+    }
+    return Array.from({ length: days }, (_, i) => {
+      const point: StabilityPoint = { day: dayLabel(addDays(today, i - (days - 1))) };
+      for (const id of whIds) point[id] = 75;
+      return point;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, readings, days]);
 }

@@ -16,11 +16,11 @@
  */
 
 import {
-  createContext, useContext, useState, useEffect,
+  createContext, useContext, useState, useEffect, useRef,
   type ReactNode,
 } from 'react';
-import { liveEngine, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
-import { subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
+import { liveEngine, DEFAULT_WH_CONFIGS, type LiveSensorReading, type LiveAlert } from '@/lib/liveEngine';
+import { subscribeToWarehouses, subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
 import { seedUserData } from '@/lib/firestoreSeeder';
 import { useAuth } from '@/contexts/AuthContext';
@@ -54,7 +54,12 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const [tick,       setTick]       = useState(0);
   const [isRunning,  setIsRunning]  = useState(false);
 
+  // True after the first Firestore readings snapshot arrives — at that point
+  // Firestore is the sole source of truth and liveEngine readings are ignored.
+  const firestoreLoadedRef = useRef(false);
+
   useEffect(() => {
+    firestoreLoadedRef.current = false;
     if (!uid) return;
 
     setIsRunning(true);
@@ -65,33 +70,57 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     let alertsBootstrapped   = false;
     let readingsBootstrapped = false;
 
-    // Start the client engine only if the Cloud Function is not yet deployed
+    // Subscribe to the user's warehouses so liveEngine simulates only THEIR
+    // actual warehouses (not the hardcoded defaults).
+    const DEFAULT_MAP = Object.fromEntries(DEFAULT_WH_CONFIGS.map(c => [c.id, c]));
+    const unsubWarehouses = subscribeToWarehouses(uid, (warehouses) => {
+      if (CLIENT_ENGINE_DISABLED) return;
+      const activeWarehouses = warehouses.filter(w => w.status === 'active');
+      const engineConfigs = activeWarehouses.map(wh => {
+        const engineId = wh.liveEngineId ?? wh.id;
+        return DEFAULT_MAP[engineId] ?? {
+          id: engineId,
+          baseTemp: 26.0, baseHum: 58, baseMoist: 11.0,
+          baseCO2: 500, baseAQI: 36, baseCap: 70, drift: 0.0,
+        };
+      });
+      liveEngine.setWarehouseConfigs(engineConfigs);
+    });
+
+    // Start the client engine only if the Cloud Function is not yet deployed.
+    // Engine starts empty and is configured by the warehouse subscription above.
     let unsubLocal: (() => void) | null = null;
     if (!CLIENT_ENGINE_DISABLED) {
       liveEngine.setUid(uid);
       liveEngine.start(10000, 120000);
 
       unsubLocal = liveEngine.subscribe((newReadings, newAlerts, newTick) => {
-        setReadings({ ...newReadings });
+        // Only use liveEngine readings before Firestore has sent its first snapshot.
+        // After that, Firestore is the single source of truth.
+        if (!firestoreLoadedRef.current) {
+          setReadings({ ...newReadings });
+          setLiveOverride(newReadings);
+        }
         setLiveAlerts(prev => {
           if (!alertsBootstrapped) return prev;
           return [...newAlerts];
         });
         setTick(newTick);
-        setLiveOverride(newReadings);
       });
     }
 
-    // Firestore subscriptions — these take precedence when Cloud Function is live
+    // Firestore subscriptions — always override liveEngine once data arrives.
+    // An empty snapshot ({}) correctly clears the dashboard for accounts with
+    // no warehouses; the old "length > 0" guard was causing fake WH-A…D to
+    // persist for every user.
     const unsubReadings = subscribeToReadings(uid, (firestoreReadings) => {
-      if (Object.keys(firestoreReadings).length > 0) {
-        setReadings(firestoreReadings);
-        setTick(t => t + 1);
-        setLiveOverride(firestoreReadings);
-        if (!readingsBootstrapped) {
-          liveEngine.loadPersistedReadings(firestoreReadings);
-          readingsBootstrapped = true;
-        }
+      firestoreLoadedRef.current = true;
+      setReadings(firestoreReadings);
+      setTick(t => t + 1);
+      setLiveOverride(firestoreReadings);
+      if (!readingsBootstrapped) {
+        liveEngine.loadPersistedReadings(firestoreReadings);
+        readingsBootstrapped = true;
       }
     });
 
@@ -104,12 +133,14 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
+      unsubWarehouses();
       if (unsubLocal) unsubLocal();
       unsubReadings();
       unsubAlerts();
       if (!CLIENT_ENGINE_DISABLED) {
         liveEngine.stop();
         liveEngine.setUid(null);
+        liveEngine.setWarehouseConfigs([]);
       }
       setIsRunning(false);
     };

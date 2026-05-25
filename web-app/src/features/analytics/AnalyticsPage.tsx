@@ -202,11 +202,20 @@ export default function AnalyticsPage() {
   const highRisk     = liveTableRows.filter(r => r.risk === 'high').length;
   const medRisk      = liveTableRows.filter(r => r.risk === 'medium').length;
 
+  const hasReadings = Object.keys(readings).length > 0;
+
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
       <DashboardHeader title="Analytics" subtitle="Operational analytics across all warehouses" />
 
       <main className="flex-1 p-6 space-y-5 overflow-y-auto overflow-x-hidden">
+
+        {!hasReadings && (
+          <div className="bg-amber-50 ring-1 ring-amber-200 rounded-2xl px-5 py-4 flex items-center gap-3">
+            <svg className="w-5 h-5 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            <p className="text-[12px] text-amber-700 font-medium">No sensor data yet. Add a warehouse and sensors in <a href="/settings?tab=warehouses" className="font-bold underline">Settings</a> to see analytics.</p>
+          </div>
+        )}
 
         {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3.5">

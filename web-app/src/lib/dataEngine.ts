@@ -490,7 +490,7 @@ export function getAlertsData(date: Date): AlertsData {
 
 export interface StabilityPoint {
   day: string;
-  'WH-A': number; 'WH-B': number; 'WH-C': number; 'WH-D': number;
+  [warehouseId: string]: number | string;
 }
 
 export interface StorageData {

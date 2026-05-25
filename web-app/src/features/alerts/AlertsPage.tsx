@@ -645,10 +645,14 @@ export default function AlertsPage() {
   function setAlertStatus(id: string, status: AlertStatus) {
     // Optimistic UI — flip immediately, then persist to Firestore
     setStatusOverrides(prev => ({ ...prev, [id]: status }));
-    if (uid && (status === 'acknowledged' || status === 'resolved')) {
-      setAlertStatusInFirestore(uid, id, status).catch(err => {
-        console.error('[alerts] failed to persist status change', err);
-      });
+    if (uid) {
+      // muted maps to acknowledged in Firestore (no separate muted state in schema)
+      const fsStatus = status === 'muted' ? 'acknowledged' : status;
+      if (fsStatus === 'acknowledged' || fsStatus === 'resolved') {
+        setAlertStatusInFirestore(uid, id, fsStatus).catch(err => {
+          console.error('[alerts] failed to persist status change', err);
+        });
+      }
     }
   }
 

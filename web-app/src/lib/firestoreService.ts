@@ -89,8 +89,25 @@ function toAlert(docId: string, data: FirestoreAlertDoc): LiveAlert {
 
 // ─── Per-user subscriptions ───────────────────────────────────────────────────
 
-type ReadingsCallback = (readings: Record<string, LiveSensorReading>) => void;
-type AlertsCallback   = (alerts: LiveAlert[]) => void;
+export interface WarehouseMeta {
+  id:            string;
+  liveEngineId?: string;
+  status:        string;
+}
+
+type WarehousesCallback = (warehouses: WarehouseMeta[]) => void;
+type ReadingsCallback   = (readings: Record<string, LiveSensorReading>) => void;
+type AlertsCallback     = (alerts: LiveAlert[]) => void;
+
+/** Subscribe to this user's warehouse list (for liveEngine configuration). */
+export function subscribeToWarehouses(uid: string, cb: WarehousesCallback): Unsubscribe {
+  return onSnapshot(collection(db, col.warehouses(uid)), (snap) => {
+    cb(snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, liveEngineId: data.liveEngineId, status: data.status };
+    }));
+  });
+}
 
 /** Subscribe to this user's live warehouse readings. */
 export function subscribeToReadings(uid: string, cb: ReadingsCallback): Unsubscribe {

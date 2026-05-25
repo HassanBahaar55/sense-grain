@@ -460,9 +460,22 @@ export default function DashboardPage() {
 
             {/* Tile grid */}
             <div className="p-5">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {warehouseUnits.map((wh) => <WarehouseTile key={wh.id} wh={wh} />)}
-              </div>
+              {warehouseUnits.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-3">
+                    <SiloIcon />
+                  </div>
+                  <p className="text-[13px] font-semibold text-gray-700 mb-1">No warehouses yet</p>
+                  <p className="text-[11px] text-gray-400 mb-3">Add your first warehouse in Settings to start monitoring.</p>
+                  <Link href="/settings?tab=warehouses" className="text-[11px] font-semibold text-[#1f5135] hover:underline">
+                    Go to Settings → Warehouses
+                  </Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {warehouseUnits.map((wh) => <WarehouseTile key={wh.id} wh={wh} />)}
+                </div>
+              )}
             </div>
 
             {/* Summary strip */}

@@ -13,15 +13,8 @@ import {
 import firebaseApp from '@/config/firebase';
 import { col } from '@/lib/accountDb';
 import { useLiveData } from '@/contexts/LiveDataContext';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const WH_IDS = ['WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G'];
-const WH_NAMES: Record<string, string> = {
-  'WH-A': 'Warehouse A', 'WH-B': 'Warehouse B', 'WH-C': 'Warehouse C',
-  'WH-D': 'Warehouse D', 'WH-E': 'Warehouse E', 'WH-F': 'Warehouse F',
-  'WH-G': 'Warehouse G',
-};
+import { useWarehouses, type ManagedWarehouse } from '@/lib/storageManagement';
+import { useAuth } from '@/contexts/AuthContext';
 
 const REPORT_TYPES: { type: ReportType; label: string; desc: string }[] = [
   { type: 'environmental', label: 'Environmental Report',  desc: 'Temperature, humidity, moisture, CO₂ across zones' },
@@ -54,6 +47,7 @@ async function generateCsv(
   warehouse: string,
   dateRange: '1d' | '7d' | '30d',
   type: ReportType,
+  warehouseName?: string,
 ): Promise<string> {
   const db = getFirestore(firebaseApp);
   const days = dateRange === '1d' ? 1 : dateRange === '7d' ? 7 : 30;
@@ -74,7 +68,7 @@ async function generateCsv(
     // fallback: empty rows → CSV still downloads with headers
   }
 
-  const whLabel = warehouse === 'all' ? 'All Warehouses' : `${WH_NAMES[warehouse]} (${warehouse})`;
+  const whLabel = warehouse === 'all' ? 'All Warehouses' : `${warehouseName ?? warehouse} (${warehouse})`;
   const periodLabel = days === 1 ? 'Today' : `Last ${days} Days`;
 
   const metaLines = [
@@ -88,7 +82,7 @@ async function generateCsv(
   ];
 
   const colHeaders = ['Date', 'Temperature (°C)', 'Humidity (%)', 'Moisture (%)', 'CO2 (ppm)', 'AQI'];
-  if (warehouse !== 'all') colHeaders.push(`${WH_NAMES[warehouse] ?? warehouse} Stability`);
+  if (warehouse !== 'all') colHeaders.push(`${warehouseName ?? warehouse} Stability`);
 
   const dataRows = histRows.map(h => {
     const row = [
@@ -139,9 +133,11 @@ interface GenerateConfig {
 function GenerateModal({
   onClose,
   onGenerate,
+  warehouses,
 }: {
   onClose: () => void;
   onGenerate: (cfg: GenerateConfig) => void;
+  warehouses: ManagedWarehouse[];
 }) {
   const [warehouse, setWarehouse] = useState<string>('all');
   const [dateRange, setDateRange] = useState<'1d' | '7d' | '30d'>('7d');
@@ -182,8 +178,8 @@ function GenerateModal({
                 className="w-full h-9 pl-3 pr-8 rounded-xl border border-gray-200 bg-gray-50 text-[12px] font-medium text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/30 cursor-pointer"
               >
                 <option value="all">All Warehouses</option>
-                {WH_IDS.map(id => (
-                  <option key={id} value={id}>{WH_NAMES[id]} ({id})</option>
+                {warehouses.filter(w => w.status === 'active').map(wh => (
+                  <option key={wh.id} value={wh.id}>{wh.name} ({wh.id})</option>
                 ))}
               </select>
               <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
@@ -266,6 +262,9 @@ export default function ReportsPage() {
   const { toggle: toggleSidebar } = useSidebar();
   const { recentReports } = useReportsData();
   const { uid } = useLiveData();
+  const { warehouses: managedWarehouses } = useWarehouses();
+  const { user } = useAuth();
+  const whNames = Object.fromEntries(managedWarehouses.map(w => [w.id, w.name]));
 
   const [showGenerate, setShowGenerate]       = useState(false);
   const [localReports, setLocalReports]       = useState<ReportItem[]>([]);
@@ -283,7 +282,7 @@ export default function ReportsPage() {
 
   async function handleGenerate({ warehouse, dateRange, type }: GenerateConfig) {
     const newId = `RPT-${Date.now().toString(36).toUpperCase()}`;
-    const whLabel = warehouse === 'all' ? 'All Warehouses' : WH_NAMES[warehouse] ?? warehouse;
+    const whLabel = warehouse === 'all' ? 'All Warehouses' : whNames[warehouse] ?? warehouse;
     const periodLabel = dateRange === '1d' ? 'Today' : dateRange === '7d' ? 'Last 7 Days' : 'Last 30 Days';
     const title = `${TYPE_CONFIG[type].label} — ${whLabel} · ${periodLabel}`;
 
@@ -295,7 +294,7 @@ export default function ReportsPage() {
       period: periodLabel,
       generatedAt: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       dateGenerated: 'Just now',
-      generatedBy: 'You (Admin)',
+      generatedBy: user?.displayName ?? user?.email ?? 'User',
       size: '',
       downloads: 0,
       status: 'processing',
@@ -305,7 +304,7 @@ export default function ReportsPage() {
     setGeneratingId(newId);
 
     try {
-      const csv = await generateCsv(uid ?? '', newId, title, warehouse, dateRange, type);
+      const csv = await generateCsv(uid ?? '', newId, title, warehouse, dateRange, type, warehouse !== 'all' ? whNames[warehouse] : undefined);
       const size = csvSizeLabel(csv);
       triggerDownload(csv, `${newId}-${type}.csv`);
 
@@ -336,8 +335,8 @@ export default function ReportsPage() {
     if (downloadingId) return;
     setDownloadingId(report.id);
     try {
-      const whId = Object.entries(WH_NAMES).find(([, v]) => v === report.warehouse)?.[0] ?? 'all';
-      const csv = await generateCsv(uid ?? '', report.id, report.title, whId, '30d', report.type);
+      const whId = managedWarehouses.find(w => w.name === report.warehouse)?.id ?? 'all';
+      const csv = await generateCsv(uid ?? '', report.id, report.title, whId, '30d', report.type, managedWarehouses.find(w => w.id === whId)?.name);
       triggerDownload(csv, `${report.id}-${report.type}.csv`);
       setDownloadedIds(prev => new Set([...prev, report.id]));
       setTimeout(() => setDownloadedIds(prev => { const s = new Set(prev); s.delete(report.id); return s; }), 2500);
@@ -359,7 +358,7 @@ export default function ReportsPage() {
     if (typeFilter !== 'all' && r.type !== typeFilter) return false;
 
     if (whFilter !== 'all') {
-      const whName = WH_NAMES[whFilter] ?? whFilter;
+      const whName = whNames[whFilter] ?? whFilter;
       if (!r.warehouse.toLowerCase().includes(whName.toLowerCase()) &&
           !r.warehouse.toLowerCase().includes(whFilter.toLowerCase())) return false;
     }
@@ -390,6 +389,7 @@ export default function ReportsPage() {
         <GenerateModal
           onClose={() => setShowGenerate(false)}
           onGenerate={cfg => { void handleGenerate(cfg); }}
+          warehouses={managedWarehouses}
         />
       )}
 
@@ -452,7 +452,9 @@ export default function ReportsPage() {
                 className="h-8 pl-2.5 pr-7 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 appearance-none focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 cursor-pointer"
               >
                 <option value="all">All Warehouses</option>
-                {WH_IDS.map(id => <option key={id} value={id}>{WH_NAMES[id]}</option>)}
+                {managedWarehouses.filter(w => w.status === 'active').map(wh => (
+                  <option key={wh.id} value={wh.id}>{wh.name}</option>
+                ))}
               </select>
               <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
             </div>
@@ -522,8 +524,14 @@ export default function ReportsPage() {
               <tbody className="divide-y divide-gray-100">
                 {filteredReports.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-[12px] text-gray-400 font-medium">
-                      No reports match your filters.
+                    <td colSpan={7} className="px-4 py-10 text-center">
+                      <p className="text-[12px] text-gray-400 font-medium mb-2">No reports match your filters.</p>
+                      <button
+                        onClick={() => { setSearch(''); setWhFilter('all'); setTypeFilter('all'); setDateFilter('all'); }}
+                        className="text-[11px] font-semibold text-[#1f5135] hover:underline"
+                      >
+                        Reset filters
+                      </button>
                     </td>
                   </tr>
                 ) : filteredReports.map(row => {

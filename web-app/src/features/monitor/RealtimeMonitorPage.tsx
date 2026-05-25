@@ -484,7 +484,22 @@ export default function RealtimeMonitorPage() {
         firestoreWarehouses={firestoreWarehouses}
       />
 
-      <main className="flex-1 p-5 space-y-4 overflow-auto">
+      {firestoreWarehouses.length === 0 && (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center max-w-sm">
+            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+            </div>
+            <h3 className="text-[14px] font-semibold text-gray-800 mb-1">No warehouses configured</h3>
+            <p className="text-[12px] text-gray-500 mb-3">Add a warehouse and configure zones in Settings to begin real-time monitoring.</p>
+            <a href="/settings?tab=warehouses" className="text-[12px] font-bold text-[#1f5135] hover:underline">
+              Go to Settings → Warehouses
+            </a>
+          </div>
+        </div>
+      )}
+
+      <main className="flex-1 p-5 space-y-4 overflow-auto" style={{ display: firestoreWarehouses.length === 0 ? 'none' : undefined }}>
 
         {/* ── Stats strip ──────────────────────────────────────────────────── */}
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -89,7 +89,7 @@ function circadian(): number {
 
 export class LiveEngine {
   private uid:           string | null = null;
-  private whConfigs:     typeof DEFAULT_WH_CONFIGS = [...DEFAULT_WH_CONFIGS];
+  private whConfigs:     typeof DEFAULT_WH_CONFIGS = [];
   private readings:      Record<string, LiveSensorReading> = {};
   private alerts:        LiveAlert[] = [];
   private listeners:     Set<Listener> = new Set();
@@ -102,7 +102,8 @@ export class LiveEngine {
   lastTickAt = 0;
 
   constructor() {
-    this.initReadings();
+    // Start empty — warehouse configs are set via setWarehouseConfigs()
+    // after the user's actual warehouses are loaded from Firestore.
   }
 
   private initReadings() {
@@ -131,7 +132,7 @@ export class LiveEngine {
   }
 
   setWarehouseConfigs(configs: typeof DEFAULT_WH_CONFIGS) {
-    this.whConfigs = configs.length > 0 ? configs : [...DEFAULT_WH_CONFIGS];
+    this.whConfigs = configs;
     for (const cfg of this.whConfigs) {
       if (!this.readings[cfg.id]) {
         this.readings[cfg.id] = {
@@ -386,20 +387,9 @@ export class LiveEngine {
 
   loadPersistedReadings(firestoreReadings: Record<string, LiveSensorReading>) {
     for (const [id, r] of Object.entries(firestoreReadings)) {
-      if (this.readings[id] && r.temperature != null) {
-        this.readings[id] = {
-          ...this.readings[id],
-          temperature:  r.temperature,
-          humidity:     r.humidity,
-          moisture:     r.moisture,
-          co2:          r.co2,
-          aqi:          r.aqi,
-          capacity:     r.capacity,
-          spoilageRisk: r.spoilageRisk,
-          health:       r.health,
-          status:       r.status,
-          trend:        r.trend,
-        };
+      if (r.temperature != null) {
+        // Merge over existing entry (if any) so Firestore values always win
+        this.readings[id] = { ...(this.readings[id] ?? r), ...r };
       }
     }
   }

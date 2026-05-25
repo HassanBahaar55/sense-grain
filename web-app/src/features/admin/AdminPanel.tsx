@@ -461,7 +461,8 @@ function UserDetailModal({
 
 function AccountRequestsTab() {
   const { requests, loading } = useUserRequests();
-  const pending = requests.filter(r => r.status === 'pending');
+  const pending  = requests.filter(r => r.status === 'pending');
+  const rejected = requests.filter(r => r.status === 'rejected');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<UserRequest | null>(null);
 
@@ -531,6 +532,27 @@ function AccountRequestsTab() {
           </div>
         ))}
       </div>
+
+      {rejected.length > 0 && (
+        <div className="space-y-2 mt-4">
+          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide px-1">Recently Rejected</p>
+          {rejected.map(req => (
+            <div key={req.uid} className="flex items-center gap-3 p-3 rounded-2xl border border-gray-100 bg-gray-50 opacity-70">
+              <Avatar name={req.displayName} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[12px] font-semibold text-gray-700 truncate">{req.displayName}</p>
+                  <span className="text-[9px] font-bold bg-red-50 text-red-600 ring-1 ring-red-200 px-1.5 py-0.5 rounded-full">Rejected</span>
+                </div>
+                <p className="text-[11px] text-gray-400 truncate">{req.email}</p>
+                {req.rejectedReason && (
+                  <p className="text-[10px] text-gray-400 mt-0.5">Reason: {req.rejectedReason}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {rejectTarget && (
         <RejectAccountModal
@@ -658,23 +680,49 @@ function SensorRequestsTab() {
 
 // ─── Tab: All users ───────────────────────────────────────────────────────────
 
+const USERS_PAGE_SIZE = 20;
+
 function UsersTab() {
   const { users, loading } = useUserProfiles();
   const [filter,   setFilter]   = useState<ApprovalStatus | 'all'>('all');
+  const [search,   setSearch]   = useState('');
+  const [visible,  setVisible]  = useState(USERS_PAGE_SIZE);
   const [selected, setSelected] = useState<UserProfile | null>(null);
 
-  const filtered = filter === 'all' ? users : users.filter(u => u.approvalStatus === filter);
+  const q = search.toLowerCase();
+  const filtered = (filter === 'all' ? users : users.filter(u => u.approvalStatus === filter))
+    .filter(u => !q || u.displayName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+
+  const displayed = filtered.slice(0, visible);
 
   if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   return (
     <>
       <div className="space-y-3">
-        <div className="flex items-center gap-2 pb-1 flex-wrap">
+        {/* Search */}
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input
+            type="text"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setVisible(USERS_PAGE_SIZE); }}
+            className="w-full h-9 pl-9 pr-8 rounded-xl border border-gray-200 bg-gray-50 text-[12px] text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 transition-colors"
+          />
+          {search && (
+            <button onClick={() => { setSearch(''); setVisible(USERS_PAGE_SIZE); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          )}
+        </div>
+
+        {/* Filter pills */}
+        <div className="flex items-center gap-2 flex-wrap">
           {(['all', 'approved', 'pending', 'rejected'] as const).map(f => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => { setFilter(f); setVisible(USERS_PAGE_SIZE); }}
               className={cn(
                 'h-7 px-3 rounded-xl text-[11px] font-semibold transition-colors',
                 filter === f ? 'bg-[#1f5135] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
@@ -685,11 +733,15 @@ function UsersTab() {
           ))}
         </div>
 
-        {filtered.length === 0 && (
-          <p className="text-center text-[12px] text-gray-400 py-8">No users in this category.</p>
+        {filtered.length > 0 && (
+          <p className="text-[10px] text-gray-400">Showing {Math.min(visible, filtered.length)} of {filtered.length} user{filtered.length !== 1 ? 's' : ''}</p>
         )}
 
-        {filtered.map(u => (
+        {filtered.length === 0 && (
+          <p className="text-center text-[12px] text-gray-400 py-8">{search ? 'No users match your search.' : 'No users in this category.'}</p>
+        )}
+
+        {displayed.map(u => (
           <div key={u.uid} className="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
             <Avatar name={u.displayName} />
             <div className="flex-1 min-w-0">
@@ -708,6 +760,15 @@ function UsersTab() {
             </button>
           </div>
         ))}
+
+        {visible < filtered.length && (
+          <button
+            onClick={() => setVisible(v => v + USERS_PAGE_SIZE)}
+            className="w-full h-8 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Load more ({filtered.length - visible} remaining)
+          </button>
+        )}
       </div>
 
       {selected && (

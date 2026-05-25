@@ -17,6 +17,7 @@ const forecastSeries = [
 import { type ParamForecastCard } from '@/lib/dataEngine';
 import { useFirestorePredictions as usePredictionsData, useSensorHistory } from '@/lib/useFirestoreData';
 import { useLiveData } from '@/contexts/LiveDataContext';
+import { useWarehouses } from '@/lib/storageManagement';
 import { cn } from '@/lib/utils';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -548,20 +549,44 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const TIMEFRAMES: Timeframe[] = ['24H', '3D', '7D', '14D', '30D'];
-const WAREHOUSES = ['All Warehouses', 'WH-A', 'WH-B', 'WH-C', 'WH-D', 'WH-E', 'WH-F', 'WH-G'];
 
 export default function PredictionsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('params');
   const [timeframe, setTimeframe] = useState<Timeframe>('7D');
   const [warehouse, setWarehouse] = useState('All Warehouses');
 
+  const { readings } = useLiveData();
+  const { warehouses: managedWarehouses } = useWarehouses();
+  const WAREHOUSES = ['All Warehouses', ...managedWarehouses.filter(w => w.status === 'active').map(w => w.id)];
+  const hasData = Object.keys(readings).length > 0;
+
   const selectCls = 'h-8 pl-2.5 pr-7 rounded-lg border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-[#1f5135]/20 transition-colors appearance-none cursor-pointer';
+
+  if (!hasData) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
+        <DashboardHeader
+          title="Predictions"
+          subtitle="Trend-based projections for environmental parameters and spoilage risk"
+        />
+        <main className="flex-1 p-6 flex items-center justify-center">
+          <div className="text-center max-w-sm">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+            </div>
+            <h3 className="text-base font-semibold text-gray-800 mb-1">No data to forecast</h3>
+            <p className="text-sm text-gray-500">Readings will appear once sensors start reporting. Add a warehouse and sensors in Settings to get started.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden w-full">
       <DashboardHeader
         title="Predictions"
-        subtitle="Sensor-based forecasts for environmental parameters and spoilage risk"
+        subtitle="Trend-based projections for environmental parameters and spoilage risk"
       />
 
       <main className="flex-1 p-6 space-y-5 overflow-y-auto overflow-x-hidden">

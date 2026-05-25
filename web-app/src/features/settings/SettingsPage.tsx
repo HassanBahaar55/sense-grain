@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
 import { cn } from '@/lib/utils';
 import { useLiveData } from '@/contexts/LiveDataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   useWarehouses, useZones, useSensorsForWarehouse,
   addWarehouse, updateWarehouse, deleteWarehouse,
@@ -305,20 +306,13 @@ function TwoFAModal({ enabled, onClose, onToggle }: { enabled: boolean; onClose:
         ) : (
           <div className="p-5 space-y-4">
             {!enabled && (
-              <>
-                <p className="text-[11px] text-gray-500 leading-relaxed">Scan this QR code with Google Authenticator or Authy, then enter the 6-digit code below.</p>
-                {/* Simulated QR code */}
-                <div className="flex justify-center">
-                  <div className="w-32 h-32 bg-gray-900 rounded-xl p-3 grid grid-cols-7 gap-[2px]">
-                    {Array.from({ length: 49 }).map((_, i) => {
-                      const on = [0,1,2,3,4,5,6,7,14,21,28,35,42,43,44,45,46,47,48,8,13,22,27,36,41,
-                                  9,11,13,24,26,37,39,16,17,18,30,31,32].includes(i);
-                      return <div key={i} className={cn('rounded-[1px]', on ? 'bg-white' : 'bg-gray-900')} />;
-                    })}
-                  </div>
+              <div className="flex flex-col items-center gap-2 py-3">
+                <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <svg className="w-6 h-6 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="8" height="8" rx="1" /><rect x="14" y="2" width="8" height="8" rx="1" /><rect x="2" y="14" width="8" height="8" rx="1" /><path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" /></svg>
                 </div>
-                <p className="text-[10px] text-center text-gray-400 font-mono">Secret: JBSW Y3DP EHPK 3PXP</p>
-              </>
+                <p className="text-[12px] font-semibold text-gray-700">Two-factor authentication</p>
+                <p className="text-[11px] text-gray-400 text-center">Coming soon — TOTP-based 2FA will be available in a future update.</p>
+              </div>
             )}
             {enabled && <p className="text-[11px] text-gray-500 leading-relaxed">Enter your current authenticator code to confirm disabling 2FA.</p>}
             <div>
@@ -347,29 +341,11 @@ function TwoFAModal({ enabled, onClose, onToggle }: { enabled: boolean; onClose:
 
 // ─── Active Sessions Modal ────────────────────────────────────────────────────
 
-const MOCK_SESSIONS = [
-  { id: 'cur', device: 'Chrome · Windows 10', location: 'Karachi, PK', time: 'Active now', icon: '💻', current: true },
-  { id: 's2',  device: 'Safari · iPhone 15',  location: 'Lahore, PK',  time: 'Yesterday, 11:30 PM', icon: '📱', current: false },
-  { id: 's3',  device: 'Firefox · MacBook',   location: 'Islamabad, PK', time: '3 days ago',        icon: '💻', current: false },
-];
-
 function ActiveSessionsModal({ onClose }: { onClose: () => void }) {
-  const [sessions, setSessions] = useState(MOCK_SESSIONS);
-  const [terminating, setTerminating] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  const terminate = (id: string) => {
-    setTerminating(id);
-    setTimeout(() => {
-      setSessions((s) => s.filter((x) => x.id !== id));
-      setTerminating(null);
-    }, 900);
-  };
-
-  const terminateAll = () => {
-    setTerminating('all');
-    setTimeout(() => { setSessions((s) => s.filter((x) => x.current)); setTerminating(null); setDone(true); }, 1200);
-  };
+  const { user } = useAuth();
+  const signedInAt = user?.metadata.lastSignInTime
+    ? new Date(user.metadata.lastSignInTime).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+    : 'Unknown';
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -381,36 +357,18 @@ function ActiveSessionsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="p-5 space-y-3">
-          {done && <p className="text-[11px] text-green-600 font-semibold text-center">All other sessions terminated.</p>}
-          {sessions.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 ring-1 ring-black/[0.04]">
-              <span className="text-[20px]">{s.icon}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-[12px] font-semibold text-gray-800 truncate">{s.device}</p>
-                  {s.current && <span className="text-[9px] font-bold bg-green-50 text-green-700 ring-1 ring-green-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Current</span>}
-                </div>
-                <p className="text-[10px] text-gray-400">{s.location} · {s.time}</p>
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 ring-1 ring-black/[0.04]">
+            <span className="text-[20px]">💻</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-[12px] font-semibold text-gray-800 truncate">Current browser</p>
+                <span className="text-[9px] font-bold bg-green-50 text-green-700 ring-1 ring-green-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Current</span>
               </div>
-              {!s.current && (
-                <button
-                  onClick={() => terminate(s.id)}
-                  disabled={terminating === s.id}
-                  className="flex-shrink-0 h-7 px-2.5 rounded-lg border border-red-200 text-[10px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-all"
-                >
-                  {terminating === s.id ? '...' : 'End'}
-                </button>
-              )}
+              <p className="text-[10px] text-gray-400">Signed in {signedInAt}</p>
             </div>
-          ))}
-          <div className="flex gap-2 pt-1">
-            {sessions.filter((s) => !s.current).length > 0 && (
-              <button onClick={terminateAll} disabled={terminating === 'all'} className="flex-1 h-8 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 transition-all">
-                {terminating === 'all' ? 'Terminating…' : 'End All Other Sessions'}
-              </button>
-            )}
-            <button onClick={onClose} className="h-8 px-4 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 transition-all">Close</button>
           </div>
+          <p className="text-[10px] text-gray-400 text-center">Only your current session is shown. Multi-device session management coming soon.</p>
+          <button onClick={onClose} className="w-full h-8 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 transition-all">Close</button>
         </div>
       </div>
     </ModalOverlay>
@@ -419,16 +377,12 @@ function ActiveSessionsModal({ onClose }: { onClose: () => void }) {
 
 // ─── Login History Modal ──────────────────────────────────────────────────────
 
-const MOCK_HISTORY = [
-  { id: 1, device: 'Chrome · Windows 10', location: 'Karachi, PK',   time: 'Today, 09:14 AM',       status: 'success' },
-  { id: 2, device: 'Safari · iPhone 15',  location: 'Lahore, PK',    time: 'Yesterday, 11:30 PM',   status: 'success' },
-  { id: 3, device: 'Chrome · Windows 10', location: 'Karachi, PK',   time: 'May 20, 08:45 AM',      status: 'success' },
-  { id: 4, device: 'Chrome · Windows 10', location: 'Karachi, PK',   time: 'May 18, 03:21 PM',      status: 'failed'  },
-  { id: 5, device: 'Firefox · MacBook',   location: 'Islamabad, PK', time: 'May 17, 10:00 AM',      status: 'success' },
-  { id: 6, device: 'Chrome · Windows 10', location: 'Karachi, PK',   time: 'May 15, 09:00 AM',      status: 'success' },
-];
-
 function LoginHistoryModal({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth();
+  const lastSignIn = user?.metadata.lastSignInTime
+    ? new Date(user.metadata.lastSignInTime).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+    : null;
+
   return (
     <ModalOverlay onClose={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/[0.08] overflow-hidden max-h-[80vh] flex flex-col">
@@ -439,19 +393,19 @@ function LoginHistoryModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="p-5 space-y-2 overflow-y-auto">
-          {MOCK_HISTORY.map((h) => (
-            <div key={h.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 ring-1 ring-black/[0.04]">
-              <div className={cn('w-2 h-2 rounded-full flex-shrink-0', h.status === 'success' ? 'bg-green-500' : 'bg-red-500')} />
+          {lastSignIn ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 ring-1 ring-black/[0.04]">
+              <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500" />
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-semibold text-gray-800 truncate">{h.device}</p>
-                <p className="text-[10px] text-gray-400">{h.location} · {h.time}</p>
+                <p className="text-[11px] font-semibold text-gray-800">Signed in</p>
+                <p className="text-[10px] text-gray-400">{lastSignIn}</p>
               </div>
-              <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0',
-                h.status === 'success' ? 'bg-green-50 text-green-700 ring-1 ring-green-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200')}>
-                {h.status === 'success' ? 'Success' : 'Failed'}
-              </span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 bg-green-50 text-green-700 ring-1 ring-green-200">Success</span>
             </div>
-          ))}
+          ) : (
+            <p className="text-[11px] text-gray-400 text-center py-4">No login history available.</p>
+          )}
+          <p className="text-[10px] text-gray-400 text-center pt-1">Full login history tracking coming soon.</p>
         </div>
         <div className="px-5 pb-5 flex-shrink-0">
           <button onClick={onClose} className="w-full h-8 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 transition-all">Close</button>
@@ -660,8 +614,21 @@ const DEFAULT_PROFILE: Profile = { name: 'Admin User', email: 'admin@sensegrain.
 // ─── Tab: General ─────────────────────────────────────────────────────────────
 
 function GeneralTab() {
+  const { user } = useAuth();
   const [profile, setProfile] = useState<Profile>(() => lsGet(PROFILE_KEY, DEFAULT_PROFILE));
   const [prefs, setPrefs] = useState<Preferences>(() => lsGet(PREF_KEY, DEFAULT_PREFS));
+
+  // Seed profile from Firebase Auth on first login (no saved profile yet)
+  useEffect(() => {
+    if (!user) return;
+    const saved = lsGet(PROFILE_KEY, null as Profile | null);
+    if (!saved) {
+      const initials = (user.displayName?.[0] ?? user.email?.[0] ?? 'U').toUpperCase();
+      const seeded = { name: user.displayName ?? 'User', email: user.email ?? '', department: 'Operations', initials };
+      setProfile(seeded);
+      lsSet(PROFILE_KEY, seeded);
+    }
+  }, [user]);
   const [appToggles, setAppToggles] = useState<Record<string, boolean>>(
     () => lsGet(TOGGLES_KEY, Object.fromEntries(APP_TOGGLES.map((t) => [t.id, t.on])))
   );
@@ -712,8 +679,12 @@ function GeneralTab() {
                 <span className="text-[15px] font-bold text-gray-900">{profile.name}</span>
                 <span className="text-[9px] font-bold text-[#1f5135] bg-green-50 px-2 py-0.5 rounded-full ring-1 ring-green-200">Super Admin</span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-0.5">{profile.email} · {profile.department}</p>
-              <p className="text-[10px] text-gray-300 mt-0.5">Last login: Today at 09:14 AM</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{user?.email ?? profile.email} · {profile.department}</p>
+              <p className="text-[10px] text-gray-300 mt-0.5">
+                {user?.metadata.lastSignInTime
+                  ? `Last login: ${new Date(user.metadata.lastSignInTime).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}`
+                  : 'Last login: —'}
+              </p>
             </div>
             <button
               onClick={() => setShowEditProfile(true)}
