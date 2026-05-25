@@ -1202,14 +1202,17 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
   const addZoneEntry       = () => setZones(z => [...z, { name: `Zone ${z.length + 1}`, pendingSensors: [] }]);
   const removeZone         = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
   const updateZoneName     = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { ...z2, name: v } : z2));
-  const addSensorToZone    = (zi: number) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: [...z2.pendingSensors, { name: '', type: 'multi' as SensorType }] } : z2));
+  const SENSOR_LABEL: Record<SensorType, string> = {
+    temperature: 'Temperature Sensor', humidity: 'Humidity Sensor',
+    moisture: 'Moisture Sensor', co2: 'CO₂ Sensor', aqi: 'AQI Sensor', multi: 'Multi Sensor',
+  };
+
+  const addSensorToZone      = (zi: number) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: [...z2.pendingSensors, { name: '', type: 'temperature' as SensorType }] } : z2));
   const removeSensorFromZone = (zi: number, si: number) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.filter((_, i2) => i2 !== si) } : z2));
-  const updateSensorName   = (zi: number, si: number, v: string) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.map((s, i2) => i2 === si ? { ...s, name: v } : s) } : z2));
-  const updateSensorType   = (zi: number, si: number, v: SensorType) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.map((s, i2) => i2 === si ? { ...s, type: v } : s) } : z2));
+  const updateSensorType     = (zi: number, si: number, v: SensorType) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.map((s, i2) => i2 === si ? { ...s, type: v } : s) } : z2));
 
   const canGoStep2 = whName.trim().length > 0;
-  const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0) &&
-    zones.every(z => z.pendingSensors.every(s => s.name.trim().length > 0));
+  const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0);
 
   const totalSensors = zones.reduce((n, z) => n + z.pendingSensors.length, 0);
 
@@ -1225,7 +1228,7 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
         status:   whStatus,
         zones:    zones.filter(z => z.name.trim()).map(z => ({
           name:    z.name.trim(),
-          sensors: z.pendingSensors.filter(s => s.name.trim()).map(s => ({ name: s.name.trim(), type: s.type })),
+          sensors: z.pendingSensors.map(s => ({ name: SENSOR_LABEL[s.type], type: s.type })),
         })),
       });
       setSubmitted(true);
@@ -1363,14 +1366,13 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
                 {/* Sensors for this zone */}
                 {z.pendingSensors.map((s, si) => (
                   <div key={si} className="flex items-center gap-1.5 pl-7">
-                    <input className={cn(INPUT_CLS, 'flex-1 bg-white text-[11px]')} value={s.name} onChange={e => updateSensorName(zi, si, e.target.value)} placeholder={`Sensor name`} />
-                    <select className={cn(SELECT_CLS, 'w-28 bg-white text-[11px]')} value={s.type} onChange={e => updateSensorType(zi, si, e.target.value as SensorType)}>
-                      <option value="multi">Multi</option>
-                      <option value="temperature">Temp</option>
+                    <select className={cn(SELECT_CLS, 'flex-1 bg-white text-[11px]')} value={s.type} onChange={e => updateSensorType(zi, si, e.target.value as SensorType)}>
+                      <option value="temperature">Temperature</option>
                       <option value="humidity">Humidity</option>
                       <option value="moisture">Moisture</option>
                       <option value="co2">CO₂</option>
                       <option value="aqi">AQI</option>
+                      <option value="multi">Multi (all types)</option>
                     </select>
                     <button onClick={() => removeSensorFromZone(zi, si)} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
                       <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
