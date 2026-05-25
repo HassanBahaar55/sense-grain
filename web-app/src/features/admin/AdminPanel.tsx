@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils';
 import {
   subscribeToResourceRequests, fetchUserDetail,
   approveResourceRequest, rejectResourceRequest,
+  approveWarehouseRequest, rejectWarehouseRequest,
+  approveZoneRequest, rejectZoneRequest,
   adminDeleteSensor, adminDeleteWarehouse, adminDeleteUser, adminToggleSensor,
   type ResourceRequest, type AdminUserDetail,
 } from '@/lib/adminService';
@@ -565,48 +567,113 @@ function AccountRequestsTab() {
   );
 }
 
-// ─── Tab: Sensor requests ─────────────────────────────────────────────────────
+// ─── Tab: All resource requests (warehouses, zones, sensors) ─────────────────
 
-function SensorRequestsTab() {
+type ReqTypeFilter = 'all' | 'warehouse_creation' | 'zone_creation' | 'sensor_activation';
+
+function ResourceRequestsTab() {
   const { requests, loading } = useResourceRequests();
-  const [filter,       setFilter]       = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [typeFilter,   setTypeFilter]   = useState<ReqTypeFilter>('all');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<ResourceRequest | null>(null);
 
-  const filtered = filter === 'all' ? requests : requests.filter(r => r.status === filter);
+  const filtered = requests
+    .filter(r => statusFilter === 'all' || r.status === statusFilter)
+    .filter(r => typeFilter === 'all' || r.type === typeFilter);
 
-  const approve = async (req: ResourceRequest) => {
+  const handleApprove = async (req: ResourceRequest) => {
     setProcessingId(req.id);
-    try { await approveResourceRequest(req.id, req.uid, req.sensorId); }
-    finally { setProcessingId(null); }
+    try {
+      if (req.type === 'sensor_activation') {
+        await approveResourceRequest(req.id, req.uid, req.sensorId ?? '');
+      } else if (req.type === 'warehouse_creation') {
+        await approveWarehouseRequest(req);
+      } else if (req.type === 'zone_creation') {
+        await approveZoneRequest(req);
+      }
+    } finally { setProcessingId(null); }
   };
 
-  const reject = async (req: ResourceRequest, reason: string) => {
+  const handleReject = async (req: ResourceRequest, reason: string) => {
     setProcessingId(req.id);
-    try { await rejectResourceRequest(req.id, req.uid, req.sensorId, reason); }
-    finally { setProcessingId(null); setRejectTarget(null); }
+    try {
+      if (req.type === 'sensor_activation') {
+        await rejectResourceRequest(req.id, req.uid, req.sensorId ?? '', reason);
+      } else if (req.type === 'warehouse_creation') {
+        await rejectWarehouseRequest(req, reason);
+      } else if (req.type === 'zone_creation') {
+        await rejectZoneRequest(req, reason);
+      }
+    } finally { setProcessingId(null); setRejectTarget(null); }
+  };
+
+  const typeLabel = (type: ResourceRequest['type']) => {
+    if (type === 'warehouse_creation') return 'Warehouse';
+    if (type === 'zone_creation')      return 'Zone';
+    return 'Sensor';
+  };
+
+  const typeIcon = (type: ResourceRequest['type']) => {
+    if (type === 'warehouse_creation') return (
+      <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    );
+    if (type === 'zone_creation') return (
+      <svg className="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+    );
+    return (
+      <svg className="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.071 4.929l-1.414 1.414M5.343 18.657l-1.414 1.414M4.929 4.929l1.414 1.414M18.657 18.657l1.414-1.414M21 12h-2M5 12H3M12 19v2M12 3V1"/></svg>
+    );
+  };
+
+  const reqTitle = (req: ResourceRequest) => {
+    if (req.type === 'warehouse_creation') return req.warehouseName ?? 'Unnamed Warehouse';
+    if (req.type === 'zone_creation')      return req.zoneName ?? 'Unnamed Zone';
+    return req.sensorName ?? 'Unnamed Sensor';
+  };
+
+  const reqMeta = (req: ResourceRequest) => {
+    if (req.type === 'warehouse_creation') {
+      return `${req.warehouseCapacity ?? '?'} tons · ${req.warehouseLocation || 'No location'}`;
+    }
+    if (req.type === 'zone_creation') {
+      return `Warehouse: ${req.warehouseName || req.warehouseId || '?'}`;
+    }
+    return `${req.sensorType} · Zone: ${req.zoneId ?? '?'}`;
   };
 
   if (loading) return <div className="flex justify-center py-12"><Spinner /></div>;
 
   return (
     <>
-      <div className="flex items-center gap-2 pb-3 flex-wrap">
+      {/* Status filter */}
+      <div className="flex items-center gap-2 pb-2 flex-wrap">
         {(['pending', 'approved', 'rejected', 'all'] as const).map(f => {
           const count = f === 'all' ? requests.length : requests.filter(r => r.status === f).length;
           return (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={cn(
-                'h-7 px-3 rounded-xl text-[11px] font-semibold transition-colors',
-                filter === f ? 'bg-[#1f5135] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-              )}
-            >
+            <button key={f} onClick={() => setStatusFilter(f)}
+              className={cn('h-7 px-3 rounded-xl text-[11px] font-semibold transition-colors',
+                statusFilter === f ? 'bg-[#1f5135] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
               {f.charAt(0).toUpperCase() + f.slice(1)} ({count})
             </button>
           );
         })}
+      </div>
+
+      {/* Type filter */}
+      <div className="flex items-center gap-2 pb-3 flex-wrap">
+        {([
+          { val: 'all',                 label: 'All Types' },
+          { val: 'warehouse_creation',  label: 'Warehouses' },
+          { val: 'zone_creation',       label: 'Zones' },
+          { val: 'sensor_activation',   label: 'Sensors' },
+        ] as const).map(({ val, label }) => (
+          <button key={val} onClick={() => setTypeFilter(val)}
+            className={cn('h-6 px-2.5 rounded-lg text-[10px] font-semibold transition-colors',
+              typeFilter === val ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200')}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {filtered.length === 0 ? (
@@ -614,29 +681,27 @@ function SensorRequestsTab() {
           <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3">
             <svg className="w-6 h-6 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
-          <p className="text-[13px] font-semibold text-gray-700">No sensor requests</p>
-          <p className="text-[11px] text-gray-400 mt-1">No {filter === 'all' ? '' : filter} sensor activation requests.</p>
+          <p className="text-[13px] font-semibold text-gray-700">No requests</p>
+          <p className="text-[11px] text-gray-400 mt-1">No {statusFilter === 'all' ? '' : statusFilter} resource requests.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(req => (
             <div key={req.id} className="p-4 rounded-2xl border border-gray-100 bg-white hover:bg-gray-50/50 transition-colors">
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.071 4.929l-1.414 1.414M5.343 18.657l-1.414 1.414M4.929 4.929l1.414 1.414M18.657 18.657l1.414-1.414M21 12h-2M5 12H3M12 19v2M12 3V1"/></svg>
+                <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                  {typeIcon(req.type)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[13px] font-bold text-gray-900">{req.sensorName}</p>
-                    <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{req.sensorType}</span>
+                    <p className="text-[13px] font-bold text-gray-900">{reqTitle(req)}</p>
+                    <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{typeLabel(req.type)}</span>
                     <ReqStatusBadge status={req.status} />
                   </div>
                   <p className="text-[11px] text-gray-600 mt-0.5">
                     <span className="font-medium">{req.userName}</span> · {req.userEmail}
                   </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">
-                    Warehouse: <code className="text-gray-600">{req.warehouseId}</code> · Zone: <code className="text-gray-600">{req.zoneId}</code>
-                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{reqMeta(req)}</p>
                   <p className="text-[10px] text-gray-400 mt-0.5">Submitted: {fmtShort(req.createdAt)}</p>
                   {req.rejectedReason && (
                     <p className="text-[10px] text-red-500 mt-1">Reason: {req.rejectedReason}</p>
@@ -644,18 +709,12 @@ function SensorRequestsTab() {
                 </div>
                 {req.status === 'pending' && (
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => setRejectTarget(req)}
-                      disabled={processingId === req.id}
-                      className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
+                    <button onClick={() => setRejectTarget(req)} disabled={processingId === req.id}
+                      className="h-8 px-3 rounded-xl border border-red-200 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
                       Reject
                     </button>
-                    <button
-                      onClick={() => approve(req)}
-                      disabled={processingId === req.id}
-                      className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5"
-                    >
+                    <button onClick={() => handleApprove(req)} disabled={processingId === req.id}
+                      className="h-8 px-3 rounded-xl bg-emerald-600 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
                       {processingId === req.id ? <Spinner /> : null}
                       Approve
                     </button>
@@ -670,7 +729,7 @@ function SensorRequestsTab() {
       {rejectTarget && (
         <RejectSensorModal
           req={rejectTarget}
-          onConfirm={(reason) => reject(rejectTarget, reason)}
+          onConfirm={(reason) => handleReject(rejectTarget, reason)}
           onClose={() => setRejectTarget(null)}
         />
       )}
@@ -784,20 +843,19 @@ function UsersTab() {
 // ─── Tab: Overview ────────────────────────────────────────────────────────────
 
 function OverviewTab() {
-  const { requests: accountReqs, loading: aLoading } = useUserRequests();
-  const { users,                  loading: uLoading } = useUserProfiles();
-  const { requests: sensorReqs,   loading: sLoading } = useResourceRequests();
+  const { requests: accountReqs,  loading: aLoading } = useUserRequests();
+  const { users,                   loading: uLoading } = useUserProfiles();
+  const { requests: resourceReqs,  loading: sLoading } = useResourceRequests();
 
-  const pendingAccounts = accountReqs.filter(r => r.status === 'pending').length;
-  const pendingSensors  = sensorReqs.filter(r => r.status === 'pending').length;
+  const pendingAccounts  = accountReqs.filter(r => r.status === 'pending').length;
+  const pendingResources = resourceReqs.filter(r => r.status === 'pending').length;
   const approved = users.filter(u => u.approvalStatus === 'approved').length;
-  const rejected = users.filter(u => u.approvalStatus === 'rejected').length;
 
   const stats = [
-    { label: 'Total Users',       value: users.length,   color: 'text-blue-600',    bg: 'bg-blue-50'    },
-    { label: 'Approved',          value: approved,        color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Pending Accounts',  value: pendingAccounts, color: 'text-amber-600',   bg: 'bg-amber-50'   },
-    { label: 'Pending Sensors',   value: pendingSensors,  color: 'text-purple-600',  bg: 'bg-purple-50'  },
+    { label: 'Total Users',        value: users.length,    color: 'text-blue-600',    bg: 'bg-blue-50'    },
+    { label: 'Approved',           value: approved,         color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Pending Accounts',   value: pendingAccounts,  color: 'text-amber-600',   bg: 'bg-amber-50'   },
+    { label: 'Pending Resources',  value: pendingResources, color: 'text-purple-600',  bg: 'bg-purple-50'  },
   ];
 
   if (aLoading || uLoading || sLoading) return <div className="flex justify-center py-12"><Spinner /></div>;
@@ -829,12 +887,12 @@ function OverviewTab() {
         </div>
       </div>
 
-      {sensorReqs.filter(r => r.status === 'pending').length > 0 && (
+      {pendingResources > 0 && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
           <h4 className="text-[12px] font-bold text-amber-800 mb-1">
-            {pendingSensors} sensor {pendingSensors === 1 ? 'request' : 'requests'} awaiting approval
+            {pendingResources} resource {pendingResources === 1 ? 'request' : 'requests'} awaiting approval
           </h4>
-          <p className="text-[11px] text-amber-600">Go to the &ldquo;Sensor Requests&rdquo; tab to review them.</p>
+          <p className="text-[11px] text-amber-600">Go to the &ldquo;Resource Requests&rdquo; tab to review them.</p>
         </div>
       )}
     </div>
@@ -844,10 +902,10 @@ function OverviewTab() {
 // ─── AdminPanel ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'overview',    label: 'Overview'          },
-  { id: 'accounts',   label: 'Account Requests'  },
-  { id: 'sensors',    label: 'Sensor Requests'   },
-  { id: 'users',      label: 'All Users'         },
+  { id: 'overview',   label: 'Overview'           },
+  { id: 'accounts',  label: 'Account Requests'   },
+  { id: 'resources', label: 'Resource Requests'  },
+  { id: 'users',     label: 'All Users'          },
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
@@ -857,10 +915,10 @@ export default function AdminPanel() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
 
-  const { requests: accountReqs } = useUserRequests();
-  const { requests: sensorReqs  } = useResourceRequests();
-  const pendingAccounts = accountReqs.filter(r => r.status === 'pending').length;
-  const pendingSensors  = sensorReqs.filter(r  => r.status === 'pending').length;
+  const { requests: accountReqs  } = useUserRequests();
+  const { requests: resourceReqs } = useResourceRequests();
+  const pendingAccounts  = accountReqs.filter(r => r.status === 'pending').length;
+  const pendingResources = resourceReqs.filter(r => r.status === 'pending').length;
 
   useEffect(() => {
     if (!loading && !isAdmin) router.replace('/dashboard');
@@ -876,8 +934,8 @@ export default function AdminPanel() {
         <Card className="p-4">
           <div className="flex items-center gap-1 border-b border-gray-100 pb-3 mb-4 flex-wrap">
             {TABS.map(tab => {
-              const badge = tab.id === 'accounts' ? pendingAccounts
-                          : tab.id === 'sensors'  ? pendingSensors
+              const badge = tab.id === 'accounts'  ? pendingAccounts
+                          : tab.id === 'resources' ? pendingResources
                           : 0;
               return (
                 <button
@@ -899,10 +957,10 @@ export default function AdminPanel() {
             })}
           </div>
 
-          {activeTab === 'overview'  && <OverviewTab />}
-          {activeTab === 'accounts'  && <AccountRequestsTab />}
-          {activeTab === 'sensors'   && <SensorRequestsTab />}
-          {activeTab === 'users'     && <UsersTab />}
+          {activeTab === 'overview'   && <OverviewTab />}
+          {activeTab === 'accounts'   && <AccountRequestsTab />}
+          {activeTab === 'resources'  && <ResourceRequestsTab />}
+          {activeTab === 'users'      && <UsersTab />}
         </Card>
       </div>
     </div>

@@ -19,7 +19,8 @@ export const col = {
   warehouses:       (uid: string) => `accounts/${uid}/warehouses`,
   zones:            (uid: string) => `accounts/${uid}/zones`,
   sensors:          (uid: string) => `accounts/${uid}/sensors`,
-  warehouseReadings:(uid: string) => `accounts/${uid}/warehouseReadings`,
+  sensorReadings:   (uid: string) => `accounts/${uid}/sensorReadings`,   // per-sensor live readings
+  warehouseReadings:(uid: string) => `accounts/${uid}/warehouseReadings`, // computed cache (aggregated)
   alerts:           (uid: string) => `accounts/${uid}/alerts`,
   alertHistory:     (uid: string) => `accounts/${uid}/alertHistory`,
   sensorHistory:    (uid: string) => `accounts/${uid}/sensorHistory`,
@@ -57,16 +58,26 @@ export interface ResourceRequest {
   uid:             string;
   userEmail:       string;
   userName:        string;
-  type:            'sensor_activation';
+  type:            'sensor_activation' | 'warehouse_creation' | 'zone_creation';
   status:          'pending' | 'approved' | 'rejected';
-  sensorId:        string;
-  sensorName:      string;
-  sensorType:      string;
-  zoneId:          string;
-  warehouseId:     string;
   createdAt:       number;
   reviewedAt?:     number;
   rejectedReason?: string;
+  // sensor_activation fields
+  sensorId?:        string;
+  sensorName?:      string;
+  sensorType?:      string;
+  zoneId?:          string;
+  warehouseId?:     string;
+  // warehouse_creation fields
+  warehouseName?:     string;
+  warehouseCapacity?: number;
+  warehouseLocation?: string;
+  warehouseStatus?:   string;
+  warehouseDocId?:    string; // set by admin on approval
+  // zone_creation fields
+  zoneName?:      string;
+  zoneDocId?:     string;     // set by admin on approval
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

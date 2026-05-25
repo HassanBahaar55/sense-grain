@@ -6,7 +6,7 @@
  */
 
 import {
-  getFirestore, collection, doc, getDocs, deleteDoc, updateDoc,
+  getFirestore, collection, doc, addDoc, getDocs, deleteDoc, updateDoc,
   query, where, onSnapshot, writeBatch, orderBy,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -56,16 +56,26 @@ export interface ResourceRequest {
   uid:             string;
   userEmail:       string;
   userName:        string;
-  type:            'sensor_activation';
+  type:            'sensor_activation' | 'warehouse_creation' | 'zone_creation';
   status:          'pending' | 'approved' | 'rejected';
-  sensorId:        string;
-  sensorName:      string;
-  sensorType:      string;
-  zoneId:          string;
-  warehouseId:     string;
   createdAt:       number;
   reviewedAt?:     number;
   rejectedReason?: string;
+  // sensor_activation
+  sensorId?:       string;
+  sensorName?:     string;
+  sensorType?:     string;
+  zoneId?:         string;
+  warehouseId?:    string;
+  // warehouse_creation
+  warehouseName?:     string;
+  warehouseCapacity?: number;
+  warehouseLocation?: string;
+  warehouseDocId?:    string;
+  // zone_creation
+  zoneName?:      string;
+  zoneDocId?:     string;
+  warehouseName_?: string; // same field, aliased for zone context
 }
 
 // ─── Read user detail ─────────────────────────────────────────────────────────
@@ -117,6 +127,45 @@ export async function rejectResourceRequest(
     }),
     updateDoc(doc(db, col.sensors(uid), sensorId), { status: 'rejected' }),
   ]);
+}
+
+export async function approveWarehouseRequest(req: ResourceRequest): Promise<void> {
+  const now   = Date.now();
+  const whRef = await addDoc(collection(db, col.warehouses(req.uid)), {
+    name:      req.warehouseName ?? 'Unnamed Warehouse',
+    capacity:  req.warehouseCapacity ?? 0,
+    location:  req.warehouseLocation ?? '',
+    status:    'active',
+    createdAt: now,
+  });
+  await updateDoc(doc(db, 'resourceRequests', req.id), {
+    status: 'approved', reviewedAt: now, warehouseDocId: whRef.id,
+  });
+}
+
+export async function rejectWarehouseRequest(req: ResourceRequest, reason: string): Promise<void> {
+  await updateDoc(doc(db, 'resourceRequests', req.id), {
+    status: 'rejected', rejectedReason: reason, reviewedAt: Date.now(),
+  });
+}
+
+export async function approveZoneRequest(req: ResourceRequest): Promise<void> {
+  const now   = Date.now();
+  const zRef  = await addDoc(collection(db, col.zones(req.uid)), {
+    warehouseId: req.warehouseId ?? '',
+    name:        req.zoneName ?? 'Unnamed Zone',
+    status:      'active',
+    createdAt:   now,
+  });
+  await updateDoc(doc(db, 'resourceRequests', req.id), {
+    status: 'approved', reviewedAt: now, zoneDocId: zRef.id,
+  });
+}
+
+export async function rejectZoneRequest(req: ResourceRequest, reason: string): Promise<void> {
+  await updateDoc(doc(db, 'resourceRequests', req.id), {
+    status: 'rejected', rejectedReason: reason, reviewedAt: Date.now(),
+  });
 }
 
 // ─── Delete helpers ───────────────────────────────────────────────────────────
@@ -180,7 +229,8 @@ export async function adminDeleteWarehouse(uid: string, warehouseId: string): Pr
 export async function adminDeleteUser(uid: string): Promise<void> {
   const subcols = [
     col.warehouses(uid), col.zones(uid), col.sensors(uid),
-    col.warehouseReadings(uid), col.alerts(uid), col.alertHistory(uid),
+    col.sensorReadings(uid), col.warehouseReadings(uid),
+    col.alerts(uid), col.alertHistory(uid),
     col.sensorHistory(uid), col.reports(uid), col.reportsMeta(uid),
     col.meta(uid),
   ];

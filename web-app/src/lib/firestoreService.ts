@@ -109,7 +109,7 @@ export function subscribeToWarehouses(uid: string, cb: WarehousesCallback): Unsu
   });
 }
 
-/** Subscribe to this user's live warehouse readings. */
+/** Subscribe to this user's live warehouse readings (computed cache from Cloud Functions). */
 export function subscribeToReadings(uid: string, cb: ReadingsCallback): Unsubscribe {
   return onSnapshot(collection(db, col.warehouseReadings(uid)), (snap) => {
     const readings: Record<string, LiveSensorReading> = {};
@@ -118,6 +118,30 @@ export function subscribeToReadings(uid: string, cb: ReadingsCallback): Unsubscr
       if (data.warehouseId) readings[data.warehouseId] = toReading(data);
     });
     cb(readings);
+  });
+}
+
+export interface SensorReadingDoc {
+  sensorId:    string;
+  zoneId:      string;
+  warehouseId: string;
+  type:        'temperature' | 'humidity' | 'moisture' | 'co2' | 'aqi' | 'multi';
+  value:       number;
+  values?:     { temperature?: number; humidity?: number; moisture?: number; co2?: number; aqi?: number };
+  unit:        string;
+  status:      'normal' | 'warning' | 'critical';
+  updatedAt:   { seconds: number; nanoseconds: number } | null;
+}
+
+/** Subscribe to this user's per-sensor live readings. */
+export function subscribeToSensorReadings(
+  uid: string,
+  cb: (readings: Record<string, SensorReadingDoc>) => void,
+): Unsubscribe {
+  return onSnapshot(collection(db, col.sensorReadings(uid)), (snap) => {
+    const map: Record<string, SensorReadingDoc> = {};
+    snap.docs.forEach(d => { map[d.id] = d.data() as SensorReadingDoc; });
+    cb(map);
   });
 }
 

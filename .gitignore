@@ -32,6 +32,8 @@ pnpm-debug.log*
 *.key
 service-account*.json
 firebase-adminsdk*.json
+*firebase-adminsdk*.json
+firebase-admin-key.json
 
 # Firebase
 .firebase/
