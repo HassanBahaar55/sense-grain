@@ -224,9 +224,14 @@ export function usePendingRequests(uid: string | null) {
  * Submits a warehouse creation request for admin approval.
  * Does NOT create the warehouse directly.
  */
+export interface WizardZoneData {
+  name:    string;
+  sensors: Array<{ name: string; type: SensorType }>;
+}
+
 export async function addWarehouse(
   uid: string,
-  data: { name: string; capacity: number; location: string; status: ManagedStatus },
+  data: { name: string; capacity: number; location: string; status: ManagedStatus; zones?: WizardZoneData[] },
 ): Promise<string> {
   const user  = getAuth(firebaseApp).currentUser;
   const reqId = `${uid}_wh_${Date.now()}`;
@@ -241,6 +246,7 @@ export async function addWarehouse(
     warehouseCapacity:  data.capacity,
     warehouseLocation:  data.location,
     warehouseStatus:    data.status,
+    zones:              data.zones ?? [],
     createdAt:          Date.now(),
   });
   return reqId;

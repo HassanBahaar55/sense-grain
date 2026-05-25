@@ -673,7 +673,12 @@ function ResourceRequestsTab() {
 
   const reqMeta = (req: ResourceRequest) => {
     if (req.type === 'warehouse_creation') {
-      return `${req.warehouseCapacity ?? '?'} tons · ${req.warehouseLocation || 'No location'}`;
+      const base = `${req.warehouseCapacity ?? '?'} tons · ${req.warehouseLocation || 'No location'}`;
+      if (req.zones && req.zones.length > 0) {
+        const totalSensors = req.zones.reduce((n, z) => n + z.sensors.length, 0);
+        return `${base} · ${req.zones.length} zone${req.zones.length !== 1 ? 's' : ''} · ${totalSensors} sensor${totalSensors !== 1 ? 's' : ''}`;
+      }
+      return base;
     }
     if (req.type === 'zone_creation') {
       return `Warehouse: ${req.warehouseName || req.warehouseId || '?'}`;
@@ -741,6 +746,15 @@ function ResourceRequestsTab() {
                     <span className="font-medium">{req.userName}</span> · {req.userEmail}
                   </p>
                   <p className="text-[10px] text-gray-400 mt-0.5">{reqMeta(req)}</p>
+                  {req.type === 'warehouse_creation' && req.zones && req.zones.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5">
+                      {req.zones.map((z, i) => (
+                        <p key={i} className="text-[10px] text-gray-400">
+                          ↳ {z.name}{z.sensors.length > 0 ? ` (${z.sensors.map(s => s.type).join(', ')})` : ''}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-[10px] text-gray-400 mt-0.5">Submitted: {fmtShort(req.createdAt)}</p>
                   {req.rejectedReason && (
                     <p className="text-[10px] text-red-500 mt-1">Reason: {req.rejectedReason}</p>

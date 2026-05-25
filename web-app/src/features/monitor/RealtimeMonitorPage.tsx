@@ -543,7 +543,7 @@ export default function RealtimeMonitorPage() {
           : selectedWHs.length > 1
             ? `${selectedWHs.length} warehouses · aggregated stats · zones: ${primaryDisplayName}`
             : primaryHasNoLink
-              ? `${primaryDisplayName} · connect a Live Engine ID in Settings to get readings`
+              ? `${primaryDisplayName} · waiting for first sensor reading`
               : `${primaryDisplayName} · ${active.length} of ${zones.length} sensors active`
         }
       />
@@ -642,7 +642,7 @@ export default function RealtimeMonitorPage() {
                 {zonesLoading
                   ? 'Loading zones…'
                   : primaryHasNoLink
-                  ? `${zones.length} zone${zones.length !== 1 ? 's' : ''} configured · connect a Live Engine ID to see readings`
+                  ? `${zones.length} zone${zones.length !== 1 ? 's' : ''} configured · waiting for first sensor reading`
                   : `${active.length} of ${zones.length} sensors active · updates every 10 s`
                 }
               </p>
@@ -660,7 +660,7 @@ export default function RealtimeMonitorPage() {
             )}
             {primaryHasNoLink && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 flex-shrink-0">
-                No connection
+                No data yet
               </span>
             )}
           </div>

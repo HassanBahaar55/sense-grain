@@ -73,6 +73,8 @@ export interface ResourceRequest {
   warehouseCapacity?: number;
   warehouseLocation?: string;
   warehouseDocId?:    string;
+  // compound warehouse creation (includes zones + sensors)
+  zones?: Array<{ name: string; sensors: Array<{ name: string; type: string }> }>;
   // zone_creation
   zoneName?:      string;
   zoneDocId?:     string;
@@ -142,8 +144,30 @@ export async function approveWarehouseRequest(req: ResourceRequest): Promise<voi
     status:    'active',
     createdAt: now,
   });
+  const whId = whRef.id;
+
+  // Create zones + sensors if this was a compound request
+  for (const zone of req.zones ?? []) {
+    const zRef = await addDoc(collection(db, col.zones(req.uid)), {
+      warehouseId: whId,
+      name:        zone.name,
+      status:      'active',
+      createdAt:   now,
+    });
+    for (const sensor of zone.sensors) {
+      await addDoc(collection(db, col.sensors(req.uid)), {
+        zoneId:      zRef.id,
+        warehouseId: whId,
+        name:        sensor.name,
+        type:        sensor.type,
+        status:      'active',
+        createdAt:   now,
+      });
+    }
+  }
+
   await updateDoc(doc(db, 'resourceRequests', req.id), {
-    status: 'approved', reviewedAt: now, warehouseDocId: whRef.id,
+    status: 'approved', reviewedAt: now, warehouseDocId: whId,
   });
 }
 

@@ -1199,12 +1199,19 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
     { name: 'Zone 3', pendingSensors: [] },
   ]);
 
-  const addZoneEntry   = () => setZones(z => [...z, { name: `Zone ${z.length + 1}`, pendingSensors: [] }]);
-  const removeZone     = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
-  const updateZoneName = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { ...z2, name: v } : z2));
+  const addZoneEntry       = () => setZones(z => [...z, { name: `Zone ${z.length + 1}`, pendingSensors: [] }]);
+  const removeZone         = (i: number) => setZones(z => z.filter((_, idx) => idx !== i));
+  const updateZoneName     = (i: number, v: string) => setZones(z => z.map((z2, idx) => idx === i ? { ...z2, name: v } : z2));
+  const addSensorToZone    = (zi: number) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: [...z2.pendingSensors, { name: '', type: 'multi' as SensorType }] } : z2));
+  const removeSensorFromZone = (zi: number, si: number) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.filter((_, i2) => i2 !== si) } : z2));
+  const updateSensorName   = (zi: number, si: number, v: string) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.map((s, i2) => i2 === si ? { ...s, name: v } : s) } : z2));
+  const updateSensorType   = (zi: number, si: number, v: SensorType) => setZones(z => z.map((z2, idx) => idx === zi ? { ...z2, pendingSensors: z2.pendingSensors.map((s, i2) => i2 === si ? { ...s, type: v } : s) } : z2));
 
   const canGoStep2 = whName.trim().length > 0;
-  const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0);
+  const canGoStep3 = zones.length > 0 && zones.every(z => z.name.trim().length > 0) &&
+    zones.every(z => z.pendingSensors.every(s => s.name.trim().length > 0));
+
+  const totalSensors = zones.reduce((n, z) => n + z.pendingSensors.length, 0);
 
   async function submit() {
     if (!uid) return;
@@ -1216,6 +1223,10 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
         capacity: Number(whCap) || 1000,
         location: whLoc.trim(),
         status:   whStatus,
+        zones:    zones.filter(z => z.name.trim()).map(z => ({
+          name:    z.name.trim(),
+          sensors: z.pendingSensors.filter(s => s.name.trim()).map(s => ({ name: s.name.trim(), type: s.type })),
+        })),
       });
       setSubmitted(true);
     } catch (err) {
@@ -1241,12 +1252,20 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
           <p className="text-[14px] font-bold text-gray-900">Warehouse Request Submitted</p>
           <p className="text-[12px] text-gray-500 leading-relaxed">
             Your request for <strong>{whName}</strong> is pending admin approval.
-            Once approved, the warehouse will appear in your Infrastructure tab where you can add zones and sensors.
+            Once approved, the warehouse{zones.length > 0 ? ', all zones, and sensors' : ''} will be created automatically.
           </p>
           {zones.length > 0 && (
-            <div className="w-full text-left px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
-              <p className="text-[10px] font-bold text-gray-400 mb-1.5">Planned zones (add after approval):</p>
-              <p className="text-[11px] text-gray-600">{zones.filter(z => z.name.trim()).map(z => z.name).join(', ')}</p>
+            <div className="w-full text-left px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-100 space-y-1.5">
+              <p className="text-[10px] font-bold text-gray-400">Included in this request:</p>
+              {zones.filter(z => z.name.trim()).map((z, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-400 w-4 text-right">{i + 1}.</span>
+                  <span className="text-[11px] font-semibold text-gray-700">{z.name}</span>
+                  {z.pendingSensors.length > 0 && (
+                    <span className="text-[9px] text-gray-400">· {z.pendingSensors.length} sensor{z.pendingSensors.length !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1318,10 +1337,10 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Step 2 — planned zones */}
+      {/* Step 2 — zones + sensors */}
       {step === 2 && (
         <div className="space-y-3">
-          <p className="text-[12px] text-gray-500 -mt-1">Plan your zones. After the warehouse is approved, you can add them.</p>
+          <p className="text-[12px] text-gray-500 -mt-1">Add zones and sensors now. Everything will be created when admin approves.</p>
           <div className="flex gap-2 flex-wrap">
             {[3, 5, 7].map(n => (
               <button key={n}
@@ -1330,13 +1349,37 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
               >{n} zones</button>
             ))}
           </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-            {zones.map((z, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-gray-400 w-5 flex-shrink-0 text-right">{i + 1}.</span>
-                <input className={cn(INPUT_CLS, 'flex-1')} value={z.name} onChange={e => updateZoneName(i, e.target.value)} placeholder={`Zone name ${i + 1}`} />
-                <button onClick={() => removeZone(i)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
-                  <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {zones.map((z, zi) => (
+              <div key={zi} className="rounded-xl border border-gray-100 bg-gray-50/60 p-2.5 space-y-2">
+                {/* Zone name row */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 w-5 flex-shrink-0 text-right">{zi + 1}.</span>
+                  <input className={cn(INPUT_CLS, 'flex-1 bg-white')} value={z.name} onChange={e => updateZoneName(zi, e.target.value)} placeholder={`Zone name ${zi + 1}`} />
+                  <button onClick={() => removeZone(zi)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
+                    <svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+                {/* Sensors for this zone */}
+                {z.pendingSensors.map((s, si) => (
+                  <div key={si} className="flex items-center gap-1.5 pl-7">
+                    <input className={cn(INPUT_CLS, 'flex-1 bg-white text-[11px]')} value={s.name} onChange={e => updateSensorName(zi, si, e.target.value)} placeholder={`Sensor name`} />
+                    <select className={cn(SELECT_CLS, 'w-28 bg-white text-[11px]')} value={s.type} onChange={e => updateSensorType(zi, si, e.target.value as SensorType)}>
+                      <option value="multi">Multi</option>
+                      <option value="temperature">Temp</option>
+                      <option value="humidity">Humidity</option>
+                      <option value="moisture">Moisture</option>
+                      <option value="co2">CO₂</option>
+                      <option value="aqi">AQI</option>
+                    </select>
+                    <button onClick={() => removeSensorFromZone(zi, si)} className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
+                      <svg className="w-3 h-3 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => addSensorToZone(zi)} className="ml-7 flex items-center gap-1 text-[10px] font-semibold text-[#1f5135] hover:text-[#174028] transition-colors">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add sensor
                 </button>
               </div>
             ))}
@@ -1355,14 +1398,27 @@ function AddWarehouseWizard({ onClose }: { onClose: () => void }) {
             <div className="flex justify-between"><span className="text-gray-500">Name</span><span className="font-bold text-gray-800">{whName}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Capacity</span><span className="font-semibold text-gray-700">{Number(whCap).toLocaleString()} tons</span></div>
             {whLoc && <div className="flex justify-between"><span className="text-gray-500">Location</span><span className="font-semibold text-gray-700">{whLoc}</span></div>}
-            <div className="flex justify-between"><span className="text-gray-500">Planned zones</span><span className="font-semibold text-gray-700">{zones.filter(z => z.name.trim()).length}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Zones</span><span className="font-semibold text-gray-700">{zones.filter(z => z.name.trim()).length}</span></div>
+            {totalSensors > 0 && <div className="flex justify-between"><span className="text-gray-500">Sensors</span><span className="font-semibold text-gray-700">{totalSensors} total</span></div>}
           </div>
+
+          {zones.filter(z => z.name.trim()).length > 0 && (
+            <div className="bg-gray-50 rounded-xl px-4 py-2.5 space-y-1">
+              <p className="text-[10px] font-bold text-gray-400 mb-1">Zone breakdown:</p>
+              {zones.filter(z => z.name.trim()).map((z, i) => (
+                <div key={i} className="flex items-center justify-between text-[11px]">
+                  <span className="text-gray-600">{i + 1}. {z.name}</span>
+                  <span className="text-gray-400">{z.pendingSensors.length} sensor{z.pendingSensors.length !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-100">
             <svg className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <p className="text-[11px] text-amber-800 leading-snug">
-              This submits a <strong>warehouse creation request</strong> to the admin.
-              After approval, the warehouse will appear in your Infrastructure tab where you can add zones and sensors.
+              This submits one request to the admin.
+              After approval, the warehouse{zones.length > 0 ? ', all zones, and sensors' : ''} will be created automatically.
             </p>
           </div>
 

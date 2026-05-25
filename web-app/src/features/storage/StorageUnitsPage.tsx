@@ -164,7 +164,7 @@ function ZoneCard({ zone, reading, idx, total, sensors }: {
         {!derived || !hasActive ? (
           <div className="py-3 text-center">
             <p className="text-[10px] text-gray-400 font-medium">
-              {zone.status === 'inactive' ? 'Zone offline' : !hasAnySensor ? 'No sensors — add in Settings' : 'No active sensors'}
+              {zone.status === 'inactive' ? 'Zone offline' : !hasAnySensor ? 'No sensors — add in Settings' : 'Waiting for readings...'}
             </p>
           </div>
         ) : (

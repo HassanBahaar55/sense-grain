@@ -182,7 +182,17 @@ export function useFirestoreDashboard(): DashboardData {
   const { warehouses: managedWarehouses } = useWarehouses();
 
   return useMemo(() => {
-    const warehouses = readingsToWarehouses(readings, managedWarehouses);
+    const liveWarehouses = readingsToWarehouses(readings, managedWarehouses);
+    const liveIds = new Set(liveWarehouses.map(w => w.id));
+    const placeholders: WarehouseReading[] = managedWarehouses
+      .filter(w => !liveIds.has(w.id))
+      .map(w => ({
+        id: w.id, name: w.name,
+        status: 'inactive' as WHStatus, risk: 'inactive' as RiskLevel, trend: null,
+        temp: null, humidity: null, moisture: null, co2: null, aqi: null,
+        capacity: w.capacity, used: 0, usedPct: 0, lastUpdate: null,
+      }));
+    const warehouses = [...liveWarehouses, ...placeholders].sort((a, b) => a.id.localeCompare(b.id));
 
     // Convert liveAlerts to DashboardData alert format (top 4)
     const alerts = liveAlerts
