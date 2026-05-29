@@ -9,13 +9,84 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Svg, {G, Line, Path, Polyline, Rect, Text as SvgText} from 'react-native-svg';
 
 import {
-  getPredictionsData,
   type ParamForecastCard,
   type RiskLevel,
   type TrendDir,
   type WHPredRow,
 } from '../../lib/dataEngine';
+import {useLiveData} from '../../contexts/LiveDataContext';
 import {fontWeight} from '../../theme/tokens';
+
+// ─── Predictions computed from live Firestore data ────────────────────────────
+
+function useFirestorePredictions() {
+  const {warehouseReadings} = useLiveData();
+
+  return useMemo(() => {
+    const active = warehouseReadings.filter(w => w.temp !== null);
+    const avgTemp  = active.length ? active.reduce((s, w) => s + (w.temp ?? 0), 0) / active.length : 27;
+    const avgHum   = active.length ? Math.round(active.reduce((s, w) => s + (w.humidity ?? 0), 0) / active.length) : 62;
+    const avgMoist = active.length ? +(active.reduce((s, w) => s + (w.moisture ?? 0), 0) / active.length).toFixed(1) : 11.5;
+    const avgCO2   = active.length ? Math.round(active.reduce((s, w) => s + (w.co2 ?? 520), 0) / active.length) : 510;
+    const avgAQI   = active.length ? Math.round(active.reduce((s, w) => s + (w.aqi ?? 40), 0) / active.length) : 40;
+    const avgCap   = active.length ? Math.round(active.reduce((s, w) => s + w.usedPct, 0) / active.length) : 68;
+
+    function mkSpark(base: number, step: number, count = 7): number[] {
+      const arr = [+base.toFixed(2)];
+      for (let i = 1; i < count; i++) arr.push(+(arr[arr.length - 1] + step).toFixed(2));
+      return arr;
+    }
+
+    const paramCards: ParamForecastCard[] = [
+      {key: 'temp',     label: 'Temperature',     unit: '°C',  current: +avgTemp.toFixed(1), forecast: +(avgTemp + 1.2).toFixed(1), rangeMin: +(avgTemp - 1).toFixed(1), rangeMax: +(avgTemp + 3).toFixed(1), trend: 'up',        confidence: 88, sparkData: mkSpark(avgTemp - 1, 0.3),    colorKey: 'amber'  },
+      {key: 'humidity', label: 'Humidity',         unit: '%',   current: avgHum,  forecast: avgHum + 3,  rangeMin: avgHum - 3,  rangeMax: avgHum + 7,  trend: 'slight-up', confidence: 85, sparkData: mkSpark(avgHum - 2, 0.5),     colorKey: 'blue'   },
+      {key: 'moisture', label: 'Moisture Content', unit: '%',   current: avgMoist, forecast: +(avgMoist + 0.6).toFixed(1), rangeMin: +(avgMoist - 0.5).toFixed(1), rangeMax: +(avgMoist + 1.5).toFixed(1), trend: 'slight-up', confidence: 82, sparkData: mkSpark(avgMoist - 0.3, 0.08), colorKey: 'green'  },
+      {key: 'co2',      label: 'CO₂ Level',        unit: 'ppm', current: avgCO2, forecast: avgCO2 + 12,  rangeMin: avgCO2 - 15, rangeMax: avgCO2 + 25, trend: 'up',        confidence: 79, sparkData: mkSpark(avgCO2 - 5, 2),       colorKey: 'purple' },
+      {key: 'aqi',      label: 'Air Quality',      unit: 'AQI', current: avgAQI, forecast: avgAQI + 2,   rangeMin: avgAQI - 5,  rangeMax: avgAQI + 8,  trend: 'stable',    confidence: 90, sparkData: mkSpark(avgAQI - 1, 0.3),     colorKey: 'teal'   },
+      {key: 'capacity', label: 'Storage Capacity', unit: '%',   current: avgCap, forecast: Math.min(95, avgCap + 2), rangeMin: avgCap - 2, rangeMax: avgCap + 5, trend: 'up', confidence: 92, sparkData: mkSpark(avgCap - 1, 0.2), colorKey: 'indigo' },
+    ];
+
+    const today = new Date();
+    const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function dayLabel(d: Date) { return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`; }
+    function addDays(d: Date, n: number) { const nd = new Date(d); nd.setDate(nd.getDate() + n); return nd; }
+
+    const forecastData = Array.from({length: 7}, (_, i) => {
+      const d = addDays(today, i + 1);
+      const row: Record<string, unknown> = {day: dayLabel(d)};
+      for (const wh of active) {
+        row[wh.id] = Math.round(((wh.temp ?? 25) + i * 0.2) / 35 * 100);
+      }
+      return row;
+    });
+
+    const whPredTable: WHPredRow[] = active.map(wh => {
+      const stressScore = wh.status === 'high' ? 3 : wh.status === 'medium' ? 1.5 : 0;
+      const spoilage30d = Math.min(95, Math.max(5, Math.round(stressScore * 20 + 5)));
+      return {
+        id: wh.id, name: wh.name, overallRisk: wh.risk as RiskLevel,
+        spoilage30d,
+        tempForecast:  +((wh.temp ?? 25) + 0.8).toFixed(1),
+        humForecast:   Math.round((wh.humidity ?? 60) + 1.5),
+        moistForecast: +((wh.moisture ?? 11) + 0.4).toFixed(1),
+        co2Forecast:   Math.round((wh.co2 ?? 520) + 12),
+        aqiForecast:   Math.round((wh.aqi ?? 40) + 2),
+        capForecast:   Math.min(99, Math.round(wh.usedPct + 1.5)),
+        trend:         (wh.status === 'high' ? 'up' : wh.status === 'medium' ? 'slight-up' : 'stable') as TrendDir,
+        confidence:    wh.status === 'good' ? 91 : 82,
+      };
+    });
+
+    const riskForecastData = Array.from({length: 7}, (_, i) => ({
+      day:    dayLabel(addDays(today, i + 1)),
+      Low:    warehouseReadings.filter(w => w.risk === 'low').length,
+      Medium: warehouseReadings.filter(w => w.risk === 'medium').length,
+      High:   warehouseReadings.filter(w => w.risk === 'high').length,
+    }));
+
+    return {paramCards, forecastData, whPredTable, riskForecastData};
+  }, [warehouseReadings]);
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -417,7 +488,7 @@ function BrainIcon() {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function PredictionsScreen() {
-  const data = useMemo(() => getPredictionsData(new Date()), []);
+  const data = useFirestorePredictions();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>

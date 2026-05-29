@@ -19,7 +19,6 @@ import { col } from '@/lib/accountDb';
 import type { LiveSensorReading, LiveAlert } from '@/lib/liveEngine';
 import { subscribeToReadings, subscribeToAlerts } from '@/lib/firestoreService';
 import { setLiveOverride } from '@/lib/dataEngine';
-import { seedUserData } from '@/lib/firestoreSeeder';
 import { useAuth } from '@/contexts/AuthContext';
 
 const db = getFirestore(firebaseApp);
@@ -55,9 +54,6 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     if (!uid) { setReadings({}); setLiveAlerts([]); return; }
 
     setIsRunning(true);
-
-    // Seed user data on first login (no-op for already-seeded accounts)
-    seedUserData(uid, user?.email ?? '').catch(() => {});
 
     // Track which warehouse doc IDs have at least one active sensor
     // so we never display stale readings from warehouses with no active hardware.

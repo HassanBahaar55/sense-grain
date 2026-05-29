@@ -5,7 +5,7 @@ import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
-import { isAdminEmail, isTestEmail, type ApprovalStatus } from '@/lib/accountDb';
+import { isAdminEmail, type ApprovalStatus } from '@/lib/accountDb';
 
 const db   = getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
@@ -31,8 +31,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [rejectionReason, setRejectionReason] = useState<string | undefined>(undefined);
 
   async function fetchApprovalStatus(firebaseUser: User) {
-    // Admin and test user are always approved — skip Firestore check
-    if (isAdminEmail(firebaseUser.email) || isTestEmail(firebaseUser.email)) {
+    // Admin is always approved — skip Firestore check
+    if (isAdminEmail(firebaseUser.email)) {
       setApprovalStatus('approved');
       return;
     }

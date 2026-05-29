@@ -17,13 +17,10 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 
-import {
-  getStorageData,
-  type StorageData,
-  type WarehouseReading,
-  type WHStatus,
-} from '../../lib/dataEngine';
+import {type StorageData, type StabilityPoint} from '../../lib/dataEngine';
 import {fontWeight} from '../../theme/tokens';
+import {useLiveData} from '../../contexts/LiveDataContext';
+import type {WarehouseReading, WHStatus} from '../../lib/accountDb';
 
 // ─── Design constants ─────────────────────────────────────────────────────────
 
@@ -359,12 +356,7 @@ function DonutChart({data}: {data: StorageData['zoneSummary']}) {
 
 // ─── Stability Line Chart ──────────────────────────────────────────────────────
 
-const WH_LINES: {key: 'WH-A' | 'WH-B' | 'WH-C' | 'WH-D'; color: string}[] = [
-  {key: 'WH-A', color: '#3b82f6'},
-  {key: 'WH-B', color: '#f59e0b'},
-  {key: 'WH-C', color: '#22c55e'},
-  {key: 'WH-D', color: '#ef4444'},
-];
+const LINE_COLORS = ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#ec4899'];
 
 function StabilityChart({data}: {data: StorageData['stabilityData']}) {
   const W = 300;
@@ -376,14 +368,17 @@ function StabilityChart({data}: {data: StorageData['stabilityData']}) {
   const minY = 40;
   const maxY = 100;
 
+  const whKeys = data.length > 0 ? Object.keys(data[0]).filter(k => k !== 'day') : [];
+  const whLines = whKeys.map((key, i) => ({key, color: LINE_COLORS[i % LINE_COLORS.length]}));
+
   function toX(i: number): number {
     return PAD.left + (i / Math.max(data.length - 1, 1)) * innerW;
   }
   function toY(v: number): number {
     return PAD.top + innerH - ((v - minY) / (maxY - minY)) * innerH;
   }
-  function points(key: 'WH-A' | 'WH-B' | 'WH-C' | 'WH-D'): string {
-    return data.map((d, i) => `${toX(i)},${toY(d[key])}`).join(' ');
+  function points(key: string): string {
+    return data.map((d, i) => `${toX(i)},${toY(typeof d[key] === 'number' ? (d[key] as number) : 75)}`).join(' ');
   }
 
   const yTicks = [50, 70, 90];
@@ -420,7 +415,7 @@ function StabilityChart({data}: {data: StorageData['stabilityData']}) {
           </SvgText>
         ))}
         {/* Lines */}
-        {WH_LINES.map(({key, color}) => (
+        {whLines.map(({key, color}) => (
           <Polyline
             key={key}
             points={points(key)}
@@ -432,12 +427,12 @@ function StabilityChart({data}: {data: StorageData['stabilityData']}) {
           />
         ))}
         {/* Dots */}
-        {WH_LINES.map(({key, color}) =>
+        {whLines.map(({key, color}) =>
           data.map((d, i) => (
             <Circle
               key={`${key}-${i}`}
               cx={toX(i)}
-              cy={toY(d[key])}
+              cy={toY(typeof d[key] === 'number' ? (d[key] as number) : 75)}
               r={2.5}
               fill="#fff"
               stroke={color}
@@ -448,7 +443,7 @@ function StabilityChart({data}: {data: StorageData['stabilityData']}) {
       </Svg>
       {/* Legend */}
       <View style={styles.chartLegend}>
-        {WH_LINES.map(({key, color}) => (
+        {whLines.map(({key, color}) => (
           <View key={key} style={styles.chartLegendItem}>
             <View style={[styles.chartLegendDot, {backgroundColor: color}]} />
             <Text style={styles.chartLegendText}>{key}</Text>
@@ -462,8 +457,60 @@ function StabilityChart({data}: {data: StorageData['stabilityData']}) {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function StorageUnitsScreen() {
-  const data = useMemo(() => getStorageData(new Date()), []);
-  const {warehouses, totals, stabilityData, zoneSummary, topCritical} = data;
+  const {warehouseReadings, zones, sensorHistory} = useLiveData();
+  const warehouses: WarehouseReading[] = warehouseReadings;
+
+  const totals = useMemo(() => {
+    const active   = warehouses.filter(w => w.status !== 'inactive');
+    const withTemp = warehouses.filter(w => w.temp !== null);
+    const withHum  = warehouses.filter(w => w.humidity !== null);
+    const totalCapacity = warehouses.reduce((s, w) => s + w.capacity, 0);
+    const totalUsed     = warehouses.reduce((s, w) => s + w.used, 0);
+    return {
+      totalWarehouses: warehouses.length,
+      totalZones:      zones.length,
+      totalCapacity,
+      totalUsed,
+      usedPct:     totalCapacity > 0 ? Math.round((totalUsed / totalCapacity) * 100) : 0,
+      avgTemp:     withTemp.length > 0 ? Math.round(withTemp.reduce((s, w) => s + (w.temp ?? 0), 0) / withTemp.length * 10) / 10 : 0,
+      avgHumidity: withHum.length > 0  ? Math.round(withHum.reduce((s, w)  => s + (w.humidity ?? 0), 0) / withHum.length) : 0,
+      activeCount:   active.length,
+      highRiskUnits: warehouses.filter(w => w.status === 'high').length,
+    };
+  }, [warehouses, zones]);
+
+  const zoneSummary = useMemo(() => {
+    const total = warehouses.length || 1;
+    const counts = {good: warehouses.filter(w => w.status === 'good').length, medium: warehouses.filter(w => w.status === 'medium').length, high: warehouses.filter(w => w.status === 'high').length, inactive: warehouses.filter(w => w.status === 'inactive').length};
+    return [
+      {label: 'Good',     color: '#22c55e', count: counts.good,     pct: Math.round(counts.good / total * 100)},
+      {label: 'Medium',   color: '#f59e0b', count: counts.medium,   pct: Math.round(counts.medium / total * 100)},
+      {label: 'High',     color: '#ef4444', count: counts.high,     pct: Math.round(counts.high / total * 100)},
+      {label: 'Inactive', color: '#9ca3af', count: counts.inactive, pct: Math.round(counts.inactive / total * 100)},
+    ];
+  }, [warehouses]);
+
+  const stabilityData = useMemo(() => {
+    const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function dayLabel(d: Date) { return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`; }
+    function addDays(d: Date, n: number) { const nd = new Date(d); nd.setDate(nd.getDate() + n); return nd; }
+    const whIds = warehouses.filter(w => w.status !== 'inactive').map(w => w.id);
+    const today = new Date();
+    if (sensorHistory.length > 0) {
+      return sensorHistory.slice(0, 7).reverse().map(h => {
+        const pt: StabilityPoint = {day: dayLabel(new Date(h.date + 'T00:00:00'))};
+        for (const id of whIds) pt[id] = h.warehouseStatus ? Math.round((h.warehouseStatus.good / Math.max(1, h.warehouseStatus.good + h.warehouseStatus.warning + h.warehouseStatus.critical)) * 100) : 75;
+        return pt;
+      });
+    }
+    return Array.from({length: 7}, (_, i) => {
+      const pt: StabilityPoint = {day: dayLabel(addDays(today, i - 6))};
+      for (const id of whIds) pt[id] = 75;
+      return pt;
+    });
+  }, [warehouses, sensorHistory]);
+
+  const topCritical = warehouses.filter(w => w.status === 'high' || w.status === 'medium').slice(0, 3);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>

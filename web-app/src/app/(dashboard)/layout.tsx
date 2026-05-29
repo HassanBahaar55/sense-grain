@@ -202,10 +202,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <SidebarProvider>
             <div className="h-screen overflow-hidden bg-gray-50">
               <Sidebar />
-              <div className="lg:pl-60 h-full flex flex-col overflow-hidden pb-14 lg:pb-0">
+              <div className={`lg:pl-60 h-full flex flex-col overflow-hidden ${isAdmin ? '' : 'pb-14 lg:pb-0'}`}>
                 {children}
               </div>
-              <BottomNav />
+              {!isAdmin && <BottomNav />}
             </div>
           </SidebarProvider>
         </HeaderProvider>

@@ -1,5 +1,6 @@
 import React, {useState, useCallback} from 'react';
 import {
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -10,7 +11,13 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Svg, {Circle, Line, Path, Polyline, Rect} from 'react-native-svg';
+import {getApp} from '@react-native-firebase/app';
+import {getAuth, updatePassword, EmailAuthProvider, reauthenticateWithCredential} from '@react-native-firebase/auth';
 import {fontWeight} from '../../theme/tokens';
+import {useUser} from '../../contexts/UserContext';
+import {useAuth} from '../../app/AuthProvider';
+import type {SensorType as SType, ManagedWarehouse as MWH, ManagedZone as MZone, ManagedSensor as MSensor, ResourceRequest as RReq} from '../../lib/accountDb';
+import {useWarehouses, useZones, useSensors, usePendingRequests, addWarehouse, addZone, addSensor, updateWarehouse, deleteWarehouse, updateZone, deleteZone, updateSensor, deleteSensor, type WizardZoneData} from '../../lib/storageManagement';
 
 // ─── Design constants ─────────────────────────────────────────────────────────
 
@@ -32,7 +39,7 @@ const C = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'general' | 'notifications' | 'sensors' | 'security' | 'appearance';
+type Tab = 'general' | 'notifications' | 'sensors' | 'security' | 'appearance' | 'infrastructure';
 
 interface Profile {
   name: string;
@@ -264,19 +271,38 @@ function EditProfileModal({
 // ─── Change Password Modal ────────────────────────────────────────────────────
 
 function ChangePasswordModal({visible, onClose}: {visible: boolean; onClose: () => void}) {
+  const {user} = useAuth();
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
   const [conf, setConf] = useState('');
   const [done, setDone] = useState(false);
   const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setErr('');
     if (!cur) return setErr('Enter your current password.');
     if (next.length < 8) return setErr('New password must be at least 8 characters.');
     if (next !== conf) return setErr('Passwords do not match.');
-    setDone(true);
-    setTimeout(() => {setCur(''); setNext(''); setConf(''); setDone(false); onClose();}, 1800);
+    if (!user?.email) return setErr('No authenticated user.');
+    setLoading(true);
+    try {
+      const auth = getAuth(getApp());
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) throw new Error('Not signed in');
+      const cred = EmailAuthProvider.credential(user.email, cur);
+      await reauthenticateWithCredential(firebaseUser, cred);
+      await updatePassword(firebaseUser, next);
+      setDone(true);
+      setTimeout(() => {setCur(''); setNext(''); setConf(''); setDone(false); onClose();}, 1800);
+    } catch (e: unknown) {
+      const msg = (e as {code?: string})?.code;
+      if (msg === 'auth/wrong-password') setErr('Current password is incorrect.');
+      else if (msg === 'auth/too-many-requests') setErr('Too many attempts. Try again later.');
+      else setErr('Failed to update password. Try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -529,7 +555,17 @@ function ConfirmDialog({
 // ─── Tab: General ─────────────────────────────────────────────────────────────
 
 function GeneralTab() {
-  const [profile, setProfile] = useState<Profile>(DEFAULT_PROFILE);
+  const {profile: userProfile} = useUser();
+  const {user} = useAuth();
+
+  const initProfile: Profile = {
+    name: userProfile?.displayName ?? user?.displayName ?? DEFAULT_PROFILE.name,
+    email: userProfile?.email ?? user?.email ?? DEFAULT_PROFILE.email,
+    department: DEFAULT_PROFILE.department,
+    initials: (userProfile?.displayName ?? user?.displayName ?? 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+  };
+
+  const [profile, setProfile] = useState<Profile>(initProfile);
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
   const [appToggles, setAppToggles] = useState<Record<string, boolean>>(
     Object.fromEntries(APP_TOGGLES.map(t => [t.id, t.on])),
@@ -765,6 +801,7 @@ function SensorsTab() {
 // ─── Tab: Security ────────────────────────────────────────────────────────────
 
 function SecurityTab() {
+  const {signOutUser} = useAuth();
   const [twoFa, setTwoFa] = useState(true);
   type SecurityModal = 'password' | '2fa' | 'sessions' | 'history' | 'revokeKeys' | 'signOutAll' | null;
   const [modal, setModal] = useState<SecurityModal>(null);
@@ -792,10 +829,10 @@ function SecurityTab() {
       />
       <ConfirmDialog
         visible={modal === 'signOutAll'}
-        title="Sign Out All Devices"
-        desc="You will be signed out from all browsers and devices, including this one. You'll need to log in again."
-        confirmLabel="Sign Out All"
-        onConfirm={() => {}}
+        title="Sign Out"
+        desc="You will be signed out from this device. You'll need to log in again."
+        confirmLabel="Sign Out"
+        onConfirm={() => signOutUser().catch(() => undefined)}
         onCancel={() => setModal(null)}
       />
 
@@ -920,6 +957,838 @@ function AppearanceTab() {
   );
 }
 
+// ─── Infrastructure tab ───────────────────────────────────────────────────────
+
+const SENSOR_LABEL: Record<SType, string> = {
+  temperature: 'Temperature Sensor',
+  humidity: 'Humidity Sensor',
+  moisture: 'Moisture Sensor',
+  co2: 'CO₂ Sensor',
+  aqi: 'AQI Sensor',
+  multi: 'Multi Sensor',
+};
+
+const SENSOR_TYPES: SType[] = ['temperature', 'humidity', 'moisture', 'co2', 'aqi', 'multi'];
+
+// ─── Edit/Delete inline modals ────────────────────────────────────────────────
+
+function InfraDeleteConfirm({title, desc, onConfirm, onClose}: {title: string; desc: string; onConfirm: () => Promise<void>; onClose: () => void}) {
+  const [busy, setBusy] = useState(false);
+  const handle = async () => {
+    setBusy(true);
+    try { await onConfirm(); onClose(); } catch { setBusy(false); }
+  };
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
+      <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 24}}>
+        <View style={{backgroundColor: '#fff', borderRadius: 18, padding: 24, width: '100%', maxWidth: 340}}>
+          <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary, marginBottom: 8}}>{title}</Text>
+          <Text style={{fontSize: 13, color: C.textSecondary, marginBottom: 22, lineHeight: 19}}>{desc}</Text>
+          <View style={{flexDirection: 'row', gap: 10}}>
+            <TouchableOpacity onPress={onClose} style={{flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center'}} activeOpacity={0.8}>
+              <Text style={{fontSize: 13, fontWeight: fontWeight.semibold, color: C.textSecondary}}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handle} disabled={busy} style={{flex: 1, backgroundColor: C.red, borderRadius: 10, paddingVertical: 10, alignItems: 'center'}} activeOpacity={0.85}>
+              <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: '#fff'}}>{busy ? 'Deleting…' : 'Delete'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function EditWarehouseModal({wh, uid, onClose}: {wh: MWH; uid: string; onClose: () => void}) {
+  const [name, setName] = useState(wh.name);
+  const [capacity, setCapacity] = useState(String(wh.capacity));
+  const [location, setLocation] = useState(wh.location ?? '');
+  const [status, setStatus] = useState<'active' | 'inactive'>(wh.status);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const handle = async () => {
+    if (!name.trim()) { setErr('Name required'); return; }
+    const cap = parseInt(capacity, 10);
+    if (!cap || cap <= 0) { setErr('Valid capacity required'); return; }
+    setSaving(true);
+    try {
+      await updateWarehouse(uid, wh.id, {name: name.trim(), capacity: cap, location: location.trim(), status});
+      onClose();
+    } catch { setErr('Failed to save'); setSaving(false); }
+  };
+
+  return (
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end'}}>
+        <View style={{backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24}}>
+          <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary, marginBottom: 18}}>Edit Warehouse</Text>
+          {[{label: 'Name', val: name, set: setName, placeholder: 'Warehouse name', kb: 'default' as const},
+            {label: 'Capacity (MT)', val: capacity, set: setCapacity, placeholder: '0', kb: 'numeric' as const},
+            {label: 'Location', val: location, set: setLocation, placeholder: 'City / address', kb: 'default' as const}].map(f => (
+            <View key={f.label} style={{marginBottom: 14}}>
+              <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textSecondary, marginBottom: 6}}>{f.label}</Text>
+              <TextInput value={f.val} onChangeText={f.set} placeholder={f.placeholder} keyboardType={f.kb}
+                style={{borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: C.textPrimary}} />
+            </View>
+          ))}
+          <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textSecondary, marginBottom: 8}}>Status</Text>
+          <View style={{flexDirection: 'row', gap: 10, marginBottom: 18}}>
+            {(['active', 'inactive'] as const).map(s => (
+              <TouchableOpacity key={s} onPress={() => setStatus(s)}
+                style={{flex: 1, paddingVertical: 9, borderRadius: 10, borderWidth: 1.5,
+                  borderColor: status === s ? C.primary : C.border, backgroundColor: status === s ? '#f0fdf4' : '#fff',
+                  alignItems: 'center'}} activeOpacity={0.8}>
+                <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: status === s ? C.primary : C.textSecondary}}>{s === 'active' ? 'Active' : 'Inactive'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {!!err && <Text style={{fontSize: 12, color: C.red, marginBottom: 10}}>{err}</Text>}
+          <View style={{flexDirection: 'row', gap: 10}}>
+            <TouchableOpacity onPress={onClose} style={{flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingVertical: 12, alignItems: 'center'}} activeOpacity={0.8}>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.semibold, color: C.textSecondary}}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handle} disabled={saving}
+              style={{flex: 1, backgroundColor: C.primary, borderRadius: 12, paddingVertical: 12, alignItems: 'center'}} activeOpacity={0.85}>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: '#fff'}}>{saving ? 'Saving…' : 'Save'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function EditZoneModal({zone, uid, onClose}: {zone: MZone; uid: string; onClose: () => void}) {
+  const [name, setName] = useState(zone.name);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const handle = async () => {
+    if (!name.trim()) { setErr('Name required'); return; }
+    setSaving(true);
+    try { await updateZone(uid, zone.id, {name: name.trim()}); onClose(); }
+    catch { setErr('Failed to save'); setSaving(false); }
+  };
+  return (
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end'}}>
+        <View style={{backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24}}>
+          <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary, marginBottom: 18}}>Edit Zone</Text>
+          <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textSecondary, marginBottom: 6}}>Zone Name</Text>
+          <TextInput value={name} onChangeText={setName} placeholder="Zone name"
+            style={{borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: C.textPrimary, marginBottom: 18}} />
+          {!!err && <Text style={{fontSize: 12, color: C.red, marginBottom: 10}}>{err}</Text>}
+          <View style={{flexDirection: 'row', gap: 10}}>
+            <TouchableOpacity onPress={onClose} style={{flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingVertical: 12, alignItems: 'center'}} activeOpacity={0.8}>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.semibold, color: C.textSecondary}}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handle} disabled={saving}
+              style={{flex: 1, backgroundColor: C.primary, borderRadius: 12, paddingVertical: 12, alignItems: 'center'}} activeOpacity={0.85}>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: '#fff'}}>{saving ? 'Saving…' : 'Save'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function EditSensorModal({sensor, uid, onClose}: {sensor: MSensor; uid: string; onClose: () => void}) {
+  const [name, setName] = useState(sensor.name);
+  const [type, setType] = useState<SType>(sensor.type);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const handle = async () => {
+    if (!name.trim()) { setErr('Name required'); return; }
+    setSaving(true);
+    try { await updateSensor(uid, sensor.id, {name: name.trim(), type}); onClose(); }
+    catch { setErr('Failed to save'); setSaving(false); }
+  };
+  return (
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <View style={{flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end'}}>
+        <View style={{backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24}}>
+          <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary, marginBottom: 18}}>Edit Sensor</Text>
+          <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textSecondary, marginBottom: 6}}>Sensor Name</Text>
+          <TextInput value={name} onChangeText={setName} placeholder="Sensor name"
+            style={{borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, color: C.textPrimary, marginBottom: 14}} />
+          <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textSecondary, marginBottom: 8}}>Type</Text>
+          <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18}}>
+            {SENSOR_TYPES.map(t => (
+              <TouchableOpacity key={t} onPress={() => setType(t)}
+                style={{paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1.5,
+                  borderColor: type === t ? C.primary : C.border, backgroundColor: type === t ? '#f0fdf4' : '#fff'}} activeOpacity={0.8}>
+                <Text style={{fontSize: 11, fontWeight: fontWeight.semibold, color: type === t ? C.primary : C.textSecondary}}>{SENSOR_LABEL[t]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {!!err && <Text style={{fontSize: 12, color: C.red, marginBottom: 10}}>{err}</Text>}
+          <View style={{flexDirection: 'row', gap: 10}}>
+            <TouchableOpacity onPress={onClose} style={{flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingVertical: 12, alignItems: 'center'}} activeOpacity={0.8}>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.semibold, color: C.textSecondary}}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handle} disabled={saving}
+              style={{flex: 1, backgroundColor: C.primary, borderRadius: 12, paddingVertical: 12, alignItems: 'center'}} activeOpacity={0.85}>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: '#fff'}}>{saving ? 'Saving…' : 'Save'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Icon helpers ─────────────────────────────────────────────────────────────
+
+function IconEdit() {
+  return (
+    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+      <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke={C.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke={C.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function IconTrash() {
+  return (
+    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+      <Polyline points="3 6 5 6 21 6" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M19 6l-1 14H6L5 6" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// ─── InfrastructureTab component ──────────────────────────────────────────────
+
+function InfrastructureTab() {
+  const {user} = useAuth();
+  const {profile} = useUser();
+  const uid = user?.uid ?? '';
+  const userEmail = profile?.email ?? user?.email ?? '';
+  const userName = profile?.displayName ?? user?.displayName ?? 'User';
+
+  const warehouses = useWarehouses(uid);
+  const zones = useZones(uid);
+  const sensors = useSensors(uid);
+  const pending = usePendingRequests(uid);
+
+  const [showWizard, setShowWizard] = useState(false);
+  const [showZoneModal, setShowZoneModal] = useState<string | null>(null);
+  const [showSensorModal, setShowSensorModal] = useState<{zoneId: string; warehouseId: string} | null>(null);
+  const [expandedWH, setExpandedWH] = useState<string | null>(null);
+
+  // Edit/delete modal state
+  const [editWH, setEditWH] = useState<MWH | null>(null);
+  const [deleteWH, setDeleteWH] = useState<MWH | null>(null);
+  const [editZone, setEditZone] = useState<MZone | null>(null);
+  const [deleteZoneTarget, setDeleteZoneTarget] = useState<MZone | null>(null);
+  const [editSensor, setEditSensor] = useState<MSensor | null>(null);
+  const [deleteSensorTarget, setDeleteSensorTarget] = useState<MSensor | null>(null);
+
+  const pendingOwn = pending.filter(r => r.status === 'pending');
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} style={{flex: 1, backgroundColor: C.bg}}>
+      {showWizard && <AddWarehouseWizard uid={uid} userEmail={userEmail} userName={userName} onClose={() => setShowWizard(false)} />}
+      {showZoneModal && (
+        <AddZoneModal warehouseId={showZoneModal}
+          warehouseName={warehouses.find(w => w.id === showZoneModal)?.name ?? ''}
+          uid={uid} userEmail={userEmail} userName={userName} onClose={() => setShowZoneModal(null)} />
+      )}
+      {showSensorModal && (
+        <AddSensorModal zoneId={showSensorModal.zoneId} warehouseId={showSensorModal.warehouseId}
+          uid={uid} userEmail={userEmail} userName={userName} onClose={() => setShowSensorModal(null)} />
+      )}
+      {editWH && <EditWarehouseModal wh={editWH} uid={uid} onClose={() => setEditWH(null)} />}
+      {deleteWH && (
+        <InfraDeleteConfirm
+          title={`Delete ${deleteWH.name}?`}
+          desc="All zones and sensors inside will be permanently removed."
+          onConfirm={() => deleteWarehouse(uid, deleteWH.id)}
+          onClose={() => setDeleteWH(null)} />
+      )}
+      {editZone && <EditZoneModal zone={editZone} uid={uid} onClose={() => setEditZone(null)} />}
+      {deleteZoneTarget && (
+        <InfraDeleteConfirm
+          title={`Delete ${deleteZoneTarget.name}?`}
+          desc="All sensors in this zone will be permanently removed."
+          onConfirm={() => deleteZone(uid, deleteZoneTarget.id)}
+          onClose={() => setDeleteZoneTarget(null)} />
+      )}
+      {editSensor && <EditSensorModal sensor={editSensor} uid={uid} onClose={() => setEditSensor(null)} />}
+      {deleteSensorTarget && (
+        <InfraDeleteConfirm
+          title={`Delete ${deleteSensorTarget.name}?`}
+          desc="This sensor and its readings will be permanently removed."
+          onConfirm={() => deleteSensor(uid, deleteSensorTarget.id)}
+          onClose={() => setDeleteSensorTarget(null)} />
+      )}
+
+      <View style={{padding: 16, gap: 14}}>
+        {/* Header row */}
+        <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+          <View>
+            <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary}}>Warehouses</Text>
+            <Text style={{fontSize: 11, color: C.textMuted, marginTop: 2}}>{warehouses.length} managed · {zones.length} zones · {sensors.length} sensors</Text>
+          </View>
+          <TouchableOpacity
+            style={{backgroundColor: C.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10}}
+            onPress={() => setShowWizard(true)} activeOpacity={0.85}>
+            <Text style={{fontSize: 12, fontWeight: fontWeight.bold, color: '#fff'}}>+ Add Warehouse</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Warehouse list */}
+        {warehouses.length === 0 ? (
+          <View style={{backgroundColor: '#fff', borderRadius: 14, padding: 24, alignItems: 'center', borderWidth: 1, borderColor: C.border}}>
+            <Text style={{fontSize: 13, color: C.textMuted, textAlign: 'center'}}>No warehouses yet.{'\n'}Tap "Add Warehouse" to request one.</Text>
+          </View>
+        ) : (
+          warehouses.map(wh => {
+            const whZones = zones.filter(z => z.warehouseId === wh.id);
+            const isExpanded = expandedWH === wh.id;
+            const statusBg = wh.status === 'active' ? '#f0fdf4' : '#f3f4f6';
+            const statusText = wh.status === 'active' ? '#15803d' : '#6b7280';
+            return (
+              <View key={wh.id} style={{backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: C.border}}>
+                {/* WH header */}
+                <View style={{flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8}}>
+                  <TouchableOpacity
+                    style={{flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8}}
+                    onPress={() => setExpandedWH(isExpanded ? null : wh.id)} activeOpacity={0.7}>
+                    <View style={{flex: 1}}>
+                      <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: C.textPrimary}} numberOfLines={1}>{wh.name}</Text>
+                      <Text style={{fontSize: 11, color: C.textMuted, marginTop: 2}}>{wh.capacity} MT · {wh.location || 'No location'}</Text>
+                    </View>
+                    <View style={{backgroundColor: statusBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8}}>
+                      <Text style={{fontSize: 10.5, fontWeight: fontWeight.semibold, color: statusText}}>{wh.status === 'active' ? 'Active' : 'Inactive'}</Text>
+                    </View>
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                      {isExpanded
+                        ? <Polyline points="18 15 12 9 6 15" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        : <Polyline points="6 9 12 15 18 9" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      }
+                    </Svg>
+                  </TouchableOpacity>
+                  {/* Edit / Delete buttons */}
+                  <TouchableOpacity onPress={() => setEditWH(wh)}
+                    style={{width: 28, height: 28, borderRadius: 8, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center'}} activeOpacity={0.7}>
+                    <IconEdit />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setDeleteWH(wh)}
+                    style={{width: 28, height: 28, borderRadius: 8, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', alignItems: 'center', justifyContent: 'center'}} activeOpacity={0.7}>
+                    <IconTrash />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Zones section (expanded) */}
+                {isExpanded && (
+                  <View style={{borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingHorizontal: 14, paddingBottom: 12}}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 10, paddingBottom: 6}}>
+                      <Text style={{fontSize: 11.5, fontWeight: fontWeight.semibold, color: C.textSecondary}}>{whZones.length} Zone{whZones.length !== 1 ? 's' : ''}</Text>
+                      <TouchableOpacity onPress={() => setShowZoneModal(wh.id)} activeOpacity={0.8}>
+                        <Text style={{fontSize: 11, fontWeight: fontWeight.bold, color: C.primary}}>+ Add Zone</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {whZones.length === 0 && (
+                      <Text style={{fontSize: 11, color: C.textMuted, paddingBottom: 4}}>No zones — add one above.</Text>
+                    )}
+                    {whZones.map(zone => {
+                      const zoneSensors = sensors.filter(s => s.zoneId === zone.id);
+                      return (
+                        <View key={zone.id} style={{backgroundColor: '#f8fafc', borderRadius: 10, padding: 10, marginBottom: 6}}>
+                          {/* Zone header */}
+                          <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                            <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textPrimary, flex: 1}} numberOfLines={1}>{zone.name}</Text>
+                            <TouchableOpacity onPress={() => setShowSensorModal({zoneId: zone.id, warehouseId: wh.id})} activeOpacity={0.8}>
+                              <Text style={{fontSize: 10, fontWeight: fontWeight.bold, color: C.primary}}>+ Sensor</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setEditZone(zone)}
+                              style={{width: 24, height: 24, borderRadius: 6, backgroundColor: '#fff', borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center'}} activeOpacity={0.7}>
+                              <IconEdit />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setDeleteZoneTarget(zone)}
+                              style={{width: 24, height: 24, borderRadius: 6, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', alignItems: 'center', justifyContent: 'center'}} activeOpacity={0.7}>
+                              <IconTrash />
+                            </TouchableOpacity>
+                          </View>
+                          {/* Sensors */}
+                          {zoneSensors.length === 0 ? (
+                            <Text style={{fontSize: 10.5, color: C.textMuted, marginTop: 5}}>No sensors</Text>
+                          ) : (
+                            zoneSensors.map(sensor => {
+                              const sStatusBg = sensor.status === 'active' ? '#dcfce7' : sensor.status === 'pending_approval' ? '#fef3c7' : sensor.status === 'rejected' ? '#fee2e2' : '#f3f4f6';
+                              const sStatusText = sensor.status === 'active' ? '#15803d' : sensor.status === 'pending_approval' ? '#b45309' : sensor.status === 'rejected' ? '#b91c1c' : '#4b5563';
+                              const sStatusLabel = sensor.status === 'active' ? 'Active' : sensor.status === 'pending_approval' ? 'Pending' : sensor.status === 'rejected' ? 'Rejected' : 'Inactive';
+                              return (
+                                <View key={sensor.id} style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, paddingLeft: 6, gap: 6}}>
+                                  <View style={{flex: 1}}>
+                                    <Text style={{fontSize: 11, color: C.textSecondary}} numberOfLines={1}>{sensor.name}</Text>
+                                    <Text style={{fontSize: 9.5, color: C.textMuted}}>{SENSOR_LABEL[sensor.type]}</Text>
+                                  </View>
+                                  <View style={{backgroundColor: sStatusBg, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6}}>
+                                    <Text style={{fontSize: 9.5, fontWeight: fontWeight.semibold, color: sStatusText}}>{sStatusLabel}</Text>
+                                  </View>
+                                  <TouchableOpacity onPress={() => setEditSensor(sensor)}
+                                    style={{width: 22, height: 22, borderRadius: 6, backgroundColor: '#fff', borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center'}} activeOpacity={0.7}>
+                                    <IconEdit />
+                                  </TouchableOpacity>
+                                  <TouchableOpacity onPress={() => setDeleteSensorTarget(sensor)}
+                                    style={{width: 22, height: 22, borderRadius: 6, backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fecaca', alignItems: 'center', justifyContent: 'center'}} activeOpacity={0.7}>
+                                    <IconTrash />
+                                  </TouchableOpacity>
+                                </View>
+                              );
+                            })
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            );
+          })
+        )}
+
+        {/* Pending requests */}
+        {pendingOwn.length > 0 && (
+          <View>
+            <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: C.textPrimary, marginBottom: 8}}>Pending Requests</Text>
+            {pendingOwn.map(req => (
+              <View key={req.id} style={{backgroundColor: '#fffbeb', borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#fde68a'}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+                  <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: '#92400e'}} numberOfLines={1}>
+                    {req.type === 'warehouse_creation' ? `Warehouse: ${req.warehouseName}` :
+                     req.type === 'zone_creation' ? `Zone: ${req.zoneName}` :
+                     `Sensor: ${req.sensorName}`}
+                  </Text>
+                  <View style={{backgroundColor: '#fef3c7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6}}>
+                    <Text style={{fontSize: 10, fontWeight: fontWeight.bold, color: '#b45309'}}>Pending</Text>
+                  </View>
+                </View>
+                <Text style={{fontSize: 10.5, color: '#b45309', marginTop: 3}}>Awaiting admin approval</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+// ─── Add Warehouse Wizard ─────────────────────────────────────────────────────
+
+interface WizardState {
+  step: 1 | 2 | 3;
+  name: string;
+  capacity: string;
+  location: string;
+  zones: WizardZoneData[];
+  submitted: boolean;
+  saving: boolean;
+  error: string;
+}
+
+function AddWarehouseWizard({uid, userEmail, userName, onClose}: {uid: string; userEmail: string; userName: string; onClose: () => void}) {
+  const [state, setState] = useState<WizardState>({
+    step: 1, name: '', capacity: '', location: '',
+    zones: [{name: '', sensors: [{name: '', type: 'temperature'}]}],
+    submitted: false, saving: false, error: '',
+  });
+
+  const set = (patch: Partial<WizardState>) => setState(prev => ({...prev, ...patch}));
+
+  const canNext1 = state.name.trim().length > 0 && state.capacity.trim().length > 0;
+  const canNext2 = state.zones.every(z => z.name.trim().length > 0);
+
+  function addZoneRow() {
+    set({zones: [...state.zones, {name: '', sensors: [{name: '', type: 'temperature'}]}]});
+  }
+  function removeZoneRow(zi: number) {
+    set({zones: state.zones.filter((_, i) => i !== zi)});
+  }
+  function updateZoneName(zi: number, val: string) {
+    const zones = [...state.zones];
+    zones[zi] = {...zones[zi], name: val};
+    set({zones});
+  }
+  function addSensorRow(zi: number) {
+    const zones = [...state.zones];
+    zones[zi] = {...zones[zi], sensors: [...zones[zi].sensors, {name: '', type: 'temperature'}]};
+    set({zones});
+  }
+  function removeSensorRow(zi: number, si: number) {
+    const zones = [...state.zones];
+    zones[zi] = {...zones[zi], sensors: zones[zi].sensors.filter((_, i) => i !== si)};
+    set({zones});
+  }
+  function updateSensorType(zi: number, si: number, val: SType) {
+    const zones = [...state.zones];
+    const sensors = [...zones[zi].sensors];
+    sensors[si] = {...sensors[si], type: val};
+    zones[zi] = {...zones[zi], sensors};
+    set({zones});
+  }
+  function updateSensorName(zi: number, si: number, val: string) {
+    const zones = [...state.zones];
+    const sensors = [...zones[zi].sensors];
+    sensors[si] = {...sensors[si], name: val};
+    zones[zi] = {...zones[zi], sensors};
+    set({zones});
+  }
+
+  async function handleSubmit() {
+    set({saving: true, error: ''});
+    try {
+      const zones = state.zones.map(z => ({
+        name: z.name.trim(),
+        sensors: z.sensors.map(s => ({
+          name: (s.name.trim() || SENSOR_LABEL[s.type]),
+          type: s.type,
+        })),
+      }));
+      await addWarehouse(uid, userEmail, userName, {
+        name: state.name.trim(),
+        capacity: Number(state.capacity),
+        location: state.location.trim(),
+        zones,
+      });
+      set({submitted: true, saving: false});
+      setTimeout(onClose, 2000);
+    } catch {
+      set({saving: false, error: 'Failed to submit request. Try again.'});
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={[styles.modalBox, {maxHeight: '88%'}]} onPress={() => {}}>
+          {/* Header */}
+          <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9'}}>
+            <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary}}>
+              {state.submitted ? 'Request Submitted' : `Add Warehouse — Step ${state.step} of 3`}
+            </Text>
+            <TouchableOpacity onPress={onClose}>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Line x1="18" y1="6" x2="6" y2="18" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" />
+                <Line x1="6" y1="6" x2="18" y2="18" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+          </View>
+
+          {state.submitted ? (
+            /* Success */
+            <View style={{alignItems: 'center', padding: 32, gap: 12}}>
+              <View style={{width: 56, height: 56, borderRadius: 28, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center'}}>
+                <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+                  <Polyline points="20 6 9 17 4 12" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: C.textPrimary}}>Request Submitted!</Text>
+              <Text style={{fontSize: 12, color: C.textMuted, textAlign: 'center'}}>Admin will review and approve your warehouse request.</Text>
+            </View>
+          ) : (
+            <ScrollView style={{flex: 1}} contentContainerStyle={{padding: 16, gap: 12}} showsVerticalScrollIndicator={false}>
+
+              {/* Step 1: Warehouse Info */}
+              {state.step === 1 && (
+                <View style={{gap: 12}}>
+                  <View style={styles.formField}>
+                    <Text style={styles.fieldLabel}>Warehouse Name *</Text>
+                    <TextInput style={styles.fieldInput} value={state.name} onChangeText={v => set({name: v})} placeholder="e.g. North Storage Alpha" placeholderTextColor="#d1d5db" />
+                  </View>
+                  <View style={styles.formField}>
+                    <Text style={styles.fieldLabel}>Capacity (Metric Tons) *</Text>
+                    <TextInput style={styles.fieldInput} value={state.capacity} onChangeText={v => set({capacity: v})} placeholder="e.g. 2000" keyboardType="numeric" placeholderTextColor="#d1d5db" />
+                  </View>
+                  <View style={styles.formField}>
+                    <Text style={styles.fieldLabel}>Location</Text>
+                    <TextInput style={styles.fieldInput} value={state.location} onChangeText={v => set({location: v})} placeholder="e.g. Lahore, Punjab" placeholderTextColor="#d1d5db" />
+                  </View>
+                </View>
+              )}
+
+              {/* Step 2: Zones + Sensors */}
+              {state.step === 2 && (
+                <View style={{gap: 10}}>
+                  <Text style={{fontSize: 12, color: C.textMuted}}>Add zones and sensors for <Text style={{fontWeight: fontWeight.bold, color: C.textPrimary}}>{state.name}</Text></Text>
+                  {state.zones.map((zone, zi) => (
+                    <View key={zi} style={{backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, gap: 8}}>
+                      {/* Zone name row */}
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                        <Text style={{fontSize: 11, fontWeight: fontWeight.bold, color: C.textMuted, width: 18}}>{zi + 1}.</Text>
+                        <TextInput
+                          style={[styles.fieldInput, {flex: 1, marginTop: 0}]}
+                          value={zone.name}
+                          onChangeText={v => updateZoneName(zi, v)}
+                          placeholder={`Zone name ${zi + 1}`}
+                          placeholderTextColor="#d1d5db"
+                        />
+                        <TouchableOpacity onPress={() => removeZoneRow(zi)} style={{padding: 4}}>
+                          <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                            <Line x1="18" y1="6" x2="6" y2="18" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" />
+                            <Line x1="6" y1="6" x2="18" y2="18" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" />
+                          </Svg>
+                        </TouchableOpacity>
+                      </View>
+                      {/* Sensors */}
+                      {zone.sensors.map((sensor, si) => (
+                        <View key={si} style={{flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 24}}>
+                          <View style={{flex: 0, width: 120}}>
+                            <View style={{borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, backgroundColor: '#fff'}}>
+                              {SENSOR_TYPES.map(t => (
+                                <TouchableOpacity
+                                  key={t}
+                                  style={{display: sensor.type === t ? 'flex' : 'none', padding: 0}}
+                                  onPress={() => {
+                                    // Cycle through types
+                                    const next = SENSOR_TYPES[(SENSOR_TYPES.indexOf(sensor.type) + 1) % SENSOR_TYPES.length];
+                                    updateSensorType(zi, si, next);
+                                  }}>
+                                  <Text style={{fontSize: 11, padding: 7, color: C.textSecondary}}>{SENSOR_LABEL[sensor.type]}</Text>
+                                </TouchableOpacity>
+                              ))}
+                              <TouchableOpacity
+                                style={{padding: 7}}
+                                onPress={() => {
+                                  const next = SENSOR_TYPES[(SENSOR_TYPES.indexOf(sensor.type) + 1) % SENSOR_TYPES.length];
+                                  updateSensorType(zi, si, next);
+                                }}>
+                                <Text style={{fontSize: 11, color: C.textSecondary}}>{SENSOR_LABEL[sensor.type]}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                          <TextInput
+                            style={[styles.fieldInput, {flex: 1, marginTop: 0, minWidth: 0}]}
+                            value={sensor.name}
+                            onChangeText={v => updateSensorName(zi, si, v)}
+                            placeholder={SENSOR_LABEL[sensor.type]}
+                            placeholderTextColor="#d1d5db"
+                          />
+                          <TouchableOpacity onPress={() => removeSensorRow(zi, si)} style={{padding: 4}}>
+                            <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                              <Line x1="18" y1="6" x2="6" y2="18" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" />
+                              <Line x1="6" y1="6" x2="18" y2="18" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" />
+                            </Svg>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      <TouchableOpacity onPress={() => addSensorRow(zi)} style={{paddingLeft: 24}}>
+                        <Text style={{fontSize: 11, color: C.primary, fontWeight: fontWeight.semibold}}>+ Add Sensor</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <TouchableOpacity onPress={addZoneRow} style={{alignItems: 'center', padding: 10, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, borderStyle: 'dashed'}}>
+                    <Text style={{fontSize: 12, color: C.primary, fontWeight: fontWeight.semibold}}>+ Add Zone</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Step 3: Review */}
+              {state.step === 3 && (
+                <View style={{gap: 8}}>
+                  <View style={{backgroundColor: '#f8fafc', borderRadius: 12, padding: 14, gap: 6}}>
+                    <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: C.textPrimary}}>{state.name}</Text>
+                    <Text style={{fontSize: 12, color: C.textMuted}}>{state.capacity} MT · {state.location || 'No location'}</Text>
+                    <Text style={{fontSize: 11, color: C.textMuted, marginTop: 4}}>{state.zones.length} zone{state.zones.length !== 1 ? 's' : ''} · {state.zones.reduce((s, z) => s + z.sensors.length, 0)} sensor{state.zones.reduce((s, z) => s + z.sensors.length, 0) !== 1 ? 's' : ''}</Text>
+                  </View>
+                  {state.zones.map((z, zi) => (
+                    <View key={zi} style={{backgroundColor: '#fff', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#e5e7eb'}}>
+                      <Text style={{fontSize: 12, fontWeight: fontWeight.semibold, color: C.textPrimary}}>{z.name}</Text>
+                      {z.sensors.map((s, si) => (
+                        <Text key={si} style={{fontSize: 11, color: C.textMuted, marginTop: 3}}>• {s.name || SENSOR_LABEL[s.type]}</Text>
+                      ))}
+                    </View>
+                  ))}
+                  {state.error ? <Text style={{fontSize: 12, color: '#ef4444'}}>{state.error}</Text> : null}
+                </View>
+              )}
+            </ScrollView>
+          )}
+
+          {/* Footer buttons */}
+          {!state.submitted && (
+            <View style={{flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9'}}>
+              {state.step > 1 && (
+                <TouchableOpacity
+                  style={{flex: 1, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', alignItems: 'center'}}
+                  onPress={() => set({step: (state.step - 1) as 1 | 2 | 3})}
+                  activeOpacity={0.8}>
+                  <Text style={{fontSize: 13, fontWeight: fontWeight.semibold, color: C.textSecondary}}>Back</Text>
+                </TouchableOpacity>
+              )}
+              {state.step < 3 ? (
+                <TouchableOpacity
+                  style={{flex: 1, padding: 12, borderRadius: 12, backgroundColor: (state.step === 1 ? canNext1 : canNext2) ? C.primary : '#d1d5db', alignItems: 'center'}}
+                  onPress={() => (state.step === 1 ? canNext1 : canNext2) && set({step: (state.step + 1) as 2 | 3})}
+                  activeOpacity={0.8}>
+                  <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: '#fff'}}>Next</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={{flex: 1, padding: 12, borderRadius: 12, backgroundColor: state.saving ? '#d1d5db' : C.primary, alignItems: 'center'}}
+                  onPress={handleSubmit}
+                  disabled={state.saving}
+                  activeOpacity={0.8}>
+                  <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: '#fff'}}>{state.saving ? 'Submitting...' : 'Submit Request'}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── Add Zone Modal ───────────────────────────────────────────────────────────
+
+function AddZoneModal({warehouseId, warehouseName, uid, userEmail, userName, onClose}: {
+  warehouseId: string; warehouseName: string; uid: string; userEmail: string; userName: string; onClose: () => void;
+}) {
+  const [zoneName, setZoneName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function handleSubmit() {
+    if (!zoneName.trim()) return setErr('Zone name is required.');
+    setSaving(true);
+    try {
+      await addZone(uid, userEmail, userName, {warehouseId, warehouseName, name: zoneName.trim()});
+      setSubmitted(true);
+      setTimeout(onClose, 2000);
+    } catch {
+      setErr('Failed to submit. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.modalBox} onPress={() => {}}>
+          <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9'}}>
+            <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary}}>Add Zone</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Line x1="18" y1="6" x2="6" y2="18" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" />
+                <Line x1="6" y1="6" x2="18" y2="18" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+          </View>
+          {submitted ? (
+            <View style={{alignItems: 'center', padding: 32, gap: 12}}>
+              <View style={{width: 56, height: 56, borderRadius: 28, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center'}}>
+                <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+                  <Polyline points="20 6 9 17 4 12" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: C.textPrimary}}>Zone Request Submitted</Text>
+              <Text style={{fontSize: 12, color: C.textMuted, textAlign: 'center'}}>Admin will review and approve your zone request.</Text>
+            </View>
+          ) : (
+            <View style={{padding: 16, gap: 12}}>
+              <Text style={{fontSize: 12, color: C.textMuted}}>Adding zone to <Text style={{fontWeight: fontWeight.bold, color: C.textPrimary}}>{warehouseName}</Text></Text>
+              <View style={styles.formField}>
+                <Text style={styles.fieldLabel}>Zone Name *</Text>
+                <TextInput style={styles.fieldInput} value={zoneName} onChangeText={setZoneName} placeholder="e.g. North Wing" placeholderTextColor="#d1d5db" />
+              </View>
+              {err ? <Text style={{fontSize: 12, color: '#ef4444'}}>{err}</Text> : null}
+              <TouchableOpacity
+                style={{backgroundColor: saving || !zoneName.trim() ? '#d1d5db' : C.primary, padding: 13, borderRadius: 12, alignItems: 'center'}}
+                onPress={handleSubmit}
+                disabled={saving || !zoneName.trim()}
+                activeOpacity={0.85}>
+                <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: '#fff'}}>{saving ? 'Submitting...' : 'Submit Request'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── Add Sensor Modal ─────────────────────────────────────────────────────────
+
+function AddSensorModal({zoneId, warehouseId, uid, userEmail, userName, onClose}: {
+  zoneId: string; warehouseId: string; uid: string; userEmail: string; userName: string; onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [type, setType] = useState<SType>('temperature');
+  const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function handleSubmit() {
+    if (!name.trim()) return setErr('Sensor name is required.');
+    setSaving(true);
+    try {
+      await addSensor(uid, userEmail, userName, {name: name.trim(), type, zoneId, warehouseId});
+      setSubmitted(true);
+      setTimeout(onClose, 2000);
+    } catch {
+      setErr('Failed to submit. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.modalBox} onPress={() => {}}>
+          <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9'}}>
+            <Text style={{fontSize: 15, fontWeight: fontWeight.bold, color: C.textPrimary}}>Add Sensor</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Line x1="18" y1="6" x2="6" y2="18" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" />
+                <Line x1="6" y1="6" x2="18" y2="18" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
+          </View>
+          {submitted ? (
+            <View style={{alignItems: 'center', padding: 32, gap: 12}}>
+              <View style={{width: 56, height: 56, borderRadius: 28, backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center'}}>
+                <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
+                  <Polyline points="20 6 9 17 4 12" stroke="#16a34a" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+              <Text style={{fontSize: 14, fontWeight: fontWeight.bold, color: C.textPrimary}}>Sensor Request Submitted</Text>
+              <Text style={{fontSize: 12, color: C.textMuted, textAlign: 'center'}}>Admin will review and activate your sensor.</Text>
+            </View>
+          ) : (
+            <View style={{padding: 16, gap: 12}}>
+              <View style={styles.formField}>
+                <Text style={styles.fieldLabel}>Sensor Name *</Text>
+                <TextInput style={styles.fieldInput} value={name} onChangeText={setName} placeholder="e.g. Temp Sensor A" placeholderTextColor="#d1d5db" />
+              </View>
+              <Text style={styles.fieldLabel}>Sensor Type</Text>
+              <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 8}}>
+                {SENSOR_TYPES.map(t => (
+                  <TouchableOpacity key={t} onPress={() => setType(t)}
+                    style={{paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1.5,
+                      borderColor: type === t ? C.primary : C.border, backgroundColor: type === t ? '#f0fdf4' : '#fff'}} activeOpacity={0.8}>
+                    <Text style={{fontSize: 11, fontWeight: fontWeight.semibold, color: type === t ? C.primary : C.textSecondary}}>{SENSOR_LABEL[t]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {err ? <Text style={{fontSize: 12, color: '#ef4444'}}>{err}</Text> : null}
+              <TouchableOpacity
+                style={{backgroundColor: saving || !name.trim() ? '#d1d5db' : C.primary, padding: 13, borderRadius: 12, alignItems: 'center', marginTop: 4}}
+                onPress={handleSubmit} disabled={saving || !name.trim()} activeOpacity={0.85}>
+                <Text style={{fontSize: 13, fontWeight: fontWeight.bold, color: '#fff'}}>{saving ? 'Submitting...' : 'Submit Request'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 const TABS: {key: Tab; label: string}[] = [
@@ -928,6 +1797,7 @@ const TABS: {key: Tab; label: string}[] = [
   {key: 'sensors', label: 'Sensors'},
   {key: 'security', label: 'Security'},
   {key: 'appearance', label: 'Appearance'},
+  {key: 'infrastructure', label: 'Infrastructure'},
 ];
 
 export default function SettingsScreen() {
@@ -960,11 +1830,12 @@ export default function SettingsScreen() {
 
       {/* Tab content */}
       <View style={styles.tabContent}>
-        {tab === 'general' && <GeneralTab />}
-        {tab === 'notifications' && <NotificationsTab />}
-        {tab === 'sensors' && <SensorsTab />}
-        {tab === 'security' && <SecurityTab />}
-        {tab === 'appearance' && <AppearanceTab />}
+        {tab === 'general'         && <GeneralTab />}
+        {tab === 'notifications'   && <NotificationsTab />}
+        {tab === 'sensors'         && <SensorsTab />}
+        {tab === 'security'        && <SecurityTab />}
+        {tab === 'appearance'      && <AppearanceTab />}
+        {tab === 'infrastructure'  && <InfrastructureTab />}
       </View>
     </SafeAreaView>
   );

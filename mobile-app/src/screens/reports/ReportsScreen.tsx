@@ -12,11 +12,14 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Svg, {Circle, Line, Path, Polyline, Rect, Text as SvgText} from 'react-native-svg';
 
 import {
-  getReportsData,
   type ReportItem,
   type ReportType,
 } from '../../lib/dataEngine';
 import {fontWeight} from '../../theme/tokens';
+import {useLiveData} from '../../contexts/LiveDataContext';
+import {useUser} from '../../contexts/UserContext';
+import {useAuth} from '../../app/AuthProvider';
+import {generateReport} from '../../lib/firestoreService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -533,8 +536,50 @@ function ScheduleModal({onClose}: {onClose: () => void}) {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ReportsScreen() {
-  const data = useMemo(() => getReportsData(new Date()), []);
+  const {reports: liveReports} = useLiveData();
+  const {profile} = useUser();
+  const {user} = useAuth();
+
+  const data = useMemo(() => {
+    const recentReports = liveReports as ReportItem[];
+    const typeColors = ['#1f5135', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444'];
+    const typeLabels = ['Environmental', 'Compliance', 'Performance', 'Alert Summary', 'Custom'];
+    const reportTypes = ['environmental', 'compliance', 'performance', 'alert-summary', 'custom'] as const;
+    const typeCountMap: Record<string, number> = {};
+    recentReports.forEach(r => { typeCountMap[r.type] = (typeCountMap[r.type] ?? 0) + 1; });
+    const reportTypeData = reportTypes.map((t, i) => ({label: typeLabels[i], count: typeCountMap[t] ?? 0, color: typeColors[i]}));
+
+    const today = new Date();
+    const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function dayLabel(d: Date) { return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`; }
+    const reportTrendData = Array.from({length: 7}, (_, i) => {
+      const d = new Date(today); d.setDate(d.getDate() - (6 - i));
+      const dayStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+      const gen = recentReports.filter(r => r.dateGenerated === dayStr).length;
+      return {day: dayLabel(d), Generated: gen, Downloaded: Math.round(gen * 0.6)};
+    });
+
+    const ready = recentReports.filter(r => r.status === 'ready').length;
+    const processing = recentReports.filter(r => r.status === 'processing').length;
+    const scheduled = recentReports.filter(r => r.status === 'scheduled').length;
+    const totalDownloads = recentReports.reduce((s, r) => s + (r.downloads ?? 0), 0);
+
+    const stats = [
+      {label: 'Total Reports', value: recentReports.length, delta: '+0', deltaPositive: true,  colorKey: 'blue'   as const},
+      {label: 'Ready',         value: ready,                delta: '+0', deltaPositive: true,  colorKey: 'green'  as const},
+      {label: 'Processing',    value: processing,           delta: '+0', deltaPositive: false, colorKey: 'amber'  as const},
+      {label: 'Downloads',     value: totalDownloads,       delta: '+0', deltaPositive: true,  colorKey: 'purple' as const},
+    ];
+
+    return {stats, recentReports, reportTypeData, reportTrendData};
+  }, [liveReports]);
+
   const [modalVisible, setModalVisible] = useState(false);
+
+  async function handleGenerateReport(type: ReportType, warehouse: string, period: string) {
+    if (!user?.uid) return;
+    await generateReport(user.uid, profile?.displayName ?? 'User', type, warehouse, period);
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>

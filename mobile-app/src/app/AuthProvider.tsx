@@ -12,6 +12,7 @@ import {
   updateProfile,
 } from '@react-native-firebase/auth';
 import type {FirebaseAuthTypes} from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
 
 import {getGoogleWebClientId} from '../services/firebase/googleSigninConfig';
@@ -37,6 +38,31 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const firebaseApp = getApp();
 const firebaseAuth = getAuth(firebaseApp);
 const googleWebClientId = getGoogleWebClientId();
+
+// ─── Firestore user doc creation ──────────────────────────────────────────────
+
+async function createUserFirestoreDocs(uid: string, email: string, displayName: string) {
+  const now = Date.now();
+  const userRef = firestore().doc(`users/${uid}`);
+  const snap = await userRef.get();
+  if (snap.exists()) return; // already created
+
+  await userRef.set({
+    uid,
+    email,
+    displayName,
+    approvalStatus: 'pending',
+    role: 'user',
+    createdAt: now,
+  });
+  await firestore().doc(`userRequests/${uid}`).set({
+    uid,
+    email,
+    displayName,
+    requestedAt: now,
+    status: 'pending',
+  });
+}
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
@@ -74,6 +100,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
           password,
         );
         await updateProfile(newUser, {displayName: name.trim()});
+        await createUserFirestoreDocs(newUser.uid, email.trim(), name.trim());
       },
 
       async signInWithGoogle() {
@@ -102,7 +129,15 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
         }
 
         const credential = GoogleAuthProvider.credential(idToken);
-        await signInWithCredential(firebaseAuth, credential);
+        const result = await signInWithCredential(firebaseAuth, credential);
+        // Create Firestore docs on first Google sign-in
+        if (result.additionalUserInfo?.isNewUser) {
+          await createUserFirestoreDocs(
+            result.user.uid,
+            result.user.email ?? '',
+            result.user.displayName ?? '',
+          );
+        }
       },
 
       async sendPasswordReset(email: string) {

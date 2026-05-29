@@ -9,13 +9,11 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Svg, {Line, Path, Polyline, Rect} from 'react-native-svg';
-import {
-  type Alert,
-  type AlertSeverity,
-  type AlertStatus,
-  type AlertParamType,
-  getAlertsData,
-} from '../../lib/dataEngine';
+import {type Alert, type AlertSeverity, type AlertStatus, type AlertParamType} from '../../lib/dataEngine';
+import {useLiveData} from '../../contexts/LiveDataContext';
+import {useAuth} from '../../app/AuthProvider';
+import {setAlertStatus, resolveAlert} from '../../lib/firestoreService';
+import type {LiveAlert} from '../../lib/accountDb';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -267,8 +265,39 @@ function AlertRow({alert, onPress}: {alert: Alert; onPress: () => void}) {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
+function liveAlertToAlert(a: LiveAlert): Alert {
+  const sevMap: Record<string, AlertSeverity> = {critical: 'critical', high: 'high', medium: 'medium', low: 'low', info: 'info'};
+  const typeMap: Record<string, AlertParamType> = {
+    temperature: 'temperature', humidity: 'humidity', moisture: 'moisture',
+    co2: 'co2', aqi: 'aqi', capacity: 'capacity',
+  };
+  return {
+    id: a.id,
+    severity: sevMap[a.severity] ?? 'medium',
+    title: a.message,
+    warehouse: a.warehouseId,
+    zone: '—',
+    parameter: a.param,
+    value: `${a.value}${a.unit}`,
+    threshold: `${a.threshold}${a.unit}`,
+    time: new Date(a.timestamp).toLocaleString('en-US', {hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric'}),
+    status: (a.status ?? 'active') as AlertStatus,
+    type: (typeMap[a.param] ?? 'system') as AlertParamType,
+  };
+}
+
 export default function AlertsScreen() {
-  const data = useMemo(() => getAlertsData(new Date()), []);
+  const {user} = useAuth();
+  const {alerts: liveAlerts, alertHistory, sensorHistory} = useLiveData();
+
+  // Combine active + history into one list, map to Alert shape
+  const allAlerts = useMemo(() => {
+    const active  = liveAlerts.map(liveAlertToAlert);
+    const history = alertHistory.map(liveAlertToAlert);
+    const seen    = new Set(active.map(a => a.id));
+    return [...active, ...history.filter(a => !seen.has(a.id))];
+  }, [liveAlerts, alertHistory]);
+
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [sevFilter, setSevFilter] = useState<AlertSeverity | 'all'>('all');
   const [typeFilter, setTypeFilter] = useState<AlertParamType | 'all'>('all');
@@ -278,19 +307,69 @@ export default function AlertsScreen() {
   const [tab, setTab] = useState<'list' | 'trends' | 'heatmap'>('list');
 
   const filtered = useMemo(() => {
-    return data.alerts.filter(a => {
+    return allAlerts.filter(a => {
       if (sevFilter !== 'all' && a.severity !== sevFilter) return false;
       if (typeFilter !== 'all' && a.type !== typeFilter) return false;
       if (statusFilter !== 'all' && a.status !== statusFilter) return false;
       return true;
     });
-  }, [data.alerts, sevFilter, typeFilter, statusFilter]);
+  }, [allAlerts, sevFilter, typeFilter, statusFilter]);
 
   function handleAcknowledge(id: string) {
     setAcknowledgedIds(prev => new Set([...prev, id]));
+    if (user?.uid) setAlertStatus(user.uid, id, 'acknowledged').catch(() => undefined);
   }
 
-  const {alertSummary: summary, alertTrendData: trendData, heatmapData} = data;
+  function handleResolve(id: string) {
+    if (user?.uid) resolveAlert(user.uid, id).catch(() => undefined);
+  }
+
+  const summary = useMemo(() => ({
+    total:    allAlerts.length,
+    critical: allAlerts.filter(a => a.severity === 'critical').length,
+    warning:  allAlerts.filter(a => a.severity === 'high' || a.severity === 'medium').length,
+    info:     allAlerts.filter(a => a.severity === 'low' || a.severity === 'info').length,
+    resolved: allAlerts.filter(a => a.status === 'resolved').length,
+  }), [allAlerts]);
+
+  const {trendData, heatmapData} = useMemo(() => {
+    const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function dayLabel(d: Date) { return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`; }
+    function addDays(d: Date, n: number) { const nd = new Date(d); nd.setDate(nd.getDate() + n); return nd; }
+    const today = new Date();
+
+    const trend = sensorHistory.length > 0
+      ? sensorHistory.slice(0, 7).reverse().map(h => ({
+          day:      dayLabel(new Date(h.date + 'T00:00:00')),
+          Critical: h.alertCounts?.critical ?? 0,
+          Warning:  (h.alertCounts?.high ?? 0) + (h.alertCounts?.medium ?? 0),
+          Info:     h.alertCounts?.total ? Math.max(0, h.alertCounts.total - (h.alertCounts.critical ?? 0) - (h.alertCounts.high ?? 0) - (h.alertCounts.medium ?? 0)) : 0,
+        }))
+      : Array.from({length: 7}, (_, i) => ({day: dayLabel(addDays(today, i - 6)), Critical: 0, Warning: 2, Info: 8}));
+
+    const hmap: number[][] = Array.from({length: 7}, (_, di) => {
+      const h = sensorHistory[di];
+      const warehouseStatus = h?.warehouseStatus;
+      const stress = warehouseStatus ? (warehouseStatus.critical * 3 + warehouseStatus.warning) : 1;
+      return Array.from({length: 8}, (_, ti) => Math.max(0, Math.round(stress * (ti >= 2 && ti <= 5 ? 2 : 0.5))));
+    });
+
+    return {trendData: trend, heatmapData: hmap};
+  }, [sensorHistory]);
+
+  const alertsByType = useMemo(() => {
+    const typeMap: Record<string, number> = {};
+    allAlerts.forEach(a => { typeMap[a.type] = (typeMap[a.type] ?? 0) + 1; });
+    return [
+      {label: 'Temperature', count: typeMap.temperature ?? 0, color: '#f59e0b'},
+      {label: 'Humidity',    count: typeMap.humidity ?? 0,    color: '#3b82f6'},
+      {label: 'Moisture',    count: typeMap.moisture ?? 0,    color: '#10b981'},
+      {label: 'CO₂',         count: typeMap.co2 ?? 0,         color: '#8b5cf6'},
+      {label: 'AQI',         count: typeMap.aqi ?? 0,         color: '#ef4444'},
+      {label: 'Capacity',    count: typeMap.capacity ?? 0,    color: '#f97316'},
+      {label: 'System',      count: typeMap.system ?? 0,      color: '#9ca3af'},
+    ].filter(t => t.count > 0);
+  }, [allAlerts]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -418,12 +497,12 @@ export default function AlertsScreen() {
               {trendData.map(d => <Text key={d.day} style={styles.dayLabel}>{d.day}</Text>)}
             </View>
             <Text style={[styles.cardTitle, {marginTop: 20}]}>By Parameter Type</Text>
-            {data.alertsByType.map(t => (
+            {alertsByType.map(t => (
               <View key={t.label} style={styles.typeRow}>
                 <View style={[styles.typeDot, {backgroundColor: t.color}]} />
                 <Text style={styles.typeLabel}>{t.label}</Text>
                 <View style={styles.typeBarWrap}>
-                  <View style={[styles.typeBar, {backgroundColor: t.color, width: `${Math.round(t.count / Math.max(data.alertSummary.total, 1) * 100)}%` as any}]} />
+                  <View style={[styles.typeBar, {backgroundColor: t.color, width: `${Math.round(t.count / Math.max(summary.total, 1) * 100)}%` as any}]} />
                 </View>
                 <Text style={styles.typeCount}>{t.count}</Text>
               </View>

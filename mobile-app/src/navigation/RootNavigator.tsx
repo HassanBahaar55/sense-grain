@@ -4,7 +4,14 @@ import type {RouteProp} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import type {BottomTabNavigationOptions} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {ActivityIndicator, StyleSheet, View} from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import Svg, {
   Circle,
   Line,
@@ -14,9 +21,11 @@ import Svg, {
 } from 'react-native-svg';
 
 import {useAuth} from '../app/AuthProvider';
+import {useUser} from '../contexts/UserContext';
 import {ForgotPasswordScreen} from '../screens/auth/ForgotPasswordScreen';
 import {LoginScreen} from '../screens/auth/LoginScreen';
 import {SignupScreen} from '../screens/auth/SignupScreen';
+import AdminPanelScreen from '../screens/admin/AdminPanelScreen';
 import AlertsScreen from '../screens/alerts/AlertsScreen';
 import AnalyticsScreen from '../screens/analytics/AnalyticsScreen';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
@@ -25,7 +34,7 @@ import RealtimeMonitorScreen from '../screens/realtime-monitor/RealtimeMonitorSc
 import ReportsScreen from '../screens/reports/ReportsScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 import StorageUnitsScreen from '../screens/storage-units/StorageUnitsScreen';
-import {colors, fontSize} from '../theme/tokens';
+import {colors, fontSize, fontWeight} from '../theme/tokens';
 
 // ─── Route types ──────────────────────────────────────────────────────────────
 
@@ -38,6 +47,7 @@ export type RootTabParamList = {
   Predictions: undefined;
   Reports: undefined;
   Settings: undefined;
+  Admin: undefined;
 };
 
 export type RootStackParamList = {
@@ -45,6 +55,8 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   Signup: undefined;
   AppTabs: undefined;
+  Pending: undefined;
+  Rejected: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -134,6 +146,14 @@ function SettingsIcon({color}: {color: string}) {
   );
 }
 
+function AdminIcon({color}: {color: string}) {
+  return (
+    <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 // ─── Icon map ─────────────────────────────────────────────────────────────────
 
 type IconComponent = ({color}: {color: string}) => React.JSX.Element;
@@ -147,6 +167,7 @@ const TAB_ICONS: Record<keyof RootTabParamList, IconComponent> = {
   Predictions: PredictionsIcon,
   Reports:     ReportsIcon,
   Settings:    SettingsIcon,
+  Admin:       AdminIcon,
 };
 
 // ─── Screen options ───────────────────────────────────────────────────────────
@@ -177,11 +198,77 @@ const screenOptions = ({route}: ScreenOptionsArgs): BottomTabNavigationOptions =
   };
 };
 
+// ─── Pending screen ───────────────────────────────────────────────────────────
+
+function PendingScreen() {
+  const {signOutUser} = useAuth();
+  return (
+    <SafeAreaView style={styles.guardScreen}>
+      <View style={styles.guardCard}>
+        <View style={styles.guardIconWrap}>
+          <Svg width={48} height={48} viewBox="0 0 24 24" fill="none">
+            <Circle cx="12" cy="12" r="10" stroke="#f59e0b" strokeWidth={1.8} />
+            <Path d="M12 8v4M12 16h.01" stroke="#f59e0b" strokeWidth={1.8} strokeLinecap="round" />
+          </Svg>
+        </View>
+        <Text style={styles.guardTitle}>Account Pending Approval</Text>
+        <Text style={styles.guardMessage}>
+          Your account is awaiting administrator approval. You will gain access once an admin
+          reviews your registration.
+        </Text>
+        <Text style={styles.guardSub}>
+          This usually takes a few hours. Please check back later.
+        </Text>
+        <TouchableOpacity style={styles.guardBtn} onPress={signOutUser}>
+          <Text style={styles.guardBtnText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// ─── Rejected screen ──────────────────────────────────────────────────────────
+
+function RejectedScreen() {
+  const {signOutUser} = useAuth();
+  const {profile} = useUser();
+  return (
+    <SafeAreaView style={styles.guardScreen}>
+      <View style={styles.guardCard}>
+        <View style={styles.guardIconWrap}>
+          <Svg width={48} height={48} viewBox="0 0 24 24" fill="none">
+            <Circle cx="12" cy="12" r="10" stroke="#ef4444" strokeWidth={1.8} />
+            <Path d="M15 9l-6 6M9 9l6 6" stroke="#ef4444" strokeWidth={1.8} strokeLinecap="round" />
+          </Svg>
+        </View>
+        <Text style={[styles.guardTitle, {color: '#ef4444'}]}>Account Rejected</Text>
+        <Text style={styles.guardMessage}>
+          Your registration request was not approved.
+        </Text>
+        {profile?.rejectedReason ? (
+          <View style={styles.reasonBox}>
+            <Text style={styles.reasonLabel}>Reason</Text>
+            <Text style={styles.reasonText}>{profile.rejectedReason}</Text>
+          </View>
+        ) : null}
+        <Text style={styles.guardSub}>
+          Please contact support if you believe this is a mistake.
+        </Text>
+        <TouchableOpacity style={[styles.guardBtn, {backgroundColor: '#ef4444'}]} onPress={signOutUser}>
+          <Text style={styles.guardBtnText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 // ─── Tab navigator ────────────────────────────────────────────────────────────
 
 function AppTabs() {
+  const {isAdmin} = useUser();
+
   return (
-    <Tab.Navigator screenOptions={screenOptions}>
+    <Tab.Navigator screenOptions={screenOptions} initialRouteName={isAdmin ? 'Admin' : 'Dashboard'}>
       <Tab.Screen name="Dashboard"   component={DashboardScreen} />
       <Tab.Screen name="Monitor"     component={RealtimeMonitorScreen} options={{title: 'Monitor'}} />
       <Tab.Screen name="Storage"     component={StorageUnitsScreen}    options={{title: 'Storage'}} />
@@ -190,6 +277,14 @@ function AppTabs() {
       <Tab.Screen name="Predictions" component={PredictionsScreen} />
       <Tab.Screen name="Reports"     component={ReportsScreen} />
       <Tab.Screen name="Settings"    component={SettingsScreen} />
+      <Tab.Screen
+        name="Admin"
+        component={AdminPanelScreen}
+        options={{
+          tabBarButton: isAdmin ? undefined : () => null,
+          tabBarLabel: 'Admin',
+        }}
+      />
     </Tab.Navigator>
   );
 }
@@ -207,23 +302,28 @@ function AuthBootScreen() {
 // ─── Root navigator ───────────────────────────────────────────────────────────
 
 export function RootNavigator() {
-  const {loading, user} = useAuth();
+  const {loading: authLoading, user} = useAuth();
+  const {approvalStatus, loading: userLoading} = useUser();
 
-  if (loading) {
+  if (authLoading || (user != null && userLoading)) {
     return <AuthBootScreen />;
   }
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{headerShown: false}}>
-        {user ? (
-          <Stack.Screen name="AppTabs" component={AppTabs} />
-        ) : (
+        {!user ? (
           <>
             <Stack.Screen name="Login"          component={LoginScreen} />
             <Stack.Screen name="Signup"         component={SignupScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
+        ) : approvalStatus === 'pending' ? (
+          <Stack.Screen name="Pending" component={PendingScreen} />
+        ) : approvalStatus === 'rejected' ? (
+          <Stack.Screen name="Rejected" component={RejectedScreen} />
+        ) : (
+          <Stack.Screen name="AppTabs" component={AppTabs} />
         )}
       </Stack.Navigator>
     </NavigationContainer>
@@ -236,5 +336,74 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  guardScreen: {
+    flex: 1,
+    backgroundColor: '#f6f8f3',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  guardCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  guardIconWrap: {
+    marginBottom: 20,
+  },
+  guardTitle: {
+    fontSize: 20,
+    fontWeight: fontWeight.bold as any,
+    color: '#172118',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  guardMessage: {
+    fontSize: 14,
+    color: '#5e6b5f',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  guardSub: {
+    fontSize: 12,
+    color: '#8e9b8f',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  reasonBox: {
+    backgroundColor: '#fff1f2',
+    borderRadius: 10,
+    padding: 12,
+    width: '100%',
+    marginBottom: 12,
+  },
+  reasonLabel: {
+    fontSize: 11,
+    color: '#ef4444',
+    fontWeight: fontWeight.semibold as any,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  reasonText: {
+    fontSize: 13,
+    color: '#991b1b',
+  },
+  guardBtn: {
+    backgroundColor: '#1f5135',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+  },
+  guardBtnText: {
+    color: '#ffffff',
+    fontWeight: fontWeight.semibold as any,
+    fontSize: 15,
   },
 });

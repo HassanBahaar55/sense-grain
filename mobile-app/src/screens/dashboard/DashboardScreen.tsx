@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useState} from 'react';
 import {
   Modal,
   Pressable,
@@ -9,14 +9,53 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Svg, {Circle, Line, Path, Polyline, Rect} from 'react-native-svg';
+import {useNavigation} from '@react-navigation/native';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 
-import {getDashboardData, type DashAlert, type WHStatus} from '../../lib/dataEngine';
 import {colors, fontWeight} from '../../theme/tokens';
+import {useLiveData} from '../../contexts/LiveDataContext';
+import {useAuth} from '../../app/AuthProvider';
+import {setAlertStatus} from '../../lib/firestoreService';
+import type {WHStatus, WarehouseReading} from '../../lib/accountDb';
+import type {RootTabParamList} from '../../navigation/RootNavigator';
+
+// ─── Local types ──────────────────────────────────────────────────────────────
+
+interface DashAlert {
+  id: string;
+  severity: 'high' | 'medium';
+  title: string;
+  location: string;
+  time: string;
+  value: string;
+  threshold: string;
+}
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 function useDashboard() {
-  return useMemo(() => getDashboardData(new Date()), []);
+  const {warehouseReadings, alerts: liveAlerts} = useLiveData();
+
+  const dashAlerts: DashAlert[] = liveAlerts
+    .filter(a => ['critical', 'high', 'medium'].includes(a.severity))
+    .slice(0, 4)
+    .map(a => ({
+      id: a.id,
+      severity: (a.severity === 'critical' ? 'high' : a.severity) as 'high' | 'medium',
+      title: a.message,
+      location: a.warehouseId,
+      time: new Date(a.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}),
+      value: `${a.value}${a.unit}`,
+      threshold: `${a.threshold}${a.unit}`,
+    }));
+
+  const goodCount    = warehouseReadings.filter(w => w.status === 'good').length;
+  const watchCount   = warehouseReadings.filter(w => w.status === 'medium').length;
+  const criticalCount = warehouseReadings.filter(w => w.status === 'high').length;
+  const offlineCount = warehouseReadings.filter(w => w.status === 'inactive').length;
+  const activeCount  = warehouseReadings.filter(w => w.status !== 'inactive').length;
+
+  return {warehouses: warehouseReadings, alerts: dashAlerts, goodCount, watchCount, criticalCount, offlineCount, activeCount};
 }
 
 // ─── Status configs ───────────────────────────────────────────────────────────
@@ -191,10 +230,12 @@ function AlertDetailModal({
   alert,
   onClose,
   onAcknowledge,
+  onViewAlerts,
 }: {
   alert: DashAlert;
   onClose: () => void;
-  onAcknowledge: (id: number) => void;
+  onAcknowledge: (id: string) => void;
+  onViewAlerts: () => void;
 }) {
   const cfg = alertCfg[alert.severity];
   const isHigh = alert.severity === 'high';
@@ -279,9 +320,11 @@ function AlertDetailModal({
                 <Text style={styles.ackBtnText}>Acknowledge</Text>
               </Pressable>
             )}
-            <View style={styles.viewAlertsBtn}>
+            <Pressable
+              style={({pressed}) => [styles.viewAlertsBtn, pressed ? {opacity: 0.75} : undefined]}
+              onPress={() => { onClose(); onViewAlerts(); }}>
               <Text style={styles.viewAlertsBtnText}>View in Alerts</Text>
-            </View>
+            </Pressable>
           </View>
         </Pressable>
       </Pressable>
@@ -378,13 +421,7 @@ function MetricCard({
 function WarehouseTile({
   wh,
 }: {
-  wh: {
-    id: string;
-    status: WHStatus;
-    temp: number | null;
-    humidity: number | null;
-    moisture: number | null;
-  };
+  wh: WarehouseReading;
 }) {
   const cfg = statusCfg[wh.status];
   return (
@@ -392,7 +429,7 @@ function WarehouseTile({
       <View style={[styles.whTileBar, {backgroundColor: cfg.barColor}]} />
       <View style={styles.whTileInner}>
         <View style={styles.whTileHeader}>
-          <Text style={styles.whTileId}>{wh.id}</Text>
+          <Text style={styles.whTileId} numberOfLines={1}>{wh.name || wh.id}</Text>
           <View style={[styles.whBadge, {backgroundColor: cfg.badgeBg}]}>
             <Text style={[styles.whBadgeText, {color: cfg.badgeText}]}>{cfg.label}</Text>
           </View>
@@ -430,11 +467,16 @@ export default function DashboardScreen() {
   const alertHigh = activeAlerts.filter(a => a.severity === 'high').length;
   const alertMedium = activeAlerts.filter(a => a.severity === 'medium').length;
 
+  const {user} = useAuth();
+  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const [selectedAlert, setSelectedAlert] = useState<DashAlert | null>(null);
-  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<number>>(new Set());
+  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set());
 
-  function handleAcknowledge(id: number) {
+  function handleAcknowledge(id: string) {
     setAcknowledgedIds(prev => new Set([...prev, id]));
+    if (user?.uid) {
+      setAlertStatus(user.uid, id, 'acknowledged').catch(() => undefined);
+    }
   }
 
   return (
@@ -543,7 +585,9 @@ export default function DashboardScreen() {
           </View>
 
           {/* Footer link */}
-          <Pressable style={({pressed}) => [styles.footerBtn, pressed ? styles.footerBtnPressed : undefined]}>
+          <Pressable
+            style={({pressed}) => [styles.footerBtn, pressed ? styles.footerBtnPressed : undefined]}
+            onPress={() => navigation.navigate('Monitor')}>
             <Text style={styles.footerBtnText}>View Realtime Monitor</Text>
             <ArrowRightIcon color="#1f5135" />
           </Pressable>
@@ -580,7 +624,9 @@ export default function DashboardScreen() {
             )}
           </View>
 
-          <Pressable style={({pressed}) => [styles.footerBtn, pressed ? styles.footerBtnPressed : undefined]}>
+          <Pressable
+            style={({pressed}) => [styles.footerBtn, pressed ? styles.footerBtnPressed : undefined]}
+            onPress={() => navigation.navigate('Alerts')}>
             <Text style={styles.footerBtnText}>View All Alerts</Text>
             <ArrowRightIcon color="#1f5135" />
           </Pressable>
@@ -594,6 +640,7 @@ export default function DashboardScreen() {
           alert={selectedAlert}
           onClose={() => setSelectedAlert(null)}
           onAcknowledge={handleAcknowledge}
+          onViewAlerts={() => navigation.navigate('Alerts')}
         />
       )}
     </SafeAreaView>

@@ -2,12 +2,10 @@
  * Per-user Firestore path helpers.
  * All user data lives under /accounts/{uid}/... so no two users ever share data.
  *
- * Admin:        hammadtahir@gmail.com  — bypasses approval, sees all data
- * Test account: testing@gmail.com      — auto-approved, seeded with 30-day demo data
+ * Admin: hammadtahir@gmail.com — bypasses approval, manages users via Admin Panel
  */
 
 export const ADMIN_EMAIL = 'hammadtahir@gmail.com';
-export const TEST_EMAIL  = 'testing@gmail.com';
 
 // ─── Collection path builders ─────────────────────────────────────────────────
 
@@ -84,8 +82,4 @@ export interface ResourceRequest {
 
 export function isAdminEmail(email: string | null | undefined): boolean {
   return email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-}
-
-export function isTestEmail(email: string | null | undefined): boolean {
-  return email?.toLowerCase() === TEST_EMAIL.toLowerCase();
 }

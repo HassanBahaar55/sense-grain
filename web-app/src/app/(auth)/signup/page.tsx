@@ -7,12 +7,10 @@ import { getAuth, signInWithPopup, createUserWithEmailAndPassword, updateProfile
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import firebaseApp from '@/config/firebase';
 import { useAuth } from '@/contexts/AuthContext';
-import { isTestEmail } from '@/lib/accountDb';
-
 const db = getFirestore(firebaseApp);
 
 async function writeUserDocs(uid: string, email: string, displayName: string) {
-  const status = isTestEmail(email) ? 'approved' : 'pending';
+  const status = 'pending';
   const now    = Date.now();
   await Promise.all([
     setDoc(doc(db, 'users', uid), { uid, email, displayName, approvalStatus: status, createdAt: now }, { merge: true }),
